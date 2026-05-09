@@ -1,6 +1,14 @@
 import { Icon } from "@/components/ui/icons";
+import { LogoutButton } from "@/components/auth/logout-button";
 
-export function Topbar() {
+type TopbarProps = {
+  userEmail?: string | null;
+};
+
+export function Topbar({ userEmail }: TopbarProps) {
+  const displayEmail = userEmail ?? "Sesión no configurada";
+  const avatarLetter = displayEmail.charAt(0).toUpperCase();
+
   return (
     <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#070a12]/72 backdrop-blur-xl">
       <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
@@ -30,12 +38,15 @@ export function Topbar() {
           </button>
           <div className="hidden items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.04] py-1.5 pl-2 pr-3 sm:flex">
             <div className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-slate-100 to-slate-400 text-xs font-bold text-slate-950">
-              O
+              {avatarLetter}
             </div>
             <div className="leading-tight">
-              <p className="text-xs font-medium text-white">Oscar Marin</p>
-              <p className="text-[11px] text-slate-500">Owner</p>
+              <p className="max-w-40 truncate text-xs font-medium text-white">
+                {displayEmail}
+              </p>
+              <p className="text-[11px] text-slate-500">Usuario autenticado</p>
             </div>
+            <LogoutButton />
           </div>
         </div>
       </div>
