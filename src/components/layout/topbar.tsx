@@ -1,12 +1,26 @@
 import { Icon } from "@/components/ui/icons";
 import { LogoutButton } from "@/components/auth/logout-button";
+import { CompanySelector } from "@/components/layout/company-selector";
+import type { Company } from "@/lib/organizations";
 
 type TopbarProps = {
   userEmail?: string | null;
+  organizationName?: string | null;
+  activeCompanyName?: string | null;
+  activeCompanyId?: string | null;
+  companies?: Company[];
+  onSelectCompany?: (formData: FormData) => void;
 };
 
-export function Topbar({ userEmail }: TopbarProps) {
-  const displayEmail = userEmail ?? "Sesión no configurada";
+export function Topbar({
+  userEmail,
+  organizationName,
+  activeCompanyName,
+  activeCompanyId,
+  companies = [],
+  onSelectCompany,
+}: TopbarProps) {
+  const displayEmail = userEmail ?? "Sesion no configurada";
   const avatarLetter = displayEmail.charAt(0).toUpperCase();
 
   return (
@@ -14,10 +28,10 @@ export function Topbar({ userEmail }: TopbarProps) {
       <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-            Executive Command Center
+            {organizationName ?? "Executive Command Center"}
           </p>
           <h1 className="truncate text-base font-semibold text-white sm:text-lg">
-            Dashboard financiero
+            {activeCompanyName ?? "Dashboard financiero"}
           </h1>
         </div>
 
@@ -29,6 +43,13 @@ export function Topbar({ userEmail }: TopbarProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {onSelectCompany ? (
+            <CompanySelector
+              activeCompanyId={activeCompanyId}
+              companies={companies}
+              onSelect={onSelectCompany}
+            />
+          ) : null}
           <button
             className="grid h-10 w-10 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-slate-300 transition hover:bg-white/[0.08] hover:text-white"
             type="button"

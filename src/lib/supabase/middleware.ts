@@ -4,14 +4,20 @@ import { getSupabaseEnv } from "@/lib/supabase/env";
 
 const protectedRoutes = [
   "/dashboard",
+  "/bandeja",
+  "/facturas",
   "/facturas-inteligentes",
   "/compras",
+  "/documentos",
+  "/cliente",
   "/reportes",
   "/empresas",
   "/configuracion",
+  "/onboarding",
 ];
 
 const authRoutes = ["/login", "/registro"];
+const clientAllowedRoutes = ["/cliente"];
 
 function isRoute(pathname: string, routes: string[]) {
   return routes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
@@ -80,6 +86,36 @@ export async function updateSession(request: NextRequest) {
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
+  }
+
+  if (user && isRoute(pathname, protectedRoutes) && !isRoute(pathname, clientAllowedRoutes)) {
+    const { data: memberships } = await supabase
+      .from("organization_members")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("status", "active");
+    const { data: companyUsers } = await supabase
+      .from("company_users")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("status", "active");
+    const internalRoles = new Set([
+      "platform_owner",
+      "org_owner",
+      "admin",
+      "accountant",
+      "assistant",
+    ]);
+    const isInternal = (memberships ?? []).some((membership) =>
+      internalRoles.has(String(membership.role)),
+    );
+    const isClient = (companyUsers ?? []).some(
+      (companyUser) => String(companyUser.role) === "client",
+    );
+
+    if (isClient && !isInternal) {
+      return NextResponse.redirect(new URL("/cliente", request.url));
+    }
   }
 
   if (user && isRoute(pathname, authRoutes)) {

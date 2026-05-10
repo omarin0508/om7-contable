@@ -2,6 +2,107 @@
 
 Este documento propone tablas, campos principales y relaciones para una futura implementacion en Supabase. No es SQL definitivo y no debe usarse todavia como migracion.
 
+Actualizacion: `supabase/schema-001-organizations.sql` ya fue creado como la primera implementacion manual del modelo organizacional. Incluye `profiles`, `organizations`, `organization_members`, `companies`, `company_users`, triggers de `updated_at` y politicas RLS iniciales para onboarding multiusuario y multiempresa.
+
+## Implementacion 002 — Empresas reales
+
+El modulo `/empresas` ya utiliza datos reales desde Supabase. Las empresas se crean en `companies` asociadas a la organizacion activa del usuario mediante `organization_id`. El acceso queda protegido por RLS: un usuario solo puede listar y crear empresas dentro de organizaciones donde es miembro activo.
+
+La tabla `companies` depende directamente de `organizations`; por eso no puede existir una empresa sin organizacion. Esta implementacion mantiene el modelo SaaS multiempresa y prepara el camino para documentos, facturas, usuarios cliente y reportes por empresa.
+
+## Implementacion 003 — Contexto activo
+
+Se agrego el contexto activo del usuario mediante `profiles.active_organization_id` y `profiles.active_company_id`. La organizacion activa representa el tenant de trabajo y la empresa activa representa el cliente o entidad bajo la cual operaran futuros modulos de facturas, compras, reportes e IA.
+
+El contexto activo se guarda por usuario. `active_company_id` solo debe apuntar a empresas que pertenezcan a organizaciones donde el usuario sea miembro activo. Si no hay empresa activa, la UI puede sugerir la primera empresa disponible, pero no la asigna automaticamente sin accion del usuario.
+
+## Implementacion 004 - Facturas manuales
+
+Se creo `supabase/schema-004-invoices.sql` como primera base real para registrar facturas manuales. La tabla `invoices` depende de `organizations` y `companies`, guarda el usuario que registra el documento en `user_id` y queda preparada para conectarse luego con documentos, OCR e IA.
+
+La UI `/facturas` lista facturas reales de la empresa activa y permite crear registros manuales solo cuando existe `profiles.active_company_id`. La politica RLS de insercion valida que el usuario sea miembro de la organizacion, que la empresa pertenezca a esa organizacion y que coincida con el contexto activo guardado en `profiles`.
+
+## Implementacion 005 - Compras y gastos manuales
+
+Se creo `supabase/schema-005-purchases.sql` para registrar compras y gastos manuales bajo la empresa activa. La tabla `purchases` guarda `organization_id`, `company_id`, `user_id`, proveedor, documento, fecha, categoria, montos, metodo de pago, estado y notas.
+
+La UI `/compras` dejo de depender de datos mock y ahora lista compras reales de `profiles.active_company_id`. La politica RLS sigue el mismo criterio de facturas: lectura por membresia activa en la organizacion e insercion solo cuando la compra coincide con el contexto activo del usuario.
+
+## Implementacion 006 - Almacenamiento documental
+
+Se creo `supabase/schema-006-documents.sql` para preparar el repositorio documental privado de OM7 Finance OS. El bucket `om7-documents` debe existir como privado y usar la ruta logica `organizations/{organization_id}/companies/{company_id}/documents/`.
+
+La tabla `documents` registra la metadata de cada archivo: organizacion, empresa, usuario, entidad relacionada (`invoice`, `purchase` o `general`), ruta de storage, nombre original, tipo MIME, tamano, tipo documental, estado de procesamiento y metadata JSON. Esta tabla es la base para el futuro pipeline OCR e IA, sin procesar todavia el contenido del archivo.
+
+Las politicas RLS aislan documentos por membresia de organizacion y restringen inserciones al contexto activo del usuario (`profiles.active_organization_id` y `profiles.active_company_id`). Supabase Storage queda privado; la UI genera signed URLs temporales para ver documentos sin exponer el bucket publicamente.
+
+## Implementacion 007 - Procesamiento documental
+
+Se creo `supabase/schema-007-document-processing.sql` como base de OCR e IA futura. La tabla `document_extractions` depende de `documents` y guarda el proveedor de extraccion, estado, texto crudo, datos estructurados JSON, confianza, errores y marcas de procesamiento.
+
+La relacion principal es `documents -> document_extractions`. Un documento puede tener una o varias extracciones historicas, empezando por proveedor `manual`. La UI `/documentos` permite simular o ingresar una extraccion manual, cambia `documents.processing_status` a `processed` y muestra un panel tecnico con texto extraido y JSON.
+
+El formato inicial de `extracted_data` queda preparado para IA:
+
+```json
+{
+  "supplier_name": "",
+  "document_number": "",
+  "date": "",
+  "currency": "",
+  "subtotal": 0,
+  "tax": 0,
+  "total": 0,
+  "line_items": []
+}
+```
+
+El flujo futuro sera: documento privado en Storage, registro en `documents`, extraccion OCR en `document_extractions`, clasificacion IA y posterior creacion o actualizacion de facturas, compras o movimientos.
+
+## Implementacion 008 - XML Costa Rica v1
+
+Se agrego soporte inicial para XML de factura electronica de Costa Rica sin IA ni OCR. El upload documental acepta `.xml`, `application/xml` y `text/xml`, mantiene el archivo en Storage privado y procesa automaticamente los XML mediante `parseCostaRicaInvoiceXml()`.
+
+El parser soporta namespaces de Hacienda y comprobantes `FacturaElectronica`, `TiqueteElectronico`, `NotaCreditoElectronica` y `NotaDebitoElectronica`. Extrae clave, consecutivo, fecha, emisor, receptor, moneda, subtotal, impuesto, total, condicion de venta, medio de pago y lineas de detalle.
+
+El flujo actual es: XML manual -> `documents` -> `document_extractions` con provider `xml-parser-cr` -> vista amigable en `/documentos` -> creacion manual de compra o factura desde los datos extraidos. Antes de crear se muestra advertencia visual ante posibles duplicados por clave o consecutivo, pero no se bloquea la accion todavia.
+
+Canales futuros de recepcion XML:
+
+- Upload manual desde portal cliente.
+- Email unico por empresa o cliente.
+- Carpeta compartida o integracion.
+- API webhook futura.
+
+## Implementacion 009 - Portal cliente v1
+
+Se creo `/cliente` como primera version protegida del portal de recepcion documental. En esta fase el portal usa la sesion autenticada y la empresa activa para asociar documentos de forma segura, manteniendo RLS y Storage privado.
+
+Los archivos subidos desde el portal se registran en `documents` con `related_type = client_upload` y metadata `channel = client_portal`. Los XML de Costa Rica se procesan automaticamente con el parser actual y quedan en `document_extractions`; PDFs e imagenes quedan como recibidos para revision posterior.
+
+Canales futuros de recepcion documental:
+
+- Portal manual para clientes.
+- Email unico por cliente o empresa.
+- Lectura automatica de adjuntos.
+- API/webhook para integraciones externas.
+
+## Implementacion 010 - Bandeja de revision documental
+
+Se creo `supabase/schema-008-document-review.sql` para agregar estado de revision sobre `documents`: `review_status`, `reviewed_at`, `reviewed_by` y `review_notes`. La bandeja `/bandeja` lista documentos recibidos desde el portal cliente (`related_type = client_upload`) bajo la empresa activa.
+
+La bandeja permite filtrar por tipo documental, estado de procesamiento y fecha. Tambien muestra KPIs operativos, acceso al documento con signed URL, enlace a extraccion XML, conversion a compra/factura y acciones de revision: revisado o rechazado.
+
+La seguridad sigue apoyada en las politicas existentes de `documents`: solo miembros de la organizacion activa pueden leer y actualizar documentos de su empresa activa.
+
+## Implementacion 011 - Usuarios cliente v1
+
+Se creo `supabase/schema-009-client-users.sql` para soportar usuarios cliente con permisos limitados mediante `company_users.role = client`. Estos usuarios no necesitan pertenecer a `organization_members`; su alcance queda definido por las empresas asignadas en `company_users`.
+
+Los clientes pueden acceder solo a `/cliente`, subir documentos con `related_type = client_upload` y ver los documentos enviados para sus empresas asignadas. Las rutas internas como dashboard, facturas, compras, documentos, bandeja, reportes, empresas y configuracion redirigen a `/cliente` cuando el usuario no tiene rol interno.
+
+La asignacion inicial se hace desde `/empresas` con el email de un usuario ya registrado. La funcion SQL `assign_client_to_company()` valida que quien asigna sea miembro interno de la organizacion de la empresa y luego crea o actualiza el registro en `company_users`.
+
 ## Principios generales
 
 - Todas las tablas operativas deben tener ownership claro.

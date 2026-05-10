@@ -2,9 +2,20 @@ import { ActivityChart } from "@/components/dashboard/activity-chart";
 import { AlertsCard } from "@/components/dashboard/alerts-card";
 import { KPICard } from "@/components/dashboard/kpi-card";
 import { MovementsTable } from "@/components/dashboard/movements-table";
+import { PremiumCard } from "@/components/ui/premium-card";
+import type { ActiveContext } from "@/lib/active-context";
 import { kpis } from "@/lib/dashboard-data";
 
-export function DashboardView() {
+type DashboardViewProps = {
+  activeContext?: ActiveContext;
+};
+
+export function DashboardView({ activeContext }: DashboardViewProps) {
+  const organization = activeContext?.organization;
+  const activeCompany = activeContext?.activeCompany;
+  const suggestedCompany = activeContext?.suggestedCompany;
+  const companies = activeContext?.companies ?? [];
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
       <section className="rounded-3xl border border-white/[0.08] bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-cyan-300/[0.035] p-5 shadow-2xl shadow-black/25 backdrop-blur-xl sm:p-7">
@@ -34,6 +45,33 @@ export function DashboardView() {
           </div>
         </div>
       </section>
+
+      <PremiumCard className="p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-sm font-medium text-white">
+              Empresa activa actual
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              {activeCompany
+                ? `${activeCompany.name} opera dentro de ${organization?.name ?? "tu organizacion"}.`
+                : companies.length === 0
+                  ? "Crea una empresa para empezar a registrar documentos y movimientos."
+                  : "Selecciona una empresa para empezar a registrar documentos y movimientos."}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/[0.08] bg-black/15 px-4 py-3">
+            <p className="text-xs text-slate-500">
+              {activeCompany ? "Contexto activo" : "Sugerencia"}
+            </p>
+            <p className="mt-1 text-sm font-semibold text-white">
+              {activeCompany?.name ??
+                suggestedCompany?.name ??
+                "Sin empresa disponible"}
+            </p>
+          </div>
+        </div>
+      </PremiumCard>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((item) => (
