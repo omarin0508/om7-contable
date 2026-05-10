@@ -14,10 +14,11 @@ const protectedRoutes = [
   "/empresas",
   "/configuracion",
   "/onboarding",
+  "/visor-documento",
 ];
 
 const authRoutes = ["/login", "/registro"];
-const clientAllowedRoutes = ["/cliente"];
+const clientAllowedRoutes = ["/cliente", "/visor-documento"];
 
 function isRoute(pathname: string, routes: string[]) {
   return routes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
@@ -104,6 +105,7 @@ export async function updateSession(request: NextRequest) {
       "platform_owner",
       "org_owner",
       "admin",
+      "staff",
       "accountant",
       "assistant",
     ]);
@@ -135,6 +137,7 @@ export async function updateSession(request: NextRequest) {
       "platform_owner",
       "org_owner",
       "admin",
+      "staff",
       "accountant",
       "assistant",
     ]);

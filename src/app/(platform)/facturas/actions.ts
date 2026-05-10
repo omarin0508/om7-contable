@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { normalizeCurrencyCode } from "@/lib/currency";
 import { createInvoiceForActiveCompany } from "@/lib/invoices";
 
 function parseAmount(value: FormDataEntryValue | null) {
@@ -21,7 +22,7 @@ export async function createInvoiceAction(formData: FormData) {
     proveedor,
     numeroDocumento: String(formData.get("numeroDocumento") ?? "").trim(),
     fecha: String(formData.get("fecha") ?? "").trim(),
-    moneda: String(formData.get("moneda") ?? "").trim(),
+    moneda: normalizeCurrencyCode(formData.get("moneda")),
     subtotal: parseAmount(formData.get("subtotal")),
     impuesto: parseAmount(formData.get("impuesto")),
     total: parseAmount(formData.get("total")),

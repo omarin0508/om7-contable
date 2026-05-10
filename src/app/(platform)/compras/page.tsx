@@ -8,6 +8,7 @@ import {
   StatusBadge,
 } from "@/components/modules/shared";
 import { PremiumCard } from "@/components/ui/premium-card";
+import { formatCurrencyAmount, normalizeCurrencyCode } from "@/lib/currency";
 import { listPurchases } from "@/lib/purchases";
 
 const statusLabels: Record<string, string> = {
@@ -27,18 +28,16 @@ const categoryOptions = [
 ];
 
 function formatMoney(value: number | null, currency: string | null) {
-  return new Intl.NumberFormat("es-CR", {
-    style: "currency",
-    currency: currency || "CRC",
-  }).format(value ?? 0);
+  return formatCurrencyAmount(value, currency);
 }
 
 export default async function PurchasesPage() {
   const { activeContext, purchases } = await listPurchases();
   const activeCompany = activeContext.activeCompany;
   const organization = activeContext.organization;
-  const currency =
-    activeCompany?.base_currency ?? organization?.base_currency ?? "CRC";
+  const currency = normalizeCurrencyCode(
+    activeCompany?.base_currency ?? organization?.base_currency ?? "CRC",
+  );
   const totalPurchases = purchases.reduce(
     (sum, purchase) => sum + Number(purchase.total ?? 0),
     0,

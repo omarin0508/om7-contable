@@ -45,6 +45,7 @@ export async function getCurrentUserRole(): Promise<CurrentUserRole> {
     "platform_owner",
     "org_owner",
     "admin",
+    "staff",
     "accountant",
     "assistant",
   ]);

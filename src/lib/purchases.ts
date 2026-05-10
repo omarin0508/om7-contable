@@ -1,4 +1,5 @@
 import { getActiveContext } from "@/lib/active-context";
+import { normalizeCurrencyCode } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/server";
 
 export type Purchase = {
@@ -104,11 +105,11 @@ export async function createPurchase(input: CreatePurchaseInput) {
       purchase_date: input.purchaseDate || null,
       category: input.category || null,
       description: input.description || null,
-      currency:
+      currency: normalizeCurrencyCode(
         input.currency ||
-        activeContext.activeCompany.base_currency ||
-        activeContext.organization.base_currency ||
-        "CRC",
+          activeContext.activeCompany.base_currency ||
+          activeContext.organization.base_currency,
+      ),
       subtotal: input.subtotal ?? 0,
       tax: input.tax ?? 0,
       total: input.total ?? 0,

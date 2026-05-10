@@ -8,6 +8,7 @@ import {
   StatusBadge,
 } from "@/components/modules/shared";
 import { PremiumCard } from "@/components/ui/premium-card";
+import { formatCurrencyAmount } from "@/lib/currency";
 import { getInvoicesForActiveCompany } from "@/lib/invoices";
 
 const statusLabels: Record<string, string> = {
@@ -18,10 +19,7 @@ const statusLabels: Record<string, string> = {
 };
 
 function formatMoney(value: number | null, currency: string | null) {
-  return new Intl.NumberFormat("es-CR", {
-    style: "currency",
-    currency: currency || "CRC",
-  }).format(value ?? 0);
+  return formatCurrencyAmount(value, currency);
 }
 
 export default async function InvoicesPage() {

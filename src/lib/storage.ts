@@ -1,6 +1,10 @@
 import { getActiveContext } from "@/lib/active-context";
 import { parseCostaRicaInvoiceXml } from "@/lib/costa-rica-invoice-xml";
-import { createDocumentExtraction } from "@/lib/document-processing";
+import {
+  createDocumentExtraction,
+  selectBestDocumentExtraction,
+  type DocumentExtraction,
+} from "@/lib/document-processing";
 import { assertClientAccessToCompany, getCurrentUserRole } from "@/lib/permissions";
 import { createClient } from "@/lib/supabase/server";
 
@@ -31,6 +35,13 @@ export type DocumentRecord = {
   reviewed_at: string | null;
   reviewed_by: string | null;
   review_notes: string | null;
+  display_name?: string | null;
+  notes?: string | null;
+  archived_at?: string | null;
+  inactive_at?: string | null;
+  deleted_at?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string | null;
 };
@@ -47,6 +58,15 @@ export type UploadDocumentInput = {
 export type UploadDocumentResult = {
   document: DocumentRecord;
   warningCode?: "xml_processing_failed";
+};
+
+export type DocumentViewerData = {
+  document: DocumentRecord;
+  signedUrl: string | null;
+  downloadUrl: string | null;
+  rawFileText: string | null;
+  extraction: DocumentExtraction | null;
+  extractionHistory: DocumentExtraction[];
 };
 
 function logUploadFailure(
@@ -340,6 +360,66 @@ export async function getSignedDocumentUrl(documentId: string) {
   return data.signedUrl;
 }
 
+export async function getDocumentViewerData(
+  documentId: string,
+): Promise<DocumentViewerData> {
+  const { supabase } = await getAuthenticatedSupabase();
+  const { data: document, error } = await supabase
+    .from("documents")
+    .select("*")
+    .eq("id", documentId)
+    .single();
+
+  if (error || !document) {
+    throw new Error(error?.message ?? "Documento no encontrado.");
+  }
+
+  const documentRecord = document as DocumentRecord;
+  const { data: signed, error: signedError } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .createSignedUrl(documentRecord.storage_path, 60 * 10);
+  const { data: download, error: downloadError } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .createSignedUrl(documentRecord.storage_path, 60 * 10, {
+      download: documentRecord.original_filename ?? "documento.xml",
+    });
+  const { data: extractions, error: extractionsError } = await supabase
+    .from("document_extractions")
+    .select("*")
+    .eq("document_id", documentRecord.id)
+    .order("created_at", { ascending: false });
+
+  if (extractionsError) {
+    throw new Error(extractionsError.message);
+  }
+
+  const extractionHistory = (extractions ?? []) as DocumentExtraction[];
+  let rawFileText: string | null = null;
+  const isXml =
+    documentRecord.mime_type?.includes("xml") ||
+    documentRecord.original_filename?.toLowerCase().endsWith(".xml") ||
+    false;
+
+  if (isXml) {
+    const { data: file, error: downloadFileError } = await supabase.storage
+      .from(DOCUMENTS_BUCKET)
+      .download(documentRecord.storage_path);
+
+    if (!downloadFileError && file) {
+      rawFileText = await file.text();
+    }
+  }
+
+  return {
+    document: documentRecord,
+    signedUrl: signedError ? null : signed?.signedUrl ?? null,
+    downloadUrl: downloadError ? null : download?.signedUrl ?? null,
+    rawFileText,
+    extraction: selectBestDocumentExtraction(extractionHistory),
+    extractionHistory,
+  };
+}
+
 export async function deleteDocument(documentId: string) {
   const { supabase } = await getAuthenticatedSupabase();
   const { data: document, error } = await supabase
@@ -377,7 +457,12 @@ export async function listDocumentsByCompany() {
   if (!activeContext.organization || !activeContext.activeCompany) {
     return {
       activeContext,
-      documents: [] as Array<DocumentRecord & { signedUrl: string | null }>,
+    documents: [] as Array<
+      DocumentRecord & {
+        signedUrl: string | null;
+        extraction?: DocumentExtraction | null;
+      }
+    >,
     };
   }
 
@@ -392,8 +477,33 @@ export async function listDocumentsByCompany() {
     throw new Error(error.message);
   }
 
+  const documentRows = (data ?? []) as DocumentRecord[];
+  const documentIds = documentRows.map((document) => document.id);
+  let extractionsByDocumentId = new Map<string, DocumentExtraction[]>();
+
+  if (documentIds.length > 0) {
+    const { data: extractions, error: extractionsError } = await supabase
+      .from("document_extractions")
+      .select("*")
+      .in("document_id", documentIds);
+
+    if (extractionsError) {
+      throw new Error(extractionsError.message);
+    }
+
+    extractionsByDocumentId = ((extractions ?? []) as DocumentExtraction[]).reduce(
+      (acc, extraction) => {
+        const current = acc.get(extraction.document_id) ?? [];
+        current.push(extraction);
+        acc.set(extraction.document_id, current);
+        return acc;
+      },
+      new Map<string, DocumentExtraction[]>(),
+    );
+  }
+
   const documents = await Promise.all(
-    (data ?? []).map(async (document) => {
+    documentRows.map(async (document) => {
       const { data: signed, error: signedError } = await supabase.storage
         .from(DOCUMENTS_BUCKET)
         .createSignedUrl(document.storage_path, 60 * 10);
@@ -401,6 +511,9 @@ export async function listDocumentsByCompany() {
       return {
         ...(document as DocumentRecord),
         signedUrl: signedError ? null : signed?.signedUrl ?? null,
+        extraction: selectBestDocumentExtraction(
+          extractionsByDocumentId.get(document.id) ?? [],
+        ),
       };
     }),
   );
@@ -421,25 +534,34 @@ export async function listClientUploadDocumentsForCurrentUser(companyId?: string
       companies: activeContext.companies,
       activeCompany: activeContext.activeCompany,
       documents: documents.filter(
-        (document) => document.related_type === "client_upload",
+        (document) =>
+          document.related_type === "client_upload" &&
+          !document.archived_at &&
+          !document.inactive_at &&
+          !document.deleted_at,
       ),
     };
   }
 
-  let targetCompany = currentUser.clientCompanies[0] ?? null;
+  let targetCompany: (typeof currentUser.clientCompanies)[number] | null =
+    currentUser.clientCompanies[0] ?? null;
 
   if (companyId) {
-    await assertClientAccessToCompany(companyId);
     targetCompany =
       currentUser.clientCompanies.find((company) => company.id === companyId) ??
-      targetCompany;
+      null;
   }
 
   if (!targetCompany) {
     return {
       companies: currentUser.clientCompanies,
       activeCompany: null,
-      documents: [] as Array<DocumentRecord & { signedUrl: string | null }>,
+    documents: [] as Array<
+      DocumentRecord & {
+        signedUrl: string | null;
+        extraction?: DocumentExtraction | null;
+      }
+    >,
     };
   }
 
@@ -447,15 +569,44 @@ export async function listClientUploadDocumentsForCurrentUser(companyId?: string
     .from("documents")
     .select("*")
     .eq("company_id", targetCompany.id)
+    .eq("user_id", currentUser.userId)
     .eq("related_type", "client_upload")
+    .is("archived_at", null)
+    .is("inactive_at", null)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (error) {
     throw new Error(error.message);
   }
 
+  const documentRows = (data ?? []) as DocumentRecord[];
+  const documentIds = documentRows.map((document) => document.id);
+  let extractionsByDocumentId = new Map<string, DocumentExtraction[]>();
+
+  if (documentIds.length > 0) {
+    const { data: extractions, error: extractionsError } = await supabase
+      .from("document_extractions")
+      .select("*")
+      .in("document_id", documentIds);
+
+    if (extractionsError) {
+      throw new Error(extractionsError.message);
+    }
+
+    extractionsByDocumentId = ((extractions ?? []) as DocumentExtraction[]).reduce(
+      (acc, extraction) => {
+        const current = acc.get(extraction.document_id) ?? [];
+        current.push(extraction);
+        acc.set(extraction.document_id, current);
+        return acc;
+      },
+      new Map<string, DocumentExtraction[]>(),
+    );
+  }
+
   const documents = await Promise.all(
-    (data ?? []).map(async (document) => {
+    documentRows.map(async (document) => {
       const { data: signed, error: signedError } = await supabase.storage
         .from(DOCUMENTS_BUCKET)
         .createSignedUrl(document.storage_path, 60 * 10);
@@ -463,6 +614,9 @@ export async function listClientUploadDocumentsForCurrentUser(companyId?: string
       return {
         ...(document as DocumentRecord),
         signedUrl: signedError ? null : signed?.signedUrl ?? null,
+        extraction: selectBestDocumentExtraction(
+          extractionsByDocumentId.get(document.id) ?? [],
+        ),
       };
     }),
   );

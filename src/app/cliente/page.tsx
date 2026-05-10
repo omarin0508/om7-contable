@@ -1,5 +1,11 @@
 import Link from "next/link";
+import {
+  createInvoiceFromXmlAction,
+  createPurchaseFromXmlAction,
+  processDocumentWithVisionAction,
+} from "@/app/(platform)/documentos/actions";
 import { uploadClientDocumentAction } from "@/app/cliente/actions";
+import { ExtractionSummary } from "@/components/documents/extraction-summary";
 import { StatusBadge } from "@/components/modules/shared";
 import { PremiumCard } from "@/components/ui/premium-card";
 import { isInternalUser } from "@/lib/permissions";
@@ -16,6 +22,59 @@ const statusLabels: Record<string, string> = {
   processed: "Procesado",
   error: "Error",
 };
+
+type ClientPortalDocument = Awaited<
+  ReturnType<typeof listClientUploadDocumentsForCurrentUser>
+>["documents"][number];
+
+function isXmlDocument(document: ClientPortalDocument) {
+  return (
+    document.mime_type?.includes("xml") ||
+    document.original_filename?.toLowerCase().endsWith(".xml") ||
+    false
+  );
+}
+
+function isAiProcessableDocument(document: ClientPortalDocument) {
+  const mimeType = document.mime_type ?? "";
+  const filename = document.original_filename?.toLowerCase() ?? "";
+
+  return (
+    !isXmlDocument(document) &&
+    (mimeType === "application/pdf" ||
+      mimeType.startsWith("image/") ||
+      filename.endsWith(".pdf"))
+  );
+}
+
+function getDocumentState(document: ClientPortalDocument) {
+  const extraction = document.extraction;
+
+  if (document.related_type === "purchase") {
+    return "Compra creada";
+  }
+
+  if (document.related_type === "invoice") {
+    return "Factura creada";
+  }
+
+  if (extraction?.extraction_status === "reviewed") {
+    return "Revisado";
+  }
+
+  if (extraction?.extraction_status === "processed") {
+    return "Procesado";
+  }
+
+  if (
+    document.processing_status === "uploaded" ||
+    document.processing_status === "pending"
+  ) {
+    return isAiProcessableDocument(document) ? "Subido" : "Pendiente de revision";
+  }
+
+  return statusLabels[document.processing_status] ?? document.processing_status;
+}
 
 const flowSteps = [
   "Suba documentos",
@@ -414,46 +473,177 @@ export default async function ClientPortalPage({
               </div>
             </PremiumCard>
 
-            <PremiumCard className="overflow-hidden">
-              <div className="border-b border-white/[0.07] px-5 py-4">
+            <PremiumCard className="p-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <p className="text-sm font-medium text-white">
-                  Historial de documentos
+                  Documentos recientes
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
                   Archivos enviados desde su Portal Cliente.
                 </p>
               </div>
 
-              <div className="divide-y divide-white/[0.06]">
+              <div className="mt-5 grid gap-3">
                 {clientUploads.length > 0 ? (
                   clientUploads.map((document) => (
                     <article
-                      className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+                      className="rounded-2xl border border-white/[0.08] bg-black/15 p-4"
                       key={document.id}
                     >
-                      <div>
-                        <p className="text-sm font-medium text-white">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0">
+                        <p className="break-words text-sm font-medium text-white">
                           {document.original_filename ?? "Documento"}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
                           {document.document_type} · {formatBytes(document.size_bytes)} ·{" "}
                           {formatDate(document.created_at)}
                         </p>
+                        </div>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:justify-end">
+                          {isXmlDocument(document) ? (
+                            <Link
+                              className="grid h-10 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.08]"
+                              href={`/visor-documento/${document.id}`}
+                            >
+                              Ver documento
+                            </Link>
+                          ) : document.signedUrl ? (
+                            <a
+                              className="grid h-10 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.08]"
+                              href={document.signedUrl}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              Ver documento
+                            </a>
+                          ) : null}
+                          {internalUser &&
+                          isAiProcessableDocument(document) &&
+                          !document.extraction ? (
+                            <form action={processDocumentWithVisionAction}>
+                              <input
+                                name="redirectTo"
+                                type="hidden"
+                                value="/cliente"
+                              />
+                              <input
+                                name="documentId"
+                                type="hidden"
+                                value={document.id}
+                              />
+                              <button
+                                className="grid h-10 place-items-center rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
+                                type="submit"
+                              >
+                                Procesar
+                              </button>
+                            </form>
+                          ) : document.extraction ? (
+                            <a
+                              className="grid h-10 place-items-center rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-300/15"
+                              href={`#extraccion-${document.extraction.id}`}
+                            >
+                              {document.extraction.extraction_status === "reviewed"
+                                ? "Ver extraccion"
+                                : "Revisar datos"}
+                            </a>
+                          ) : (
+                            <span className="grid h-10 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 text-xs font-medium text-slate-400">
+                              Pendiente de revision
+                            </span>
+                          )}
+                          <StatusBadge>{getDocumentState(document)}</StatusBadge>
+                        </div>
                       </div>
-                      <StatusBadge>
-                        {document.processing_status === "processed" &&
-                        (document.mime_type?.includes("xml") ||
-                          document.original_filename
-                            ?.toLowerCase()
-                            .endsWith(".xml"))
-                          ? "XML procesado"
-                          : statusLabels[document.processing_status] ??
-                            document.processing_status}
-                      </StatusBadge>
+                      {document.extraction ? (
+                        <details
+                          className="mt-4 rounded-2xl border border-white/[0.08] bg-black/15 p-4"
+                          id={`extraccion-${document.extraction.id}`}
+                        >
+                          <summary className="cursor-pointer text-sm font-medium text-slate-200">
+                            Ver extraccion
+                          </summary>
+                          <div className="mt-4 space-y-4">
+                            <ExtractionSummary
+                              extractedData={document.extraction.extracted_data}
+                            />
+                            {internalUser ? (
+                              <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
+                                <p className="text-sm font-medium text-white">
+                                  Acciones internas
+                                </p>
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                  {document.extraction.extraction_status ===
+                                  "reviewed" ? (
+                                    <>
+                                      <form action={createPurchaseFromXmlAction}>
+                                        <input
+                                          name="extractionId"
+                                          type="hidden"
+                                          value={document.extraction.id}
+                                        />
+                                        <button
+                                          className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-medium text-emerald-100 transition hover:bg-emerald-300/15"
+                                          type="submit"
+                                        >
+                                          Crear compra
+                                        </button>
+                                      </form>
+                                      <form action={createInvoiceFromXmlAction}>
+                                        <input
+                                          name="extractionId"
+                                          type="hidden"
+                                          value={document.extraction.id}
+                                        />
+                                        <button
+                                          className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
+                                          type="submit"
+                                        >
+                                          Crear factura
+                                        </button>
+                                      </form>
+                                    </>
+                                  ) : (
+                                    <Link
+                                      className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
+                                      href={`/documentos#extraccion-${document.extraction.id}`}
+                                    >
+                                      Revisar datos
+                                    </Link>
+                                  )}
+                                  {isAiProcessableDocument(document) &&
+                                  document.extraction.extraction_status ===
+                                    "error" ? (
+                                    <form action={processDocumentWithVisionAction}>
+                                      <input
+                                        name="redirectTo"
+                                        type="hidden"
+                                        value="/cliente"
+                                      />
+                                      <input
+                                        name="documentId"
+                                        type="hidden"
+                                        value={document.id}
+                                      />
+                                      <button
+                                        className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/[0.08]"
+                                        type="submit"
+                                      >
+                                        Reprocesar
+                                      </button>
+                                    </form>
+                                  ) : null}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        </details>
+                      ) : null}
                     </article>
                   ))
                 ) : (
-                  <p className="px-5 py-10 text-center text-sm text-slate-500">
+                  <p className="rounded-2xl border border-dashed border-white/[0.1] bg-white/[0.025] px-5 py-10 text-center text-sm text-slate-500">
                     Aun no hay documentos enviados desde este portal.
                   </p>
                 )}

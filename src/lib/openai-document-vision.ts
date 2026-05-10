@@ -1,4 +1,5 @@
 import type { ExtractedDocumentData } from "@/lib/document-processing";
+import { normalizeCurrencyCode } from "@/lib/currency";
 
 type VisionInput = {
   signedUrl: string;
@@ -180,12 +181,13 @@ export function normalizeVisionExtraction(value: unknown): NormalizedVisionExtra
       ? (value as Record<string, unknown>)
       : {};
 
+  const currency = normalizeCurrencyCode(data.currency);
   const extractedData: ExtractedDocumentData = {
     document_kind: asString(data.document_kind),
     supplier_name: asString(data.supplier_name),
     document_number: asString(data.document_number),
     date: asString(data.date),
-    currency: asString(data.currency) || "CRC",
+    currency,
     subtotal: asNumber(data.subtotal),
     tax: asNumber(data.tax),
     total: asNumber(data.total),
@@ -195,7 +197,7 @@ export function normalizeVisionExtraction(value: unknown): NormalizedVisionExtra
     receptor_cedula: asString(data.customer_tax_id),
     fecha_emision: asString(data.date),
     numero_consecutivo: asString(data.document_number),
-    moneda: asString(data.currency) || "CRC",
+    moneda: currency,
     impuesto: asNumber(data.tax),
     medio_pago: asString(data.payment_method),
     line_items: asLineItems(data.line_items),

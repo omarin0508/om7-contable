@@ -1,5 +1,8 @@
 import { getActiveContext } from "@/lib/active-context";
-import { listDocumentExtractionsByCompany } from "@/lib/document-processing";
+import {
+  listDocumentExtractionsByCompany,
+  selectBestDocumentExtraction,
+} from "@/lib/document-processing";
 import { createClient } from "@/lib/supabase/server";
 import type { DocumentRecord } from "@/lib/storage";
 
@@ -12,6 +15,7 @@ export type ReviewFilters = {
 export type ReviewDocument = DocumentRecord & {
   signedUrl: string | null;
   extraction: Awaited<ReturnType<typeof listDocumentExtractionsByCompany>>[number] | null;
+  extractionHistory: Awaited<ReturnType<typeof listDocumentExtractionsByCompany>>;
 };
 
 async function getAuthenticatedSupabase() {
@@ -73,9 +77,16 @@ export async function listClientUploadReviewDocuments(filters: ReviewFilters = {
   }
 
   const extractions = await listDocumentExtractionsByCompany();
-  const extractionByDocumentId = new Map(
-    extractions.map((extraction) => [extraction.document_id, extraction]),
-  );
+  const extractionsByDocumentId = new Map<
+    string,
+    Awaited<ReturnType<typeof listDocumentExtractionsByCompany>>
+  >();
+
+  for (const extraction of extractions) {
+    const current = extractionsByDocumentId.get(extraction.document_id) ?? [];
+    current.push(extraction);
+    extractionsByDocumentId.set(extraction.document_id, current);
+  }
 
   const documents = await Promise.all(
     (data ?? []).map(async (document) => {
@@ -86,7 +97,11 @@ export async function listClientUploadReviewDocuments(filters: ReviewFilters = {
       return {
         ...(document as DocumentRecord),
         signedUrl: signedError ? null : signed?.signedUrl ?? null,
-        extraction: extractionByDocumentId.get(document.id) ?? null,
+        extraction:
+          selectBestDocumentExtraction(
+            extractionsByDocumentId.get(document.id) ?? [],
+          ) ?? null,
+        extractionHistory: extractionsByDocumentId.get(document.id) ?? [],
       };
     }),
   );

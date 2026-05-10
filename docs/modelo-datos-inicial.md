@@ -588,6 +588,57 @@ companies
 - `viewer` no debe poder insertar, actualizar ni borrar registros.
 - Las operaciones sensibles deben registrar eventos en `audit_logs`.
 
+## OCR IA y revision humana
+
+El flujo documental inteligente mantiene dos caminos de extraccion:
+
+- XML de Costa Rica: se procesa localmente con el parser XML y guarda datos en `document_extractions.extracted_data`.
+- PDF e imagenes: se procesan con OpenAI Vision y guardan la misma estructura normalizada.
+
+Antes de crear compras o facturas, el usuario interno revisa la extraccion en `/documentos` o `/bandeja`:
+
+1. Sube o recibe el documento.
+2. XML se procesa automaticamente o PDF/imagen se procesa con IA.
+3. El admin abre `Revisar datos`.
+4. Corrige proveedor, documento, fecha, moneda, totales, notas y lineas.
+5. Al guardar, `document_extractions.extraction_status` pasa a `reviewed`.
+6. Los botones `Crear compra` y `Crear factura` usan los datos revisados desde `extracted_data`.
+
+La validacion contable inicial muestra advertencias si falta fecha, total o proveedor, y si `subtotal + impuesto` no coincide con `total`. La advertencia no bloquea porque algunos documentos pueden tener redondeos, descuentos o cargos no modelados todavia.
+
+El JSON completo queda disponible solo como vista tecnica para diagnostico. La vista principal para usuarios operativos es el resumen editable y las acciones de conversion.
+
+## Permisos usuario cliente
+
+El rol `client` vive en `company_users.role` y representa acceso limitado al portal documental.
+
+- Usuarios internos: `owner`, `platform_owner`, `org_owner`, `admin`, `staff`, `accountant`, `assistant`.
+- Usuarios cliente: `company_users.role = 'client'` con `status = 'active'`.
+
+Un usuario cliente solo debe operar en `/cliente`. Si intenta entrar a rutas internas como `/dashboard`, `/documentos`, `/bandeja`, `/compras`, `/facturas`, `/empresas`, `/reportes` o `/configuracion`, el middleware y el layout interno lo redirigen a `/cliente`.
+
+En el Portal Cliente:
+
+- Solo se listan empresas asignadas en `company_users`.
+- Si tiene una empresa, se selecciona automaticamente.
+- Si tiene varias, puede elegir la empresa.
+- Si no tiene empresas asignadas, se muestra un mensaje claro.
+- El historial muestra los documentos subidos por ese usuario para la empresa seleccionada.
+
+Las politicas RLS de `documents`, `document_extractions` y `storage.objects` permiten al usuario cliente operar solamente sobre empresas donde es `company_user` activo y sobre documentos de tipo `client_upload`. Los usuarios internos mantienen el flujo operativo por organizacion y empresa activa.
+
+### Gestion de usuarios cliente desde empresas
+
+`/empresas` muestra la seccion `Usuarios cliente` por empresa:
+
+- Usuarios activos: existen en Auth y estan asociados en `company_users` con `role = 'client'`.
+- Pendientes: correos invitados que aun no existen como usuario registrado, guardados en `client_invitations`.
+- Sin acceso: usuarios desactivados en `company_users` o invitaciones canceladas.
+
+Quitar acceso actualiza el estado del cliente en la empresa, pero no borra documentos historicos. Cancelar una invitacion pendiente solo cambia su estado a `cancelled`.
+
+`schema-010-client-invitations.sql` agrega la tabla `client_invitations` y la funcion `invite_or_assign_client_to_company()`. Si el email ya existe en Auth, se asigna inmediatamente a `company_users`; si no existe, queda como invitacion pendiente para el flujo manual actual.
+
 ## Pendiente antes de SQL definitivo
 
 - Definir nombres exactos de enums.

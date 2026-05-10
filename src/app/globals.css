@@ -31,3 +31,126 @@ button,
 a {
   -webkit-tap-highlight-color: transparent;
 }
+
+@layer components {
+  .om7-card {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+      radial-gradient(circle at top left, rgba(34, 211, 238, 0.045), transparent 36%),
+      rgba(255, 255, 255, 0.045);
+    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.24);
+    backdrop-filter: blur(18px);
+  }
+
+  .om7-muted {
+    color: rgb(100 116 139);
+  }
+
+  .om7-meta {
+    color: rgb(148 163 184);
+  }
+
+  .om7-btn-primary {
+    display: inline-grid;
+    min-height: 2.75rem;
+    place-items: center;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(165, 243, 252, 0.72);
+    background: linear-gradient(135deg, rgb(224 242 254), rgb(125 211 252));
+    color: rgb(2 6 23);
+    font-size: 0.875rem;
+    font-weight: 800;
+    box-shadow: 0 16px 40px rgba(8, 145, 178, 0.18);
+    transition:
+      transform 160ms ease,
+      background 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .om7-btn-primary:hover {
+    background: linear-gradient(135deg, rgb(255 255 255), rgb(165 243 252));
+    box-shadow: 0 18px 48px rgba(8, 145, 178, 0.26);
+    transform: translateY(-1px);
+  }
+
+  .om7-btn-secondary {
+    display: inline-grid;
+    min-height: 2.5rem;
+    place-items: center;
+    border-radius: 0.85rem;
+    border: 1px solid rgba(103, 232, 249, 0.22);
+    background: rgba(103, 232, 249, 0.09);
+    color: rgb(207 250 254);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    transition:
+      border-color 160ms ease,
+      background 160ms ease,
+      transform 160ms ease;
+  }
+
+  .om7-btn-secondary:hover {
+    border-color: rgba(103, 232, 249, 0.36);
+    background: rgba(103, 232, 249, 0.14);
+    transform: translateY(-1px);
+  }
+
+  .om7-btn-ghost {
+    display: inline-grid;
+    min-height: 2.5rem;
+    place-items: center;
+    border-radius: 0.85rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.035);
+    color: rgb(203 213 225);
+    font-size: 0.8125rem;
+    font-weight: 650;
+    transition:
+      border-color 160ms ease,
+      background 160ms ease,
+      color 160ms ease;
+  }
+
+  .om7-btn-ghost:hover {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.07);
+    color: rgb(241 245 249);
+  }
+
+  .om7-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.045);
+    padding: 0.2rem 0.55rem;
+    color: rgb(203 213 225);
+    font-size: 0.6875rem;
+    font-weight: 650;
+    line-height: 1.1;
+  }
+
+  .om7-chip-cyan {
+    border-color: rgba(103, 232, 249, 0.2);
+    background: rgba(103, 232, 249, 0.1);
+    color: rgb(207 250 254);
+  }
+
+  .om7-chip-amber {
+    border-color: rgba(252, 211, 77, 0.22);
+    background: rgba(252, 211, 77, 0.1);
+    color: rgb(254 243 199);
+  }
+
+  .om7-chip-emerald {
+    border-color: rgba(110, 231, 183, 0.22);
+    background: rgba(110, 231, 183, 0.1);
+    color: rgb(209 250 229);
+  }
+
+  .om7-chip-rose {
+    border-color: rgba(253, 164, 175, 0.24);
+    background: rgba(253, 164, 175, 0.1);
+    color: rgb(255 228 230);
+  }
+}

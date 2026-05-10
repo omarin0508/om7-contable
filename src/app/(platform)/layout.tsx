@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { setActiveCompanyAction } from "@/app/(platform)/empresas/context-actions";
 import { getActiveContext } from "@/lib/active-context";
+import { getCurrentUserRole } from "@/lib/permissions";
 import { getCurrentUserEmail } from "@/lib/supabase/server";
 
 export default async function PlatformLayout({
@@ -10,7 +11,13 @@ export default async function PlatformLayout({
 }: {
   children: ReactNode;
 }) {
-  const userEmail = await getCurrentUserEmail();
+  const currentUser = await getCurrentUserRole();
+
+  if (currentUser.role === "client") {
+    redirect("/cliente");
+  }
+
+  const userEmail = currentUser.email ?? (await getCurrentUserEmail());
   const activeContext = await getActiveContext();
 
   if (!activeContext.organization) {

@@ -1,34 +1,46 @@
 import Link from "next/link";
-import {
-  createInvoiceFromXmlAction,
-  createPurchaseFromXmlAction,
-  processDocumentAction,
-  processDocumentWithVisionAction,
-  uploadDocumentAction,
-} from "@/app/(platform)/documentos/actions";
-import {
-  ExtractionSummary,
-  getExtractionReference,
-} from "@/components/documents/extraction-summary";
-import {
-  MetricCard,
-  ModuleFrame,
-  ModuleHeader,
-  StatusBadge,
-} from "@/components/modules/shared";
+import { uploadDocumentAction } from "@/app/(platform)/documentos/actions";
+import { DocumentInboxList } from "@/components/documents/document-inbox-list";
+import { ModuleFrame } from "@/components/modules/shared";
 import { PremiumCard } from "@/components/ui/premium-card";
-import { listDocumentExtractionsByCompany } from "@/lib/document-processing";
+import { normalizeCurrencyCode } from "@/lib/currency";
 import { listDocumentsByCompany } from "@/lib/storage";
 
-const statusLabels: Record<string, string> = {
-  pending: "Pendiente",
-  uploaded: "Subido",
-  processing: "Procesando",
-  processed: "Procesado",
-  error: "Error",
+type DocumentsPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-function isXmlDocument(document: { mime_type: string | null; original_filename: string | null }) {
+type DocumentItem = Awaited<ReturnType<typeof listDocumentsByCompany>>["documents"][number];
+
+const providerLabels: Record<string, string> = {
+  "xml-parser-cr": "XML CR",
+  "openai-vision": "IA Vision",
+  manual: "Manual",
+  none: "Sin extracción",
+};
+
+const quickFilters = [
+  { href: "/documentos?lifecycle=active", label: "Activos" },
+  { href: "/documentos?status=Procesado&lifecycle=active", label: "Pendientes" },
+  { href: "/documentos?provider=xml-parser-cr", label: "XML" },
+  { href: "/documentos?provider=openai-vision", label: "IA Vision" },
+  { href: "/documentos?status=Revisado", label: "Revisados" },
+  { href: "/documentos?lifecycle=archived", label: "Archivados" },
+  { href: "/documentos?status=Error", label: "Errores" },
+];
+
+function getParam(
+  params: Record<string, string | string[] | undefined>,
+  key: string,
+) {
+  const value = params[key];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function isXmlDocument(document: {
+  mime_type: string | null;
+  original_filename: string | null;
+}) {
   return (
     document.mime_type?.includes("xml") ||
     document.original_filename?.toLowerCase().endsWith(".xml") ||
@@ -43,7 +55,12 @@ function isAiProcessableDocument(document: {
   const mimeType = document.mime_type ?? "";
   const filename = document.original_filename?.toLowerCase() ?? "";
 
-  return !isXmlDocument(document) && (mimeType === "application/pdf" || mimeType.startsWith("image/") || filename.endsWith(".pdf"));
+  return (
+    !isXmlDocument(document) &&
+    (mimeType === "application/pdf" ||
+      mimeType.startsWith("image/") ||
+      filename.endsWith(".pdf"))
+  );
 }
 
 function formatBytes(value: number | null) {
@@ -74,44 +91,321 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
-export default async function DocumentsPage() {
-  const [{ activeContext, documents }, extractions] = await Promise.all([
-    listDocumentsByCompany(),
-    listDocumentExtractionsByCompany(),
-  ]);
-  const activeCompany = activeContext.activeCompany;
-  const organization = activeContext.organization;
-  const extractionByDocumentId = new Map(
-    extractions.map((extraction) => [extraction.document_id, extraction]),
-  );
-  const totalSize = documents.reduce(
-    (sum, document) => sum + Number(document.size_bytes ?? 0),
-    0,
-  );
-  const pendingCount = documents.filter(
-    (document) =>
-      document.processing_status === "pending" ||
-      document.processing_status === "uploaded",
-  ).length;
-  const xmlReferenceCounts = extractions.reduce<Record<string, number>>(
-    (acc, extraction) => {
-      const reference = getExtractionReference(extraction.extracted_data);
+function getData(document: DocumentItem) {
+  const data = document.extraction?.extracted_data ?? {};
 
-      if (reference) {
-        acc[reference] = (acc[reference] ?? 0) + 1;
-      }
+  return data && typeof data === "object" && !Array.isArray(data)
+    ? (data as Record<string, unknown>)
+    : {};
+}
 
-      return acc;
+function getValue(data: Record<string, unknown>, keys: string[], fallback = "No disponible") {
+  for (const key of keys) {
+    const value = data[key];
+
+    if (value !== null && value !== undefined && value !== "") {
+      return String(value);
+    }
+  }
+
+  return fallback;
+}
+
+function getMoney(data: Record<string, unknown>) {
+  const amount = Number(data.total ?? 0);
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return "No disponible";
+  }
+
+  return `${normalizeCurrencyCode(data.moneda ?? data.currency)} ${amount.toLocaleString(
+    "es-CR",
+    {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
     },
-    {},
+  )}`;
+}
+
+function getConfidenceLabel(confidence: number | null | undefined) {
+  const value = Number(confidence ?? 0);
+
+  if (value >= 0.9 || value >= 90) {
+    return "Alta";
+  }
+
+  if (value >= 0.65 || value >= 65) {
+    return "Media";
+  }
+
+  return "Revisar";
+}
+
+function getDocumentState(document: DocumentItem) {
+  const extraction = document.extraction;
+
+  if (document.related_type === "purchase") {
+    return "Compra creada";
+  }
+
+  if (document.related_type === "invoice") {
+    return "Factura creada";
+  }
+
+  if (document.processing_status === "error" || extraction?.extraction_status === "error") {
+    return "Error";
+  }
+
+  if (extraction?.extraction_status === "reviewed") {
+    return "Revisado";
+  }
+
+  if (extraction?.extraction_status === "processed") {
+    return "Procesado";
+  }
+
+  if (document.processing_status === "uploaded" || document.processing_status === "pending") {
+    return "Subido";
+  }
+
+  return document.processing_status;
+}
+
+function getPrimaryAction(document: DocumentItem) {
+  const state = getDocumentState(document);
+
+  if (state === "Subido" && isAiProcessableDocument(document)) {
+    return "Procesar";
+  }
+
+  if (state === "Procesado") {
+    return "Revisar";
+  }
+
+  if (state === "Revisado") {
+    return "Convertir";
+  }
+
+  if (state === "Error") {
+    return "Resolver";
+  }
+
+  if (state === "Compra creada" || state === "Factura creada") {
+    return "Ver registro";
+  }
+
+  return "Abrir";
+}
+
+function getDocumentInitials(document: DocumentItem) {
+  if (isXmlDocument(document)) {
+    return "XML";
+  }
+
+  if (document.mime_type === "application/pdf") {
+    return "PDF";
+  }
+
+  if (document.mime_type?.startsWith("image/")) {
+    return "IMG";
+  }
+
+  return "DOC";
+}
+
+function getDocumentTitle(document: DocumentItem) {
+  return document.display_name || document.original_filename || "Documento";
+}
+
+function getLifecycleState(document: DocumentItem) {
+  if (document.deleted_at) {
+    return "deleted";
+  }
+
+  if (document.inactive_at) {
+    return "inactive";
+  }
+
+  if (document.archived_at) {
+    return "archived";
+  }
+
+  return "active";
+}
+
+function getLifecycleLabel(document: DocumentItem) {
+  const lifecycle = getLifecycleState(document);
+
+  if (lifecycle === "deleted") {
+    return "Eliminado";
+  }
+
+  if (lifecycle === "inactive") {
+    return "Inactivo";
+  }
+
+  if (lifecycle === "archived") {
+    return "Archivado";
+  }
+
+  return "Activo";
+}
+
+function matchesFilter(document: DocumentItem, filters: Record<string, string>) {
+  const data = getData(document);
+  const state = getDocumentState(document);
+  const provider = document.extraction?.extraction_provider ?? "none";
+  const query = filters.q?.toLowerCase().trim();
+  const lifecycle = getLifecycleState(document);
+
+  if (filters.lifecycle && filters.lifecycle !== "all" && lifecycle !== filters.lifecycle) {
+    return false;
+  }
+
+  if (filters.status && filters.status !== "all" && state !== filters.status) {
+    return false;
+  }
+
+  if (
+    filters.documentType &&
+    filters.documentType !== "all" &&
+    document.document_type !== filters.documentType
+  ) {
+    return false;
+  }
+
+  if (filters.provider && filters.provider !== "all" && provider !== filters.provider) {
+    return false;
+  }
+
+  if (query) {
+    const haystack = [
+      document.display_name,
+      document.original_filename,
+      document.document_type,
+      document.notes,
+      getValue(data, ["emisor_nombre", "supplier_name"], ""),
+      getValue(data, ["numero_consecutivo", "document_number"], ""),
+      getValue(data, ["clave"], ""),
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes(query);
+  }
+
+  return true;
+}
+
+function InboxStat({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: number;
+  tone?: "default" | "cyan" | "amber" | "emerald";
+}) {
+  const toneClass = {
+    amber: "border-amber-300/20 bg-amber-300/10 text-amber-100",
+    cyan: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100",
+    default: "border-white/[0.08] bg-white/[0.04] text-slate-100",
+    emerald: "border-emerald-300/20 bg-emerald-300/10 text-emerald-100",
+  }[tone];
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${toneClass}`}>
+      <p className="text-2xl font-semibold tracking-tight">{value}</p>
+      <p className="mt-1 text-xs text-current/70">{label}</p>
+    </div>
   );
+}
+
+export default async function DocumentsPage({ searchParams }: DocumentsPageProps) {
+  const params = (await searchParams) ?? {};
+  const filters = {
+    documentType: getParam(params, "documentType") ?? "all",
+    lifecycle: getParam(params, "lifecycle") ?? "active",
+    provider: getParam(params, "provider") ?? "all",
+    q: getParam(params, "q") ?? "",
+    status: getParam(params, "status") ?? "all",
+  };
+  const { activeContext, documents } = await listDocumentsByCompany();
+  const activeCompany = activeContext.activeCompany;
+  const filteredDocuments = documents.filter((document) =>
+    matchesFilter(document, filters),
+  );
+  const activeDocuments = documents.filter(
+    (document) => getLifecycleState(document) === "active",
+  );
+  const pendingReviewCount = activeDocuments.filter(
+    (document) => getDocumentState(document) === "Procesado",
+  ).length;
+  const convertedCount = activeDocuments.filter((document) =>
+    ["Compra creada", "Factura creada"].includes(getDocumentState(document)),
+  ).length;
+  const ocrPendingCount = activeDocuments.filter(
+    (document) => getDocumentState(document) === "Subido" && isAiProcessableDocument(document),
+  ).length;
+  const recentActivityCount = activeDocuments.filter((document) => {
+    const today = new Date().toISOString().slice(0, 10);
+    return document.created_at?.slice(0, 10) === today;
+  }).length;
 
   return (
     <ModuleFrame>
-      <ModuleHeader
-        title="Documentos"
-        description="Centro documental para cargar XML, PDFs e imágenes. Los XML se procesan automáticamente y pueden convertirse en compras o facturas."
-      />
+      <section className="overflow-hidden rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_34%),rgba(255,255,255,0.045)] shadow-2xl shadow-cyan-950/20">
+        <div className="grid gap-6 p-5 lg:grid-cols-[1.1fr_0.9fr] lg:p-7">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-cyan-200/75">
+              Centro operativo documental
+            </p>
+            <h1 className="mt-3 max-w-3xl text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+              Inbox financiero para revisar, aprobar y convertir documentos.
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
+              Priorice XML, PDFs e imagenes desde una sola bandeja. Abra cada
+              documento solo cuando necesite trabajar en su workspace.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <a
+                className="om7-btn-primary px-4 py-3"
+                href="#subir-documento"
+              >
+                Subir documento
+              </a>
+              <Link
+                className="om7-btn-ghost px-4 py-3"
+                href="/bandeja"
+              >
+                Ir a bandeja cliente
+              </Link>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <InboxStat
+              label="pendientes de revision"
+              tone="amber"
+              value={pendingReviewCount}
+            />
+            <InboxStat
+              label="OCR pendientes"
+              tone="cyan"
+              value={ocrPendingCount}
+            />
+            <InboxStat
+              label="convertidos"
+              tone="emerald"
+              value={convertedCount}
+            />
+            <InboxStat
+              label="actividad hoy"
+              value={recentActivityCount}
+            />
+          </div>
+        </div>
+      </section>
 
       {!activeCompany ? (
         <PremiumCard className="border-amber-300/15 bg-amber-300/10 p-5">
@@ -131,70 +425,180 @@ export default async function DocumentsPage() {
         </PremiumCard>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          detail={activeCompany?.name ?? "Sin empresa activa"}
-          label="Empresa activa"
-          value={activeCompany ? "Lista" : "Pendiente"}
-        />
-        <MetricCard
-          detail={organization?.name ?? "Organizacion"}
-          label="Documentos"
-          value={String(documents.length)}
-        />
-        <MetricCard
-          detail="Pendientes para OCR futuro"
-          label="Por procesar"
-          value={String(pendingCount)}
-        />
-        <MetricCard
-          detail="Storage privado"
-          label="Peso total"
-          value={formatBytes(totalSize)}
-        />
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
-        <PremiumCard className="p-5">
-          <p className="text-sm font-medium text-white">Subir documento</p>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            {activeCompany
-              ? `Se guardara en ${activeCompany.name}.`
-              : "Selecciona una empresa activa antes de subir."}
-          </p>
-
-          <form
-            action={uploadDocumentAction}
-            className="mt-5 space-y-4"
-          >
-            <input name="redirectTo" type="hidden" value="/documentos" />
-            <input name="relatedType" type="hidden" value="general" />
-
-            <label className="flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-cyan-200/20 bg-cyan-200/[0.04] px-5 py-8 text-center transition hover:border-cyan-200/35 hover:bg-cyan-200/[0.07]">
-              <span className="text-sm font-medium text-cyan-100">
-                Arrastra o selecciona XML, PDF o imagen
-              </span>
-              <span className="mt-2 max-w-xs text-xs leading-5 text-slate-500">
-                Bucket privado con URLs firmadas temporales. OCR e IA se
-                conectaran despues.
-              </span>
-              <input
-                accept="application/pdf,image/*,.xml,application/xml,text/xml"
-                className="mt-5 block w-full max-w-xs rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2 text-xs text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-cyan-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-950"
-                disabled={!activeCompany}
-                name="file"
-                required
-                type="file"
-              />
-            </label>
-
-            <div className="grid gap-4 sm:grid-cols-2">
+      <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+        <div className="space-y-4">
+          <PremiumCard className="p-4 sm:p-5">
+            <form action="/documentos" className="space-y-4">
               <label className="block">
                 <span className="text-sm font-medium text-slate-300">
-                  Tipo documento
+                  Buscar documentos
                 </span>
+                <input
+                  className="mt-2 h-14 w-full rounded-2xl border border-white/[0.08] bg-black/20 px-4 text-base text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
+                  defaultValue={filters.q}
+                  name="q"
+                  placeholder="Buscar por proveedor, archivo, clave o consecutivo..."
+                />
+              </label>
+
+              <div className="flex flex-wrap gap-2">
+                {quickFilters.map((filter) => (
+                  <Link
+                    className="om7-chip transition hover:border-cyan-300/25 hover:bg-cyan-300/10 hover:text-cyan-100"
+                    href={filter.href}
+                    key={filter.href}
+                  >
+                    {filter.label}
+                  </Link>
+                ))}
+                <Link
+                  className="om7-chip bg-black/20 text-slate-500 transition hover:bg-white/[0.05] hover:text-slate-300"
+                  href="/documentos"
+                >
+                  Limpiar
+                </Link>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
                 <select
-                  className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+                  className="h-11 rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
+                  defaultValue={filters.status}
+                  name="status"
+                >
+                  {[
+                    "all",
+                    "Subido",
+                    "Procesado",
+                    "Revisado",
+                    "Compra creada",
+                    "Factura creada",
+                    "Error",
+                  ].map((status) => (
+                    <option className="bg-slate-950" key={status} value={status}>
+                      {status === "all" ? "Estado: todos" : status}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="h-11 rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
+                  defaultValue={filters.documentType}
+                  name="documentType"
+                >
+                  {["all", "factura", "compra", "contrato", "estado_cuenta", "otro"].map(
+                    (type) => (
+                      <option className="bg-slate-950" key={type} value={type}>
+                        {type === "all" ? "Tipo: todos" : type}
+                      </option>
+                    ),
+                  )}
+                </select>
+                <select
+                  className="h-11 rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
+                  defaultValue={filters.provider}
+                  name="provider"
+                >
+                  <option className="bg-slate-950" value="all">
+                    Origen: todos
+                  </option>
+                  <option className="bg-slate-950" value="xml-parser-cr">
+                    XML CR
+                  </option>
+                  <option className="bg-slate-950" value="openai-vision">
+                    IA Vision
+                  </option>
+                  <option className="bg-slate-950" value="manual">
+                    Manual
+                  </option>
+                  <option className="bg-slate-950" value="none">
+                    Sin extracción
+                  </option>
+                </select>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ["active", "Activos"],
+                  ["archived", "Archivados"],
+                  ["inactive", "Inactivos"],
+                  ["deleted", "Eliminados"],
+                  ["all", "Todos"],
+                ].map(([value, label]) => (
+                  <label
+                    className={[
+                      "inline-flex cursor-pointer items-center rounded-full border px-3 py-2 text-xs font-semibold transition",
+                      filters.lifecycle === value
+                        ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100"
+                        : "border-white/[0.08] bg-white/[0.035] text-slate-400 hover:border-white/[0.16] hover:text-slate-200",
+                    ].join(" ")}
+                    key={value}
+                  >
+                    <input
+                      className="sr-only"
+                      defaultChecked={filters.lifecycle === value}
+                      name="lifecycle"
+                      type="radio"
+                      value={value}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+
+              <button
+                className="om7-btn-secondary px-4"
+                type="submit"
+              >
+                Aplicar filtros
+              </button>
+            </form>
+          </PremiumCard>
+
+          <PremiumCard className="p-4 sm:p-5">
+            <DocumentInboxList
+              activeCompanyName={activeCompany?.name ?? "Empresa activa"}
+              documents={filteredDocuments}
+              totalCount={documents.length}
+            />
+          </PremiumCard>
+        </div>
+
+        <aside className="space-y-4">
+          <div className="scroll-mt-6" id="subir-documento">
+          <PremiumCard className="p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-white">
+                  Subir documento
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Cargue XML, PDF o imagen sin salir de la bandeja.
+                </p>
+              </div>
+              <span className="om7-chip om7-chip-cyan">Carga</span>
+            </div>
+              <form action={uploadDocumentAction} className="mt-5 space-y-4">
+                <input name="redirectTo" type="hidden" value="/documentos" />
+                <input name="relatedType" type="hidden" value="general" />
+
+                <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-cyan-200/20 bg-cyan-200/[0.04] px-4 py-6 text-center transition hover:border-cyan-200/35 hover:bg-cyan-200/[0.07]">
+                  <span className="text-sm font-medium text-cyan-100">
+                    XML, PDF o imagen
+                  </span>
+                  <span className="mt-2 text-xs leading-5 text-slate-500">
+                    XML automatico. PDFs e imagenes con IA Vision.
+                  </span>
+                  <input
+                    accept="application/pdf,image/*,.xml,application/xml,text/xml"
+                    className="mt-4 block w-full rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2 text-xs text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-cyan-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-950"
+                    disabled={!activeCompany}
+                    name="file"
+                    required
+                    type="file"
+                  />
+                </label>
+
+                <select
+                  className="h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
                   disabled={!activeCompany}
                   name="documentType"
                 >
@@ -214,355 +618,36 @@ export default async function DocumentsPage() {
                     Otro
                   </option>
                 </select>
-              </label>
 
-              <div className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-                  Ruta logica
-                </p>
-                <p className="mt-2 break-all text-xs leading-5 text-slate-400">
-                  organizations/{organization?.id ?? "org"}/companies/
-                  {activeCompany?.id ?? "company"}/documents/
-                </p>
-              </div>
-            </div>
-
-            <button
-              className="flex h-12 w-full items-center justify-center rounded-xl bg-cyan-100 px-4 text-sm font-semibold text-slate-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!activeCompany}
-              type="submit"
-            >
-              Subir documento
-            </button>
-          </form>
-        </PremiumCard>
-
-        <PremiumCard className="overflow-hidden">
-          <div className="border-b border-white/[0.07] px-5 py-4">
-            <p className="text-sm font-medium text-white">
-              Documentos recientes
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Archivos reales almacenados en Supabase Storage privado.
-            </p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] text-left text-sm">
-              <thead className="text-xs uppercase tracking-[0.16em] text-slate-600">
-                <tr>
-                  <th className="px-5 py-3 font-medium">Nombre</th>
-                  <th className="px-5 py-3 font-medium">Tipo</th>
-                  <th className="px-5 py-3 font-medium">Tamano</th>
-                  <th className="px-5 py-3 font-medium">Fecha</th>
-                  <th className="px-5 py-3 font-medium">Estado</th>
-                  <th className="px-5 py-3 font-medium">Accion</th>
-                  <th className="px-5 py-3 font-medium">Procesamiento</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.06]">
-                {documents.length > 0 ? (
-                  documents.map((document) => {
-                    const extraction = extractionByDocumentId.get(document.id);
-                    const aiProcessed =
-                      extraction?.extraction_provider === "openai-vision" &&
-                      extraction.extraction_status === "processed";
-                    const aiError =
-                      extraction?.extraction_provider === "openai-vision" &&
-                      extraction.extraction_status === "error";
-
-                    return (
-                      <tr key={document.id}>
-                        <td className="px-5 py-4 font-medium text-white">
-                          {document.original_filename ?? "Documento"}
-                        </td>
-                        <td className="px-5 py-4 text-slate-400">
-                          {document.document_type}
-                        </td>
-                        <td className="px-5 py-4 text-slate-400">
-                          {formatBytes(document.size_bytes)}
-                        </td>
-                        <td className="px-5 py-4 text-slate-400">
-                          {formatDate(document.created_at)}
-                        </td>
-                        <td className="px-5 py-4">
-                          <StatusBadge>
-                            {aiProcessed
-                              ? "IA procesado"
-                              : aiError
-                                ? "Error IA"
-                                : document.processing_status === "processed" &&
-                            isXmlDocument(document)
-                              ? "XML procesado"
-                              : statusLabels[document.processing_status] ??
-                                document.processing_status}
-                          </StatusBadge>
-                        </td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-2">
-                            {document.signedUrl ? (
-                              <a
-                                className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
-                                href={document.signedUrl}
-                                rel="noreferrer"
-                                target="_blank"
-                              >
-                                Ver documento
-                              </a>
-                            ) : (
-                              <span className="text-xs text-slate-600">
-                                Sin enlace
-                              </span>
-                            )}
-                            {extraction ? (
-                              <a
-                                className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-medium text-emerald-100 transition hover:bg-emerald-300/15"
-                                href={`#extraccion-${extraction.id}`}
-                              >
-                                Ver extraccion
-                              </a>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="px-5 py-4">
-                          {isAiProcessableDocument(document) && !aiProcessed ? (
-                            <form action={processDocumentWithVisionAction}>
-                              <input
-                                name="redirectTo"
-                                type="hidden"
-                                value="/documentos"
-                              />
-                              <input
-                                name="documentId"
-                                type="hidden"
-                                value={document.id}
-                              />
-                              <button
-                                className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
-                                type="submit"
-                              >
-                                Procesar con IA
-                              </button>
-                            </form>
-                          ) : (
-                            <span className="text-xs text-slate-600">
-                              {aiProcessed ? "Listo" : "No requiere IA"}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td
-                      className="px-5 py-10 text-center text-sm text-slate-500"
-                      colSpan={7}
-                    >
-                      No hay documentos registrados para la empresa activa.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </PremiumCard>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
-        <PremiumCard className="p-5">
-          <details>
-            <summary className="cursor-pointer text-sm font-medium text-white">
-              Herramienta tecnica de extraccion manual
-            </summary>
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              Uso interno para pruebas antes de conectar OCR real. El flujo
-              normal para usuarios es subir XML y revisar los datos detectados.
-            </p>
-
-            <form action={processDocumentAction} className="mt-5 space-y-4">
-              <input name="redirectTo" type="hidden" value="/documentos" />
-
-              <label className="block">
-                <span className="text-sm font-medium text-slate-300">
-                  Documento
-                </span>
-                <select
-                  className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                  disabled={!activeCompany || documents.length === 0}
-                  name="documentId"
-                  required
+                <button
+                  className="om7-btn-primary flex h-11 w-full items-center justify-center px-4 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!activeCompany}
+                  type="submit"
                 >
-                  <option className="bg-slate-950" value="">
-                    Seleccionar documento
-                  </option>
-                  {documents.map((document) => (
-                    <option
-                      className="bg-slate-950"
-                      key={document.id}
-                      value={document.id}
-                    >
-                      {document.original_filename ?? document.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-medium text-slate-300">
-                  Texto extraido
-                </span>
-                <textarea
-                  className="mt-2 min-h-32 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                  disabled={!activeCompany || documents.length === 0}
-                  name="rawText"
-                  placeholder="Pega aqui texto OCR manual o una simulacion..."
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-medium text-slate-300">
-                  Datos tecnicos estructurados
-                </span>
-                <textarea
-                  className="mt-2 min-h-40 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 py-3 font-mono text-xs text-cyan-50 outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                  defaultValue={JSON.stringify(
-                    {
-                      supplier_name: "",
-                      document_number: "",
-                      date: "",
-                      currency: "",
-                      subtotal: 0,
-                      tax: 0,
-                      total: 0,
-                      line_items: [],
-                    },
-                    null,
-                    2,
-                  )}
-                  disabled={!activeCompany || documents.length === 0}
-                  name="extractedData"
-                />
-              </label>
-
-              <button
-                className="flex h-12 w-full items-center justify-center rounded-xl bg-cyan-100 px-4 text-sm font-semibold text-slate-950 transition hover:bg-white disabled:opacity-50"
-                disabled={!activeCompany || documents.length === 0}
-                type="submit"
-              >
-                Guardar extraccion
-              </button>
-            </form>
-          </details>
-        </PremiumCard>
-
-        <PremiumCard className="overflow-hidden">
-          <div className="border-b border-white/[0.07] px-5 py-4">
-            <p className="text-sm font-medium text-white">
-              Panel de extracciones
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Lecturas manuales listas para evolucionar a OCR e IA.
-            </p>
+                  Subir
+                </button>
+              </form>
+          </PremiumCard>
           </div>
-          <div className="divide-y divide-white/[0.06]">
-            {extractions.length > 0 ? (
-              extractions.map((extraction) => (
-                <article
-                  className="px-5 py-4"
-                  id={`extraccion-${extraction.id}`}
-                  key={extraction.id}
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge>
-                      {statusLabels[extraction.extraction_status] ??
-                        extraction.extraction_status}
-                    </StatusBadge>
-                    <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-slate-400">
-                      {extraction.extraction_provider}
-                    </span>
-                    <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-slate-400">
-                      Confianza {extraction.confidence ?? 0}%
-                    </span>
-                    <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-slate-400">
-                      Procesado: {formatDate(extraction.processed_at)}
-                    </span>
-                  </div>
 
-                  <div className="mt-4 space-y-4">
-                    <ExtractionSummary extractedData={extraction.extracted_data} />
-
-                    {(() => {
-                      const reference = getExtractionReference(
-                        extraction.extracted_data,
-                      );
-                      const duplicateWarning =
-                        reference && xmlReferenceCounts[reference] > 1;
-
-                      return duplicateWarning ? (
-                        <p className="rounded-xl border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">
-                          Posible duplicado: ya existe otra extraccion con la
-                          misma clave o consecutivo.
-                        </p>
-                      ) : null;
-                    })()}
-
-                    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
-                      <p className="text-sm font-medium text-white">Acciones</p>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <form action={createPurchaseFromXmlAction}>
-                          <input
-                            name="extractionId"
-                            type="hidden"
-                            value={extraction.id}
-                          />
-                          <button
-                            className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-medium text-emerald-100 transition hover:bg-emerald-300/15"
-                            type="submit"
-                          >
-                            Crear compra
-                          </button>
-                        </form>
-                        <form action={createInvoiceFromXmlAction}>
-                          <input
-                            name="extractionId"
-                            type="hidden"
-                            value={extraction.id}
-                          />
-                          <button
-                            className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
-                            type="submit"
-                          >
-                            Crear factura
-                          </button>
-                        </form>
-                      </div>
-                    </div>
-
-                    {extraction.error_message ? (
-                      <p className="rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs leading-5 text-rose-100">
-                        {extraction.error_message}
-                      </p>
-                    ) : null}
-
-                    <details className="rounded-2xl border border-white/[0.08] bg-black/15 p-4">
-                      <summary className="cursor-pointer text-sm font-medium text-slate-200">
-                        Ver texto extraido
-                      </summary>
-                      <pre className="mt-4 max-h-40 overflow-auto rounded-xl border border-white/[0.08] bg-black/25 p-3 text-xs leading-5 text-slate-300">
-                        {extraction.raw_text || "Sin texto extraido."}
-                      </pre>
-                    </details>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <p className="px-5 py-10 text-center text-sm text-slate-500">
-                Todavia no hay extracciones registradas.
+          <PremiumCard className="p-5">
+            <p className="text-sm font-semibold text-white">Qué sigue</p>
+            <div className="mt-4 space-y-3 text-sm text-slate-400">
+              <p>
+                <span className="font-semibold text-cyan-100">1.</span> Suba o
+                reciba documentos.
               </p>
-            )}
-          </div>
-        </PremiumCard>
+              <p>
+                <span className="font-semibold text-cyan-100">2.</span> Abra el
+                workspace del documento.
+              </p>
+              <p>
+                <span className="font-semibold text-cyan-100">3.</span> Revise
+                y convierta en compra o factura.
+              </p>
+            </div>
+          </PremiumCard>
+        </aside>
       </section>
     </ModuleFrame>
   );

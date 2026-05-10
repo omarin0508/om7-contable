@@ -1,4 +1,5 @@
 import { getActiveOrganization, type Company, type Organization } from "@/lib/organizations";
+import { normalizeCurrencyCode } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/server";
 
 export type CreateCompanyInput = {
@@ -92,7 +93,9 @@ export async function createCompany(input: CreateCompanyInput) {
       legal_name: input.legalName || null,
       tax_id: input.taxId || null,
       country: input.country || null,
-      base_currency: input.baseCurrency || activeOrganization.base_currency || "CRC",
+      base_currency: normalizeCurrencyCode(
+        input.baseCurrency || activeOrganization.base_currency,
+      ),
       status: input.status || "active",
     })
     .select("*")

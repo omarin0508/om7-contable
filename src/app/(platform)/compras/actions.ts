@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { normalizeCurrencyCode } from "@/lib/currency";
 import { createPurchase } from "@/lib/purchases";
 
 function parseAmount(value: FormDataEntryValue | null) {
@@ -16,7 +17,7 @@ export async function createPurchaseAction(formData: FormData) {
     purchaseDate: String(formData.get("purchaseDate") ?? "").trim(),
     category: String(formData.get("category") ?? "").trim(),
     description: String(formData.get("description") ?? "").trim(),
-    currency: String(formData.get("currency") ?? "").trim(),
+    currency: normalizeCurrencyCode(formData.get("currency")),
     subtotal: parseAmount(formData.get("subtotal")),
     tax: parseAmount(formData.get("tax")),
     total: parseAmount(formData.get("total")),

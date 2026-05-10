@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import {
   assignClientToCompanyAction,
+  cancelClientInvitationAction,
   createCompanyAction,
   removeClientFromCompanyAction,
 } from "@/app/(platform)/empresas/actions";
@@ -14,7 +15,7 @@ import {
 import { ClientPortalShareActions } from "@/components/modules/client-portal-share-actions";
 import { PremiumCard } from "@/components/ui/premium-card";
 import { getActiveContext } from "@/lib/active-context";
-import { listCompanyClients } from "@/lib/company-clients";
+import { listCompanyClientAccesses } from "@/lib/company-clients";
 import { getCompaniesForActiveOrganization } from "@/lib/companies";
 
 const statusLabels: Record<string, string> = {
@@ -26,7 +27,8 @@ const statusLabels: Record<string, string> = {
 const clientStatusLabels: Record<string, string> = {
   active: "Activo",
   inactive: "Sin acceso",
-  invited: "Invitado",
+  pending: "Pendiente",
+  cancelled: "Sin acceso",
 };
 
 function countByStatus(
@@ -61,7 +63,7 @@ export default async function CompaniesPage() {
   const companyClientsEntries = await Promise.all(
     companies.map(async (company) => [
       company.id,
-      await listCompanyClients(company.id),
+      await listCompanyClientAccesses(company.id),
     ] as const),
   );
   const companyClients = new Map(companyClientsEntries);
@@ -316,7 +318,7 @@ export default async function CompaniesPage() {
                     {company.name}
                   </p>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Acceso Portal Cliente
+                    Usuarios cliente
                   </p>
                 </div>
                 <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-xs font-medium text-cyan-100">
@@ -331,8 +333,10 @@ export default async function CompaniesPage() {
               </div>
 
               <p className="mt-4 text-sm leading-6 text-slate-400">
-                Los usuarios asignados aqui podran entrar al Portal Cliente y
-                subir XML, PDFs o imagenes para esta empresa.
+                Los usuarios cliente asignados aqui podran entrar al Portal
+                Cliente y subir XML, PDFs o imagenes para esta empresa. Si el
+                correo aun no existe, queda como pendiente hasta completar el
+                registro.
               </p>
               <ClientPortalShareActions />
 
@@ -341,7 +345,7 @@ export default async function CompaniesPage() {
                   clients.map((client) => (
                     <div
                       className="rounded-2xl border border-white/[0.08] bg-black/15 p-4"
-                      key={`${client.company_id}-${client.user_id}`}
+                      key={`${client.access_type}-${client.access_id}`}
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
@@ -349,7 +353,10 @@ export default async function CompaniesPage() {
                             {client.email ?? "Email no disponible"}
                           </p>
                           <p className="mt-1 text-xs text-slate-500">
-                            Rol {client.role} · asignado{" "}
+                            Rol {client.role} -{" "}
+                            {client.access_type === "invitation"
+                              ? "invitado"
+                              : "asignado"}{" "}
                             {formatDate(client.invited_at)}
                           </p>
                         </div>
@@ -357,7 +364,9 @@ export default async function CompaniesPage() {
                           <StatusBadge>
                             {clientStatusLabels[client.status] ?? client.status}
                           </StatusBadge>
-                          {client.status === "active" ? (
+                          {client.access_type === "user" &&
+                          client.status === "active" &&
+                          client.user_id ? (
                             <form action={removeClientFromCompanyAction}>
                               <input
                                 name="companyId"
@@ -377,13 +386,29 @@ export default async function CompaniesPage() {
                               </button>
                             </form>
                           ) : null}
+                          {client.access_type === "invitation" &&
+                          client.status === "pending" ? (
+                            <form action={cancelClientInvitationAction}>
+                              <input
+                                name="invitationId"
+                                type="hidden"
+                                value={client.access_id}
+                              />
+                              <button
+                                className="rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs font-medium text-rose-100 transition hover:bg-rose-300/15"
+                                type="submit"
+                              >
+                                Cancelar
+                              </button>
+                            </form>
+                          ) : null}
                         </div>
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="rounded-2xl border border-dashed border-white/[0.1] bg-white/[0.025] p-4 text-sm text-slate-500">
-                    Todavia no hay clientes asignados a esta empresa.
+                    Todavia no hay usuarios cliente asignados a esta empresa.
                   </div>
                 )}
               </div>
@@ -392,7 +417,7 @@ export default async function CompaniesPage() {
                 <input name="companyId" type="hidden" value={company.id} />
                 <label className="block">
                   <span className="text-sm font-medium text-slate-300">
-                    Email del cliente registrado
+                    Email del cliente
                   </span>
                   <input
                     className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
@@ -406,7 +431,7 @@ export default async function CompaniesPage() {
                   className="flex h-11 w-full items-center justify-center rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
                   type="submit"
                 >
-                  Dar acceso
+                  Invitar o dar acceso
                 </button>
               </form>
             </PremiumCard>

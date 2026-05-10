@@ -1,4 +1,5 @@
 import { getActiveContext } from "@/lib/active-context";
+import { normalizeCurrencyCode } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/server";
 
 export type Invoice = {
@@ -97,11 +98,11 @@ export async function createInvoiceForActiveCompany(input: CreateInvoiceInput) {
       proveedor: input.proveedor,
       numero_documento: input.numeroDocumento || null,
       fecha: input.fecha || null,
-      moneda:
+      moneda: normalizeCurrencyCode(
         input.moneda ||
-        activeContext.activeCompany.base_currency ||
-        activeContext.organization.base_currency ||
-        "CRC",
+          activeContext.activeCompany.base_currency ||
+          activeContext.organization.base_currency,
+      ),
       subtotal: input.subtotal ?? 0,
       impuesto: input.impuesto ?? 0,
       total: input.total ?? 0,

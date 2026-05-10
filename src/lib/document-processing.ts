@@ -10,6 +10,10 @@ export type ExtractedDocumentData = {
   subtotal?: number;
   tax?: number;
   total?: number;
+  notes?: string;
+  supplier_tax_id?: string;
+  customer_name?: string;
+  customer_tax_id?: string;
   document_kind?: string;
   clave?: string;
   numero_consecutivo?: string;
@@ -19,6 +23,7 @@ export type ExtractedDocumentData = {
   receptor_nombre?: string;
   receptor_cedula?: string;
   moneda?: string;
+  exchange_rate?: number;
   impuesto?: number;
   condicion_venta?: string;
   medio_pago?: string;
@@ -41,6 +46,74 @@ export type DocumentExtraction = {
   created_at: string | null;
   updated_at: string | null;
 };
+
+function numericValue(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function extractionHasUsefulData(extraction: DocumentExtraction | null | undefined) {
+  const data = extraction?.extracted_data;
+
+  if (!data) {
+    return false;
+  }
+
+  return Boolean(
+    data.clave ||
+      data.numero_consecutivo ||
+      data.document_number ||
+      data.emisor_nombre ||
+      data.supplier_name ||
+      data.fecha_emision ||
+      data.date ||
+      numericValue(data.total) > 0 ||
+      numericValue(data.subtotal) > 0 ||
+      (Array.isArray(data.line_items) && data.line_items.length > 0),
+  );
+}
+
+function extractionQualityScore(extraction: DocumentExtraction) {
+  const providerScore: Record<string, number> = {
+    "xml-parser-cr": 40,
+    "openai-vision": 35,
+    manual: 5,
+  };
+  const statusScore: Record<string, number> = {
+    reviewed: 60,
+    processed: 30,
+    processing: 10,
+    pending: 5,
+    error: -20,
+  };
+  const dataScore = extractionHasUsefulData(extraction) ? 25 : -25;
+  const dateScore = Date.parse(extraction.created_at ?? "") || 0;
+
+  return {
+    score:
+      (providerScore[extraction.extraction_provider] ?? 10) +
+      (statusScore[extraction.extraction_status] ?? 0) +
+      dataScore,
+    dateScore,
+  };
+}
+
+export function sortDocumentExtractions(extractions: DocumentExtraction[]) {
+  return [...extractions].sort((left, right) => {
+    const leftQuality = extractionQualityScore(left);
+    const rightQuality = extractionQualityScore(right);
+
+    if (leftQuality.score !== rightQuality.score) {
+      return rightQuality.score - leftQuality.score;
+    }
+
+    return rightQuality.dateScore - leftQuality.dateScore;
+  });
+}
+
+export function selectBestDocumentExtraction(extractions: DocumentExtraction[]) {
+  return sortDocumentExtractions(extractions)[0] ?? null;
+}
 
 async function getAuthenticatedSupabase() {
   const supabase = await createClient();
@@ -185,6 +258,41 @@ export async function getDocumentExtractionById(extractionId: string) {
 
   if (error || !data) {
     throw new Error(error?.message ?? "Extraccion no encontrada.");
+  }
+
+  return data as DocumentExtraction;
+}
+
+export async function updateDocumentExtractionData(
+  extractionId: string,
+  extractedData: ExtractedDocumentData,
+) {
+  const { supabase } = await getAuthenticatedSupabase();
+  const activeContext = await getActiveContext();
+  const existingExtraction = await getDocumentExtractionById(extractionId);
+
+  if (!activeContext.organization || !activeContext.activeCompany) {
+    throw new Error("Selecciona una empresa activa.");
+  }
+
+  const { data, error } = await supabase
+    .from("document_extractions")
+    .update({
+      extracted_data: {
+        ...(existingExtraction.extracted_data ?? {}),
+        ...extractedData,
+      },
+      extraction_status: "reviewed",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", extractionId)
+    .eq("organization_id", activeContext.organization.id)
+    .eq("company_id", activeContext.activeCompany.id)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "No se pudo actualizar la extraccion.");
   }
 
   return data as DocumentExtraction;
@@ -454,7 +562,7 @@ export async function listDocumentExtractionsByCompany() {
     throw new Error(error.message);
   }
 
-  return (data ?? []) as DocumentExtraction[];
+  return sortDocumentExtractions((data ?? []) as DocumentExtraction[]);
 }
 
 export function getDefaultExtractedData() {

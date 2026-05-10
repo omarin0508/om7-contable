@@ -41,7 +41,7 @@ as $$
     where om.organization_id = target_organization_id
       and om.user_id = auth.uid()
       and om.status = 'active'
-      and om.role in ('platform_owner', 'org_owner', 'admin', 'accountant', 'assistant')
+      and om.role in ('owner', 'platform_owner', 'org_owner', 'admin', 'staff', 'accountant', 'assistant')
   );
 $$;
 

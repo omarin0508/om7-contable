@@ -1,3 +1,5 @@
+import { normalizeCurrencyCode } from "@/lib/currency";
+
 type ExtractionLineItem = Record<string, unknown>;
 
 export type ExtractionSummaryData = {
@@ -14,6 +16,7 @@ export type ExtractionSummaryData = {
   impuesto?: unknown;
   tax?: unknown;
   total?: unknown;
+  notes?: unknown;
   supplier_name?: unknown;
   supplier_tax_id?: unknown;
   customer_name?: unknown;
@@ -49,7 +52,7 @@ function displayValue(value: unknown, fallback = "No disponible") {
 
 function displayMoney(value: unknown, currency: unknown) {
   const amount = Number(value ?? 0);
-  const currencyCode = displayValue(currency, "CRC");
+  const currencyCode = normalizeCurrencyCode(currency);
 
   if (!Number.isFinite(amount)) {
     return displayValue(value);
@@ -134,43 +137,36 @@ export function ExtractionSummary({
       <section className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
         <p className="text-sm font-medium text-white">Lineas del documento</p>
         {lineItems.length > 0 ? (
-          <div className="mt-4 overflow-x-auto rounded-xl border border-white/[0.08]">
-            <table className="w-full min-w-[760px] text-left text-xs">
-              <thead className="bg-white/[0.03] text-slate-500">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Detalle</th>
-                  <th className="px-3 py-2 font-medium">Cantidad</th>
-                  <th className="px-3 py-2 font-medium">Unidad</th>
-                  <th className="px-3 py-2 font-medium">Precio unitario</th>
-                  <th className="px-3 py-2 font-medium">Impuesto</th>
-                  <th className="px-3 py-2 font-medium">Total linea</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.06]">
-                {lineItems.map((line, index) => (
-                  <tr key={`${getLineValue(line, "detalle")}-${index}`}>
-                    <td className="px-3 py-2 text-slate-200">
-                      {getLineValue(line, "detalle")}
-                    </td>
-                    <td className="px-3 py-2 text-slate-400">
-                      {getLineValue(line, "cantidad")}
-                    </td>
-                    <td className="px-3 py-2 text-slate-400">
-                      {getLineValue(line, "unidad")}
-                    </td>
-                    <td className="px-3 py-2 text-slate-400">
-                      {getLineValue(line, "precio_unitario")}
-                    </td>
-                    <td className="px-3 py-2 text-slate-400">
-                      {getLineValue(line, "impuesto")}
-                    </td>
-                    <td className="px-3 py-2 font-medium text-slate-200">
-                      {getLineValue(line, "total_linea")}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-4 grid gap-3">
+            {lineItems.map((line, index) => (
+              <article
+                className="rounded-xl border border-white/[0.08] bg-black/15 p-3"
+                key={`${getLineValue(line, "detalle")}-${index}`}
+              >
+                <p className="break-words text-sm font-medium text-slate-100">
+                  {getLineValue(line, "detalle")}
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                  {[
+                    ["Cantidad", getLineValue(line, "cantidad")],
+                    ["Unidad", getLineValue(line, "unidad")],
+                    ["Precio unitario", getLineValue(line, "precio_unitario")],
+                    ["Impuesto", getLineValue(line, "impuesto")],
+                    ["Total linea", getLineValue(line, "total_linea")],
+                  ].map(([label, value]) => (
+                    <div
+                      className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2"
+                      key={label}
+                    >
+                      <p className="text-[11px] text-slate-500">{label}</p>
+                      <p className="mt-1 text-xs font-medium text-slate-200">
+                        {value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
           </div>
         ) : (
           <p className="mt-3 rounded-xl border border-dashed border-white/[0.08] bg-black/15 px-3 py-4 text-sm text-slate-500">

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   assignClientToCompany,
+  cancelClientInvitation,
   removeClientFromCompany,
 } from "@/lib/company-clients";
 import { createCompany } from "@/lib/companies";
@@ -56,6 +57,19 @@ export async function removeClientFromCompanyAction(formData: FormData) {
   }
 
   await removeClientFromCompany(companyId, userId);
+
+  revalidatePath("/empresas");
+  redirect("/empresas");
+}
+
+export async function cancelClientInvitationAction(formData: FormData) {
+  const invitationId = String(formData.get("invitationId") ?? "").trim();
+
+  if (!invitationId) {
+    throw new Error("Invitacion requerida.");
+  }
+
+  await cancelClientInvitation(invitationId);
 
   revalidatePath("/empresas");
   redirect("/empresas");

@@ -1,3 +1,5 @@
+import { normalizeCurrencyCode } from "@/lib/currency";
+
 export type CostaRicaInvoiceLineItem = {
   codigo: string;
   detalle: string;
@@ -20,6 +22,7 @@ export type CostaRicaInvoiceXmlData = {
   receptor_nombre: string;
   receptor_cedula: string;
   moneda: string;
+  exchange_rate?: number;
   subtotal: number;
   impuesto: number;
   total: number;
@@ -99,6 +102,25 @@ function parseLineItem(lineBlock: string): CostaRicaInvoiceLineItem {
   };
 }
 
+function readCurrencyData(resumen: string) {
+  const currencyBlock =
+    readBlock(resumen, "CodigoTipoMoneda") ||
+    readBlock(resumen, "Moneda") ||
+    resumen;
+  const rawCurrency =
+    readTag(currencyBlock, "CodigoMoneda") ||
+    readTag(resumen, "CodigoMoneda") ||
+    readTag(resumen, "CodigoTipoMoneda");
+  const exchangeRate = toNumber(
+    readTag(currencyBlock, "TipoCambio") || readTag(resumen, "TipoCambio"),
+  );
+
+  return {
+    exchangeRate,
+    moneda: normalizeCurrencyCode(rawCurrency),
+  };
+}
+
 export function parseCostaRicaInvoiceXml(xmlText: string): CostaRicaInvoiceXmlData {
   const xml = stripNamespaces(xmlText);
   const documentKind = detectDocumentKind(xml);
@@ -112,6 +134,7 @@ export function parseCostaRicaInvoiceXml(xmlText: string): CostaRicaInvoiceXmlDa
   const resumen = readBlock(xml, "ResumenFactura");
   const medioPago = readTag(xml, "MedioPago");
   const lineItems = readBlocks(xml, "LineaDetalle").map(parseLineItem);
+  const currencyData = readCurrencyData(resumen);
 
   return {
     document_kind: documentKind,
@@ -122,7 +145,8 @@ export function parseCostaRicaInvoiceXml(xmlText: string): CostaRicaInvoiceXmlDa
     emisor_cedula: readCedula(emisor),
     receptor_nombre: readTag(receptor, "Nombre"),
     receptor_cedula: readCedula(receptor),
-    moneda: readTag(resumen, "CodigoTipoMoneda") || readTag(resumen, "CodigoMoneda") || "CRC",
+    moneda: currencyData.moneda,
+    exchange_rate: currencyData.exchangeRate || undefined,
     subtotal:
       toNumber(readTag(resumen, "TotalVentaNeta")) ||
       toNumber(readTag(resumen, "TotalVenta")),
