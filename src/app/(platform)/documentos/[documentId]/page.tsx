@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { processDocumentWithVisionAction } from "@/app/(platform)/documentos/actions";
-import { DocumentManagementMenu } from "@/components/documents/document-management-menu";
+import {
+  archiveDocumentAction,
+  inactivateDocumentAction,
+  processDocumentWithVisionAction,
+  restoreDocumentAction,
+  softDeleteDocumentAction,
+  updateDocumentMetadataAction,
+} from "@/app/(platform)/documentos/actions";
 import { DocumentExtractionWorkspace } from "@/components/documents/document-extraction-workspace";
 import {
   MetricCard,
@@ -17,6 +23,8 @@ type DocumentWorkspacePageProps = {
     documentId: string;
   }>;
 };
+
+const documentTypes = ["factura", "compra", "contrato", "estado_cuenta", "otro"];
 
 function isXmlDocument(document: {
   mime_type: string | null;
@@ -54,6 +62,179 @@ function formatDate(value: string | null) {
     month: "short",
     year: "numeric",
   }).format(new Date(value));
+}
+
+function getDocumentTitle(
+  document: Awaited<ReturnType<typeof getDocumentViewerData>>["document"],
+) {
+  return document.display_name || document.original_filename || "Documento";
+}
+
+function getTags(
+  document: Awaited<ReturnType<typeof getDocumentViewerData>>["document"],
+) {
+  const tags = document.metadata?.tags;
+
+  return Array.isArray(tags) ? tags.map(String).join(", ") : "";
+}
+
+function DocumentInfoSection({
+  document,
+}: {
+  document: Awaited<ReturnType<typeof getDocumentViewerData>>["document"];
+}) {
+  const redirectTo = `/documentos/${document.id}`;
+  const archived = Boolean(document.archived_at);
+  const inactive = Boolean(document.inactive_at);
+  const deleted = Boolean(document.deleted_at);
+  const canRestore = archived || inactive || deleted;
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+      <PremiumCard className="p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-base font-semibold text-white">
+              Informacion del documento
+            </p>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Edita metadata operativa sin modificar el archivo original.
+            </p>
+          </div>
+          <span className="om7-chip om7-chip-cyan">Editable</span>
+        </div>
+
+        <form action={updateDocumentMetadataAction} className="mt-5 space-y-4">
+          <input name="documentId" type="hidden" value={document.id} />
+          <input name="redirectTo" type="hidden" value={redirectTo} />
+
+          <label className="block rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3">
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/80">
+              Nombre visible
+            </span>
+            <input
+              className="mt-2 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.075] px-3 text-sm font-medium text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/55 focus:bg-white/[0.1] focus:ring-4 focus:ring-cyan-300/15"
+              defaultValue={document.display_name ?? ""}
+              name="displayName"
+              placeholder={document.original_filename ?? "Nombre del documento"}
+            />
+          </label>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/80">
+                Tipo documento
+              </span>
+              <select
+                className="mt-2 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.075] px-3 text-sm font-medium text-white outline-none transition focus:border-cyan-300/55 focus:bg-white/[0.1] focus:ring-4 focus:ring-cyan-300/15"
+                defaultValue={document.document_type}
+                name="documentType"
+              >
+                {documentTypes.map((type) => (
+                  <option className="bg-slate-950" key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/80">
+                Etiquetas
+              </span>
+              <input
+                className="mt-2 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.075] px-3 text-sm font-medium text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/55 focus:bg-white/[0.1] focus:ring-4 focus:ring-cyan-300/15"
+                defaultValue={getTags(document)}
+                name="tags"
+                placeholder="proveedor, urgente, demo"
+              />
+            </label>
+          </div>
+
+          <label className="block rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3">
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/80">
+              Notas internas
+            </span>
+            <textarea
+              className="mt-2 min-h-28 w-full rounded-xl border border-white/[0.16] bg-white/[0.075] px-3 py-2 text-sm font-medium text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/55 focus:bg-white/[0.1] focus:ring-4 focus:ring-cyan-300/15"
+              defaultValue={document.notes ?? ""}
+              name="notes"
+              placeholder="Notas para el equipo interno."
+            />
+          </label>
+
+          <button className="om7-btn-primary w-full px-4 sm:w-auto" type="submit">
+            Guardar informacion
+          </button>
+        </form>
+      </PremiumCard>
+
+      <PremiumCard className="p-5">
+        <p className="text-base font-semibold text-white">Administracion</p>
+        <p className="mt-1 text-sm leading-6 text-slate-500">
+          Acciones de ciclo de vida. No borran fisicamente el archivo original.
+        </p>
+
+        <div className="mt-5 space-y-3">
+          {!archived && !deleted ? (
+            <form action={archiveDocumentAction}>
+              <input name="documentId" type="hidden" value={document.id} />
+              <input name="redirectTo" type="hidden" value={redirectTo} />
+              <button className="om7-btn-secondary w-full px-4" type="submit">
+                Archivar
+              </button>
+            </form>
+          ) : null}
+
+          {!inactive && !deleted ? (
+            <form action={inactivateDocumentAction}>
+              <input name="documentId" type="hidden" value={document.id} />
+              <input name="redirectTo" type="hidden" value={redirectTo} />
+              <button className="om7-btn-ghost w-full px-4" type="submit">
+                Ocultar / inactivar
+              </button>
+            </form>
+          ) : null}
+
+          {canRestore ? (
+            <form action={restoreDocumentAction}>
+              <input name="documentId" type="hidden" value={document.id} />
+              <input name="redirectTo" type="hidden" value={redirectTo} />
+              <button className="om7-btn-secondary w-full px-4" type="submit">
+                Restaurar
+              </button>
+            </form>
+          ) : null}
+
+          {!deleted ? (
+            <form
+              action={softDeleteDocumentAction}
+              className="rounded-2xl border border-rose-300/15 bg-rose-300/[0.05] p-3"
+            >
+              <input name="documentId" type="hidden" value={document.id} />
+              <input name="redirectTo" type="hidden" value={redirectTo} />
+              <label className="flex items-start gap-2 text-xs leading-5 text-rose-100/80">
+                <input
+                  className="mt-1 h-3.5 w-3.5 rounded border-rose-200/30 bg-black/30"
+                  name="confirmDelete"
+                  required
+                  type="checkbox"
+                  value="confirmado"
+                />
+                Confirmo que quiero marcar este documento como eliminado.
+              </label>
+              <button
+                className="mt-3 inline-grid min-h-11 w-full place-items-center rounded-xl border border-rose-300/30 bg-rose-400/12 px-4 text-sm font-bold text-rose-100 transition hover:bg-rose-400/18"
+                type="submit"
+              >
+                Eliminar
+              </button>
+            </form>
+          ) : null}
+        </div>
+      </PremiumCard>
+    </section>
+  );
 }
 
 function getWorkflowState(
@@ -103,18 +284,12 @@ export default async function DocumentWorkspacePage({
         title="Workspace documento"
         description="Centro de revision enfocado para procesar, aprobar y convertir un documento."
         action={
-          <div className="flex items-center justify-end gap-2">
-            <Link
-              className="om7-btn-ghost px-4 py-2.5"
-              href="/documentos"
-            >
-              Volver a documentos
-            </Link>
-            <DocumentManagementMenu
-              document={document}
-              redirectTo={`/documentos/${document.id}`}
-            />
-          </div>
+          <Link
+            className="om7-btn-ghost px-4 py-2.5"
+            href="/documentos"
+          >
+            Volver a documentos
+          </Link>
         }
       />
 
@@ -122,7 +297,7 @@ export default async function DocumentWorkspacePage({
         <MetricCard
           detail={document.original_filename ?? document.id}
           label="Documento"
-          value={document.document_type}
+          value={getDocumentTitle(document)}
         />
         <MetricCard
           detail={document.mime_type ?? "Sin MIME"}
@@ -140,6 +315,8 @@ export default async function DocumentWorkspacePage({
           value={extraction?.confidence ? String(extraction.confidence) : "N/D"}
         />
       </section>
+
+      <DocumentInfoSection document={document} />
 
       {extraction ? (
         <PremiumCard className="overflow-hidden">

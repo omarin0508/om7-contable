@@ -1,8 +1,4 @@
-"use client";
-
 import Link from "next/link";
-import { useState } from "react";
-import { DocumentEditDrawer, DocumentManagementMenu } from "@/components/documents/document-management-menu";
 import { normalizeCurrencyCode } from "@/lib/currency";
 import type { DocumentExtraction } from "@/lib/document-processing";
 import type { DocumentRecord } from "@/lib/storage";
@@ -159,32 +155,6 @@ function getDocumentState(document: InboxDocument) {
   return document.processing_status;
 }
 
-function getPrimaryAction(document: InboxDocument) {
-  const state = getDocumentState(document);
-
-  if (state === "Subido" && isAiProcessableDocument(document)) {
-    return "Procesar";
-  }
-
-  if (state === "Procesado") {
-    return "Revisar";
-  }
-
-  if (state === "Revisado") {
-    return "Convertir";
-  }
-
-  if (state === "Error") {
-    return "Resolver";
-  }
-
-  if (state === "Compra creada" || state === "Factura creada") {
-    return "Ver registro";
-  }
-
-  return "Abrir";
-}
-
 function getDocumentInitials(document: InboxDocument) {
   if (isXmlDocument(document)) {
     return "XML";
@@ -226,8 +196,6 @@ export function DocumentInboxList({
   documents,
   totalCount,
 }: DocumentInboxListProps) {
-  const [editingDocument, setEditingDocument] = useState<DocumentRecord | null>(null);
-
   return (
     <>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -258,15 +226,8 @@ export function DocumentInboxList({
                 className="group relative isolate rounded-3xl border border-white/[0.08] bg-white/[0.025] p-4 shadow-lg shadow-black/10 transition hover:border-cyan-300/25 hover:bg-white/[0.045] hover:shadow-cyan-950/20"
                 key={document.id}
               >
-                <div className="absolute right-4 top-4 z-30">
-                  <DocumentManagementMenu
-                    document={document}
-                    onEdit={setEditingDocument}
-                    redirectTo="/documentos"
-                  />
-                </div>
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(250px,0.58fr)_minmax(150px,auto)] lg:items-center">
-                  <Link className="block min-w-0 pr-14" href={`/documentos/${document.id}`}>
+                  <Link className="block min-w-0" href={`/documentos/${document.id}`}>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="grid h-9 w-10 place-items-center rounded-xl border border-cyan-300/15 bg-cyan-300/10 text-[11px] font-bold text-cyan-100">
                         {getDocumentInitials(document)}
@@ -317,7 +278,7 @@ export function DocumentInboxList({
                       className="om7-btn-primary h-10 min-w-0 flex-1 px-3 text-xs sm:flex-none lg:min-w-28"
                       href={`/documentos/${document.id}`}
                     >
-                      {getPrimaryAction(document)}
+                      Abrir documento
                     </Link>
                   </div>
                 </div>
@@ -330,13 +291,6 @@ export function DocumentInboxList({
           </p>
         )}
       </div>
-
-      <DocumentEditDrawer
-        document={editingDocument}
-        onClose={() => setEditingDocument(null)}
-        open={Boolean(editingDocument)}
-        redirectTo="/documentos"
-      />
     </>
   );
 }
