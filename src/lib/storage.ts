@@ -44,6 +44,33 @@ export type UploadDocumentInput = {
   metadata?: Record<string, unknown>;
 };
 
+export type UploadDocumentResult = {
+  document: DocumentRecord;
+  warningCode?: "xml_processing_failed";
+};
+
+function logUploadFailure(
+  stage: string,
+  context: {
+    userId?: string;
+    companyId?: string;
+    organizationId?: string;
+    mimeType?: string;
+    filename?: string;
+  },
+  error: unknown,
+) {
+  console.error("[OM7 document upload failed]", {
+    stage,
+    user_id: context.userId ?? null,
+    company_id: context.companyId ?? null,
+    organization_id: context.organizationId ?? null,
+    mime_type: context.mimeType ?? null,
+    filename: context.filename ?? null,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 async function getAuthenticatedSupabase() {
   const supabase = await createClient();
 
@@ -119,7 +146,12 @@ async function getUploadContext(companyId?: string) {
   const { supabase } = await getAuthenticatedSupabase();
 
   if (companyId) {
-    await assertClientAccessToCompany(companyId);
+    try {
+      await assertClientAccessToCompany(companyId);
+    } catch (error) {
+      logUploadFailure("company_access", { companyId }, error);
+      throw new Error("No tiene permisos para registrar documentos en esta empresa.");
+    }
 
     const { data: company, error } = await supabase
       .from("companies")
@@ -128,7 +160,8 @@ async function getUploadContext(companyId?: string) {
       .single();
 
     if (error || !company) {
-      throw new Error(error?.message ?? "Empresa no encontrada.");
+      logUploadFailure("company_lookup", { companyId }, error);
+      throw new Error("No tiene una empresa asignada para subir documentos.");
     }
 
     return {
@@ -143,7 +176,8 @@ async function getUploadContext(companyId?: string) {
   const activeContext = await getActiveContext();
 
   if (!activeContext.organization || !activeContext.activeCompany) {
-    throw new Error("Selecciona una empresa activa antes de subir documentos.");
+    logUploadFailure("active_context", {}, "Sin empresa activa.");
+    throw new Error("No tiene una empresa asignada para subir documentos.");
   }
 
   return {
@@ -152,15 +186,24 @@ async function getUploadContext(companyId?: string) {
   };
 }
 
-export async function uploadDocument(input: UploadDocumentInput) {
+export async function uploadDocument(input: UploadDocumentInput): Promise<UploadDocumentResult> {
   const { supabase, user } = await getAuthenticatedSupabase();
   const { organization, activeCompany } = await getUploadContext(input.companyId);
+  const baseLogContext = {
+    userId: user.id,
+    companyId: activeCompany.id,
+    organizationId: organization.id,
+    mimeType: input.file?.type,
+    filename: input.file?.name,
+  };
 
   if (!input.file || input.file.size === 0) {
+    logUploadFailure("file_validation", baseLogContext, "Archivo vacio.");
     throw new Error("Selecciona un archivo valido.");
   }
 
   if (!isAllowedFile(input.file)) {
+    logUploadFailure("file_type_validation", baseLogContext, input.file.type);
     throw new Error("Solo se permiten archivos PDF, XML o imagenes.");
   }
 
@@ -184,7 +227,13 @@ export async function uploadDocument(input: UploadDocumentInput) {
     `${crypto.randomUUID()}-${filename}`,
   ].join("/");
 
-  const arrayBuffer = await input.file.arrayBuffer();
+  let arrayBuffer: ArrayBuffer;
+  try {
+    arrayBuffer = await input.file.arrayBuffer();
+  } catch (error) {
+    logUploadFailure("file_read", baseLogContext, error);
+    throw new Error("No se pudo leer el archivo seleccionado.");
+  }
   const fileBuffer = new Uint8Array(arrayBuffer);
   const xmlFile = isXmlFile(input.file);
   const contentType = input.file.type || (xmlFile ? "application/xml" : undefined);
@@ -196,7 +245,8 @@ export async function uploadDocument(input: UploadDocumentInput) {
     });
 
   if (uploadError) {
-    throw new Error(uploadError.message);
+    logUploadFailure("storage_upload", baseLogContext, uploadError);
+    throw new Error("No se pudo guardar el archivo.");
   }
 
   const { data, error } = await supabase
@@ -223,10 +273,12 @@ export async function uploadDocument(input: UploadDocumentInput) {
 
   if (error || !data) {
     await supabase.storage.from(DOCUMENTS_BUCKET).remove([storagePath]);
-    throw new Error(error?.message ?? "No se pudo registrar el documento.");
+    logUploadFailure("documents_insert", baseLogContext, error);
+    throw new Error("No tiene permisos para registrar documentos en esta empresa.");
   }
 
   const document = data as DocumentRecord;
+  let warningCode: UploadDocumentResult["warningCode"];
 
   if (xmlFile) {
     const xmlText = new TextDecoder("utf-8").decode(arrayBuffer);
@@ -242,19 +294,27 @@ export async function uploadDocument(input: UploadDocumentInput) {
         confidence: 1,
       });
     } catch (error) {
-      await createDocumentExtraction(document.id, {
-        provider: "xml-parser-cr",
-        status: "error",
-        rawText: xmlText,
-        extractedData: {},
-        confidence: 0,
-        errorMessage:
-          error instanceof Error ? error.message : "No se pudo procesar el XML.",
-      });
+      logUploadFailure("xml_processing", baseLogContext, error);
+      warningCode = "xml_processing_failed";
+
+      try {
+        await createDocumentExtraction(document.id, {
+          provider: "xml-parser-cr",
+          status: "error",
+          rawText: xmlText,
+          extractedData: {},
+          confidence: 0,
+          errorMessage:
+            error instanceof Error ? error.message : "No se pudo procesar el XML.",
+        });
+      } catch (extractionError) {
+        logUploadFailure("document_extraction_insert", baseLogContext, extractionError);
+        throw new Error("El XML se subió, pero no se pudo procesar.");
+      }
     }
   }
 
-  return document;
+  return { document, warningCode };
 }
 
 export async function getSignedDocumentUrl(documentId: string) {

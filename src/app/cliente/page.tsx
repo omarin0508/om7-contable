@@ -2,6 +2,7 @@ import Link from "next/link";
 import { uploadClientDocumentAction } from "@/app/cliente/actions";
 import { StatusBadge } from "@/components/modules/shared";
 import { PremiumCard } from "@/components/ui/premium-card";
+import { isInternalUser } from "@/lib/permissions";
 import { listClientUploadDocumentsForCurrentUser } from "@/lib/storage";
 
 type ClientPortalPageProps = {
@@ -14,6 +15,33 @@ const statusLabels: Record<string, string> = {
   processing: "Procesando",
   processed: "Procesado",
   error: "Error",
+};
+
+const flowSteps = [
+  "Suba documentos",
+  "Procesamos la informacion",
+  "Revisamos y registramos",
+  "Quedan organizados",
+];
+
+const highlights = [
+  "XML automaticos",
+  "PDFs e imagenes",
+  "Documentos seguros",
+  "Procesamiento organizado",
+];
+
+const uploadErrorMessages: Record<string, string> = {
+  no_company: "No tiene una empresa asignada para subir documentos.",
+  storage_failed: "No se pudo guardar el archivo. Intente de nuevo.",
+  xml_processing_failed: "El XML se subió, pero no se pudo procesar.",
+  permission_denied: "No tiene permisos para registrar documentos en esta empresa.",
+  invalid_file: "El archivo no es valido. Use XML, PDF o imagen.",
+  upload_failed: "No se pudo subir el documento. Intente de nuevo.",
+};
+
+const uploadWarningMessages: Record<string, string> = {
+  xml_processing_failed: "El XML se subió, pero no se pudo procesar.",
 };
 
 function formatBytes(value: number | null) {
@@ -57,52 +85,142 @@ export default async function ClientPortalPage({
 }: ClientPortalPageProps) {
   const params = (await searchParams) ?? {};
   const selectedCompanyId = getParam(params, "companyId");
-  const { activeCompany, companies, documents: clientUploads } =
-    await listClientUploadDocumentsForCurrentUser(selectedCompanyId);
+  const uploadError = getParam(params, "uploadError");
+  const uploadWarning = getParam(params, "uploadWarning");
+  const uploadStatus = getParam(params, "uploadStatus");
+  const [{ activeCompany, companies, documents: clientUploads }, internalUser] =
+    await Promise.all([
+      listClientUploadDocumentsForCurrentUser(selectedCompanyId),
+      isInternalUser(),
+    ]);
+
+  const sentCount = clientUploads.length;
+  const xmlProcessedCount = clientUploads.filter(
+    (document) =>
+      document.processing_status === "processed" &&
+      (document.mime_type?.includes("xml") ||
+        document.original_filename?.toLowerCase().endsWith(".xml")),
+  ).length;
+  const pendingCount = clientUploads.filter(
+    (document) =>
+      document.processing_status === "pending" ||
+      document.processing_status === "uploaded" ||
+      document.processing_status === "processing",
+  ).length;
+  const lastUpload = clientUploads[0]?.created_at ?? null;
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#03050a] px-4 py-6 text-slate-100 sm:px-6 lg:px-8">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(34,211,238,0.14),transparent_32%),radial-gradient(circle_at_80%_20%,rgba(16,185,129,0.09),transparent_28%)]" />
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_16%_0%,rgba(34,211,238,0.16),transparent_30%),radial-gradient(circle_at_80%_12%,rgba(16,185,129,0.12),transparent_26%),linear-gradient(180deg,rgba(255,255,255,0.035),transparent_34%)]" />
 
-      <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <header className="flex flex-col gap-5 rounded-3xl border border-white/[0.08] bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-cyan-300/[0.035] p-6 shadow-2xl shadow-black/25 backdrop-blur-xl sm:p-7 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <Link
-              className="inline-flex items-center gap-3 rounded-2xl px-1 py-1"
-              href="/dashboard"
-            >
-              <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan-300/25 bg-cyan-300/10 text-sm font-semibold text-cyan-100">
-                OM7
-              </span>
-              <span>
-                <span className="block text-sm font-semibold text-white">
-                  OM7 Finance OS
-                </span>
-                <span className="text-xs text-slate-500">Portal cliente</span>
-              </span>
-            </Link>
-            <h1 className="mt-6 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              Recepcion documental
-            </h1>
-            <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">
-              Suba aqui sus facturas XML, PDFs o imagenes para que el equipo
-              contable las reciba en el espacio seguro de OM7.
-            </p>
-          </div>
-          <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-4">
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
-              Empresa activa
-            </p>
-            <p className="mt-2 text-sm font-medium text-white">
-              {activeCompany?.name ?? "Sin empresa asignada"}
-            </p>
+      <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-6">
+        <header className="rounded-3xl border border-white/[0.08] bg-gradient-to-br from-white/[0.1] via-white/[0.045] to-cyan-300/[0.04] p-6 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-8">
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  className="inline-flex items-center gap-3"
+                  href={internalUser ? "/dashboard" : "/cliente"}
+                >
+                  <span className="grid h-11 w-11 place-items-center rounded-2xl border border-cyan-300/25 bg-cyan-300/10 text-sm font-semibold text-cyan-100">
+                    OM7
+                  </span>
+                  <span>
+                    <span className="block text-sm font-semibold text-white">
+                      OM7 Finance OS
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      Portal Cliente
+                    </span>
+                  </span>
+                </Link>
+                {internalUser ? (
+                  <Link
+                    className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
+                    href="/cliente"
+                    target="_blank"
+                  >
+                    Abrir Portal Cliente
+                  </Link>
+                ) : null}
+              </div>
+
+              <h1 className="mt-8 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+                Portal Cliente
+              </h1>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
+                Suba aqui sus facturas XML, PDFs o imagenes para procesamiento
+                documental y contable.
+              </p>
+
+              <div className="mt-6 flex flex-wrap gap-2">
+                {highlights.map((highlight) => (
+                  <span
+                    className="rounded-full border border-white/[0.08] bg-black/20 px-3 py-1.5 text-xs font-medium text-slate-200"
+                    key={highlight}
+                  >
+                    {highlight}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-4 lg:min-w-72">
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                Espacio documental
+              </p>
+              <p className="mt-2 text-lg font-semibold text-white">
+                {activeCompany?.name ?? "Sin empresa asignada"}
+              </p>
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                Los archivos quedan protegidos y asociados a su empresa para
+                revision del equipo contable.
+              </p>
+            </div>
           </div>
         </header>
+
+        {companies.length > 1 ? (
+          <PremiumCard className="p-5">
+            <form
+              action="/cliente"
+              className="grid gap-4 sm:grid-cols-[1fr_auto]"
+              method="get"
+            >
+              <label className="block">
+                <span className="text-sm font-medium text-slate-300">
+                  Empresa asignada
+                </span>
+                <select
+                  className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
+                  defaultValue={activeCompany?.id ?? ""}
+                  name="companyId"
+                >
+                  {companies.map((company) => (
+                    <option
+                      className="bg-slate-950"
+                      key={company.id}
+                      value={company.id}
+                    >
+                      {company.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="h-11 self-end rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
+                type="submit"
+              >
+                Ver empresa
+              </button>
+            </form>
+          </PremiumCard>
+        ) : null}
 
         {!activeCompany ? (
           <PremiumCard className="border-amber-300/15 bg-amber-300/10 p-5">
             <p className="text-sm font-medium text-amber-100">
-              Selecciona una empresa antes de recibir documentos
+              Aun no tienes una empresa asignada
             </p>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-100/75">
               Este portal usa empresas asignadas a tu usuario. Si no ves una
@@ -111,15 +229,80 @@ export default async function ClientPortalPage({
           </PremiumCard>
         ) : null}
 
-        <section className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
-          <PremiumCard className="p-5">
-            <p className="text-sm font-medium text-white">Enviar documento</p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              Los XML se procesan automaticamente. PDFs e imagenes quedan
-              recibidos para revision posterior.
+        {uploadError ? (
+          <PremiumCard className="border-rose-300/15 bg-rose-300/10 p-5">
+            <p className="text-sm font-medium text-rose-100">
+              No se pudo completar la subida
             </p>
+            <p className="mt-2 text-sm leading-6 text-rose-100/75">
+              {uploadErrorMessages[uploadError] ?? uploadErrorMessages.upload_failed}
+            </p>
+          </PremiumCard>
+        ) : null}
 
-            <form action={uploadClientDocumentAction} className="mt-5 space-y-4">
+        {uploadWarning ? (
+          <PremiumCard className="border-amber-300/15 bg-amber-300/10 p-5">
+            <p className="text-sm font-medium text-amber-100">
+              Documento recibido con observacion
+            </p>
+            <p className="mt-2 text-sm leading-6 text-amber-100/75">
+              {uploadWarningMessages[uploadWarning] ??
+                "El documento se subio, pero requiere revision."}
+            </p>
+          </PremiumCard>
+        ) : null}
+
+        {uploadStatus === "success" ? (
+          <PremiumCard className="border-emerald-300/15 bg-emerald-300/10 p-5">
+            <p className="text-sm font-medium text-emerald-100">
+              Documento enviado correctamente
+            </p>
+            <p className="mt-2 text-sm leading-6 text-emerald-100/75">
+              El equipo contable ya puede revisarlo desde la bandeja.
+            </p>
+          </PremiumCard>
+        ) : null}
+
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <PremiumCard className="p-4">
+            <p className="text-xs text-slate-500">Documentos enviados</p>
+            <p className="mt-2 text-2xl font-semibold text-white">
+              {sentCount}
+            </p>
+          </PremiumCard>
+          <PremiumCard className="p-4">
+            <p className="text-xs text-slate-500">XML procesados</p>
+            <p className="mt-2 text-2xl font-semibold text-white">
+              {xmlProcessedCount}
+            </p>
+          </PremiumCard>
+          <PremiumCard className="p-4">
+            <p className="text-xs text-slate-500">Pendientes revision</p>
+            <p className="mt-2 text-2xl font-semibold text-white">
+              {pendingCount}
+            </p>
+          </PremiumCard>
+          <PremiumCard className="p-4">
+            <p className="text-xs text-slate-500">Ultimo envio</p>
+            <p className="mt-2 text-lg font-semibold text-white">
+              {formatDate(lastUpload)}
+            </p>
+          </PremiumCard>
+        </section>
+
+        <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+          <PremiumCard className="p-5 sm:p-6">
+            <div className="flex flex-col gap-2">
+              <p className="text-sm font-medium text-white">
+                Enviar documentos
+              </p>
+              <p className="max-w-xl text-sm leading-6 text-slate-400">
+                Arrastre documentos aqui o seleccionelos desde su dispositivo.
+                Soporta XML, PDF e imagenes.
+              </p>
+            </div>
+
+            <form action={uploadClientDocumentAction} className="mt-6 space-y-5">
               <label className="block">
                 <span className="text-sm font-medium text-slate-300">
                   Empresa
@@ -155,16 +338,21 @@ export default async function ClientPortalPage({
                 )}
               </label>
 
-              <label className="flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-cyan-200/20 bg-cyan-200/[0.04] px-5 py-8 text-center transition hover:border-cyan-200/35 hover:bg-cyan-200/[0.07]">
-                <span className="text-sm font-medium text-cyan-100">
-                  Elegir XML, PDF o imagen
+              <label className="flex min-h-72 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-cyan-200/25 bg-cyan-200/[0.045] px-6 py-10 text-center shadow-[0_0_42px_rgba(34,211,238,0.08)] transition hover:border-cyan-200/45 hover:bg-cyan-200/[0.07]">
+                <span className="grid h-14 w-14 place-items-center rounded-2xl border border-cyan-300/25 bg-cyan-300/10 text-lg font-semibold text-cyan-100">
+                  +
                 </span>
-                <span className="mt-2 max-w-xs text-xs leading-5 text-slate-500">
-                  Archivos privados, asociados a la empresa activa.
+                <span className="mt-5 text-base font-semibold text-white">
+                  Arrastre documentos aqui o seleccionelos desde su dispositivo.
+                </span>
+                <span className="mt-3 max-w-sm text-sm leading-6 text-slate-500">
+                  XML, PDF, JPG, PNG o WEBP. Los XML se procesan
+                  automaticamente y los demas archivos quedan listos para
+                  revision.
                 </span>
                 <input
                   accept="application/pdf,image/*,.xml,application/xml,text/xml"
-                  className="mt-5 block w-full max-w-xs rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2 text-xs text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-cyan-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-950"
+                  className="mt-6 block w-full max-w-sm rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2 text-xs text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-cyan-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-950"
                   disabled={!activeCompany}
                   name="file"
                   required
@@ -204,68 +392,74 @@ export default async function ClientPortalPage({
             </form>
           </PremiumCard>
 
-          <PremiumCard className="overflow-hidden">
-            <div className="border-b border-white/[0.07] px-5 py-4">
+          <div className="flex flex-col gap-5">
+            <PremiumCard className="p-5">
               <p className="text-sm font-medium text-white">
-                Documentos enviados
+                Como funciona
               </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Historial de archivos enviados desde el portal cliente.
-              </p>
-            </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {flowSteps.map((step, index) => (
+                  <div
+                    className="rounded-2xl border border-white/[0.08] bg-black/15 p-4"
+                    key={step}
+                  >
+                    <p className="text-xs font-medium text-cyan-100">
+                      0{index + 1}
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-white">
+                      {step}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </PremiumCard>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="text-xs uppercase tracking-[0.16em] text-slate-600">
-                  <tr>
-                    <th className="px-5 py-3 font-medium">Archivo</th>
-                    <th className="px-5 py-3 font-medium">Tipo</th>
-                    <th className="px-5 py-3 font-medium">Tamano</th>
-                    <th className="px-5 py-3 font-medium">Fecha</th>
-                    <th className="px-5 py-3 font-medium">Estado</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/[0.06]">
-                  {clientUploads.length > 0 ? (
-                    clientUploads.map((document) => (
-                      <tr key={document.id}>
-                        <td className="px-5 py-4 font-medium text-white">
+            <PremiumCard className="overflow-hidden">
+              <div className="border-b border-white/[0.07] px-5 py-4">
+                <p className="text-sm font-medium text-white">
+                  Historial de documentos
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Archivos enviados desde su Portal Cliente.
+                </p>
+              </div>
+
+              <div className="divide-y divide-white/[0.06]">
+                {clientUploads.length > 0 ? (
+                  clientUploads.map((document) => (
+                    <article
+                      className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+                      key={document.id}
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-white">
                           {document.original_filename ?? "Documento"}
-                        </td>
-                        <td className="px-5 py-4 text-slate-400">
-                          {document.document_type}
-                        </td>
-                        <td className="px-5 py-4 text-slate-400">
-                          {formatBytes(document.size_bytes)}
-                        </td>
-                        <td className="px-5 py-4 text-slate-400">
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {document.document_type} · {formatBytes(document.size_bytes)} ·{" "}
                           {formatDate(document.created_at)}
-                        </td>
-                        <td className="px-5 py-4">
-                          <StatusBadge>
-                            {document.processing_status === "processed" &&
-                            document.mime_type?.includes("xml")
-                              ? "XML procesado"
-                              : statusLabels[document.processing_status] ??
-                                document.processing_status}
-                          </StatusBadge>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td
-                        className="px-5 py-10 text-center text-sm text-slate-500"
-                        colSpan={5}
-                      >
-                        Aun no hay documentos enviados desde este portal.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </PremiumCard>
+                        </p>
+                      </div>
+                      <StatusBadge>
+                        {document.processing_status === "processed" &&
+                        (document.mime_type?.includes("xml") ||
+                          document.original_filename
+                            ?.toLowerCase()
+                            .endsWith(".xml"))
+                          ? "XML procesado"
+                          : statusLabels[document.processing_status] ??
+                            document.processing_status}
+                      </StatusBadge>
+                    </article>
+                  ))
+                ) : (
+                  <p className="px-5 py-10 text-center text-sm text-slate-500">
+                    Aun no hay documentos enviados desde este portal.
+                  </p>
+                )}
+              </div>
+            </PremiumCard>
+          </div>
         </section>
       </div>
     </main>

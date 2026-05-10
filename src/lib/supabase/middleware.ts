@@ -100,6 +100,7 @@ export async function updateSession(request: NextRequest) {
       .eq("user_id", user.id)
       .eq("status", "active");
     const internalRoles = new Set([
+      "owner",
       "platform_owner",
       "org_owner",
       "admin",
@@ -119,6 +120,35 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && isRoute(pathname, authRoutes)) {
+    const { data: memberships } = await supabase
+      .from("organization_members")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("status", "active");
+    const { data: companyUsers } = await supabase
+      .from("company_users")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("status", "active");
+    const internalRoles = new Set([
+      "owner",
+      "platform_owner",
+      "org_owner",
+      "admin",
+      "accountant",
+      "assistant",
+    ]);
+    const isInternal = (memberships ?? []).some((membership) =>
+      internalRoles.has(String(membership.role)),
+    );
+    const isClient = (companyUsers ?? []).some(
+      (companyUser) => String(companyUser.role) === "client",
+    );
+
+    if (isClient && !isInternal) {
+      return NextResponse.redirect(new URL("/cliente", request.url));
+    }
+
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

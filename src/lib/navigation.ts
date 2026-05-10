@@ -3,7 +3,7 @@ import type { NavItem } from "@/types/navigation";
 export const navigationItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: "dashboard" },
   {
-    label: "Facturas Inteligentes",
+    label: "Facturas",
     href: "/facturas",
     icon: "invoice",
   },

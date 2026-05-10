@@ -40,7 +40,7 @@ export default async function InvoicesPage() {
     <ModuleFrame>
       <ModuleHeader
         title="Facturas"
-        description="Registro manual v1 de facturas asociadas a la empresa activa. Preparado para OCR e IA en fases posteriores."
+        description="Administre facturas registradas, creadas manualmente o generadas desde documentos XML procesados."
         action={
           <a
             className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-2.5 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/15"

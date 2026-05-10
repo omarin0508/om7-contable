@@ -8,6 +8,12 @@ add column if not exists invited_at timestamptz default now();
 alter table public.company_users
 add column if not exists accepted_at timestamptz;
 
+alter table public.company_users
+alter column role set default 'client';
+
+alter table public.company_users
+alter column status set default 'active';
+
 create or replace function public.is_company_user(target_company_id uuid)
 returns boolean
 language sql
@@ -116,6 +122,91 @@ end;
 $$;
 
 grant execute on function public.assign_client_to_company(uuid, text) to authenticated;
+
+create or replace function public.list_company_clients(target_company_id uuid)
+returns table (
+  company_id uuid,
+  user_id uuid,
+  email text,
+  role text,
+  status text,
+  invited_at timestamptz,
+  accepted_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_company public.companies;
+begin
+  select *
+  into target_company
+  from public.companies
+  where id = target_company_id;
+
+  if target_company.id is null then
+    raise exception 'Empresa no encontrada.';
+  end if;
+
+  if not public.is_internal_org_member(target_company.organization_id) then
+    raise exception 'No tienes permisos para ver clientes de esta empresa.';
+  end if;
+
+  return query
+  select
+    cu.company_id,
+    cu.user_id,
+    coalesce(p.email, au.email) as email,
+    cu.role,
+    cu.status,
+    cu.invited_at,
+    cu.accepted_at
+  from public.company_users cu
+  left join public.profiles p on p.id = cu.user_id
+  left join auth.users au on au.id = cu.user_id
+  where cu.company_id = target_company_id
+    and cu.role = 'client'
+  order by cu.invited_at desc nulls last;
+end;
+$$;
+
+grant execute on function public.list_company_clients(uuid) to authenticated;
+
+create or replace function public.remove_client_from_company(
+  target_company_id uuid,
+  target_user_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_company public.companies;
+begin
+  select *
+  into target_company
+  from public.companies
+  where id = target_company_id;
+
+  if target_company.id is null then
+    raise exception 'Empresa no encontrada.';
+  end if;
+
+  if not public.is_internal_org_member(target_company.organization_id) then
+    raise exception 'No tienes permisos para quitar clientes de esta empresa.';
+  end if;
+
+  update public.company_users
+  set status = 'inactive'
+  where company_id = target_company_id
+    and user_id = target_user_id
+    and role = 'client';
+end;
+$$;
+
+grant execute on function public.remove_client_from_company(uuid, uuid) to authenticated;
 
 drop policy if exists "companies_select_company_user" on public.companies;
 create policy "companies_select_company_user"

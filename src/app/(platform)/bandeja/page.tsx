@@ -6,7 +6,9 @@ import {
 import {
   createInvoiceFromXmlAction,
   createPurchaseFromXmlAction,
+  processDocumentWithVisionAction,
 } from "@/app/(platform)/documentos/actions";
+import { ExtractionSummary } from "@/components/documents/extraction-summary";
 import {
   MetricCard,
   ModuleFrame,
@@ -29,6 +31,29 @@ const statusLabels: Record<string, string> = {
   reviewed: "Revisado",
   rejected: "Rechazado",
 };
+
+function isXmlDocument(document: { mime_type: string | null; original_filename: string | null }) {
+  return (
+    document.mime_type?.includes("xml") ||
+    document.original_filename?.toLowerCase().endsWith(".xml") ||
+    false
+  );
+}
+
+function isAiProcessableDocument(document: {
+  mime_type: string | null;
+  original_filename: string | null;
+}) {
+  const mimeType = document.mime_type ?? "";
+  const filename = document.original_filename?.toLowerCase() ?? "";
+
+  return (
+    !isXmlDocument(document) &&
+    (mimeType === "application/pdf" ||
+      mimeType.startsWith("image/") ||
+      filename.endsWith(".pdf"))
+  );
+}
 
 function getParam(
   params: Record<string, string | string[] | undefined>,
@@ -82,6 +107,11 @@ export default async function ReviewInboxPage({ searchParams }: BandejaPageProps
       document.processing_status === "processed" &&
       document.extraction?.extraction_provider === "xml-parser-cr",
   ).length;
+  const aiProcessedCount = documents.filter(
+    (document) =>
+      document.processing_status === "processed" &&
+      document.extraction?.extraction_provider === "openai-vision",
+  ).length;
   const pendingCount = documents.filter(
     (document) =>
       (document.review_status ?? "pending") === "pending" ||
@@ -93,12 +123,15 @@ export default async function ReviewInboxPage({ searchParams }: BandejaPageProps
       document.processing_status === "error" ||
       (document.review_status ?? "pending") === "rejected",
   ).length;
+  const documentsWithExtractions = documents.filter(
+    (document) => document.extraction,
+  );
 
   return (
     <ModuleFrame>
       <ModuleHeader
         title="Bandeja"
-        description="Revision operativa de documentos recibidos desde el portal cliente, con acciones rapidas para XML procesados."
+        description="Revise documentos recibidos desde el portal cliente o cargas internas antes de convertirlos en registros."
       />
 
       {!activeCompany ? (
@@ -126,7 +159,7 @@ export default async function ReviewInboxPage({ searchParams }: BandejaPageProps
           value={String(receivedCount)}
         />
         <MetricCard
-          detail="Parser XML Costa Rica"
+          detail={`IA procesados: ${aiProcessedCount}`}
           label="XML procesados"
           value={String(xmlProcessedCount)}
         />
@@ -247,6 +280,12 @@ export default async function ReviewInboxPage({ searchParams }: BandejaPageProps
               {documents.length > 0 ? (
                 documents.map((document) => {
                   const extraction = document.extraction;
+                  const aiProcessed =
+                    extraction?.extraction_provider === "openai-vision" &&
+                    extraction.extraction_status === "processed";
+                  const aiError =
+                    extraction?.extraction_provider === "openai-vision" &&
+                    extraction.extraction_status === "error";
 
                   return (
                     <tr key={document.id}>
@@ -264,7 +303,11 @@ export default async function ReviewInboxPage({ searchParams }: BandejaPageProps
                       </td>
                       <td className="px-5 py-4">
                         <StatusBadge>
-                          {document.processing_status === "processed" &&
+                          {aiProcessed
+                            ? "IA procesado"
+                            : aiError
+                              ? "Error IA"
+                              : document.processing_status === "processed" &&
                           extraction?.extraction_provider === "xml-parser-cr"
                             ? "XML procesado"
                             : statusLabels[document.processing_status] ??
@@ -298,6 +341,27 @@ export default async function ReviewInboxPage({ searchParams }: BandejaPageProps
                             >
                               Ver extraccion XML
                             </Link>
+                          ) : null}
+
+                          {isAiProcessableDocument(document) && !aiProcessed ? (
+                            <form action={processDocumentWithVisionAction}>
+                              <input
+                                name="redirectTo"
+                                type="hidden"
+                                value="/bandeja"
+                              />
+                              <input
+                                name="documentId"
+                                type="hidden"
+                                value={document.id}
+                              />
+                              <button
+                                className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
+                                type="submit"
+                              >
+                                Procesar con IA
+                              </button>
+                            </form>
                           ) : null}
 
                           {extraction?.extraction_provider === "xml-parser-cr" ? (
@@ -375,6 +439,138 @@ export default async function ReviewInboxPage({ searchParams }: BandejaPageProps
               )}
             </tbody>
           </table>
+        </div>
+      </PremiumCard>
+
+      <PremiumCard className="overflow-hidden">
+        <div className="border-b border-white/[0.07] px-5 py-4">
+          <p className="text-sm font-medium text-white">
+            Extracciones detectadas
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Vista operativa de los datos leidos antes de crear compras o
+            facturas.
+          </p>
+        </div>
+
+        <div className="divide-y divide-white/[0.06]">
+          {documentsWithExtractions.length > 0 ? (
+            documentsWithExtractions.map((document) => {
+              const extraction = document.extraction;
+
+              if (!extraction) {
+                return null;
+              }
+
+              return (
+                <article className="px-5 py-5" key={document.id}>
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-white">
+                        {document.original_filename ?? "Documento"}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {document.document_type} · {formatDate(document.created_at)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {document.signedUrl ? (
+                        <a
+                          className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
+                          href={document.signedUrl}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          Ver documento
+                        </a>
+                      ) : null}
+                      {isAiProcessableDocument(document) &&
+                      extraction.extraction_provider !== "openai-vision" ? (
+                        <form action={processDocumentWithVisionAction}>
+                          <input
+                            name="redirectTo"
+                            type="hidden"
+                            value="/bandeja"
+                          />
+                          <input
+                            name="documentId"
+                            type="hidden"
+                            value={document.id}
+                          />
+                          <button
+                            className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
+                            type="submit"
+                          >
+                            Procesar con IA
+                          </button>
+                        </form>
+                      ) : null}
+                      <form action={createPurchaseFromXmlAction}>
+                        <input
+                          name="extractionId"
+                          type="hidden"
+                          value={extraction.id}
+                        />
+                        <button
+                          className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-medium text-emerald-100 transition hover:bg-emerald-300/15"
+                          type="submit"
+                        >
+                          Crear compra
+                        </button>
+                      </form>
+                      <form action={createInvoiceFromXmlAction}>
+                        <input
+                          name="extractionId"
+                          type="hidden"
+                          value={extraction.id}
+                        />
+                        <button
+                          className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
+                          type="submit"
+                        >
+                          Crear factura
+                        </button>
+                      </form>
+                      <form action={markDocumentReviewedAction}>
+                        <input
+                          name="documentId"
+                          type="hidden"
+                          value={document.id}
+                        />
+                        <button
+                          className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
+                          type="submit"
+                        >
+                          Marcar revisado
+                        </button>
+                      </form>
+                      <form action={markDocumentRejectedAction}>
+                        <input
+                          name="documentId"
+                          type="hidden"
+                          value={document.id}
+                        />
+                        <button
+                          className="rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs font-medium text-rose-100 transition hover:bg-rose-300/15"
+                          type="submit"
+                        >
+                          Marcar rechazado
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <ExtractionSummary extractedData={extraction.extracted_data} />
+                  </div>
+                </article>
+              );
+            })
+          ) : (
+            <p className="px-5 py-10 text-center text-sm text-slate-500">
+              No hay extracciones disponibles para los documentos filtrados.
+            </p>
+          )}
         </div>
       </PremiumCard>
     </ModuleFrame>

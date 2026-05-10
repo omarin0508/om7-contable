@@ -15,8 +15,8 @@ export function InvoicesView() {
   return (
     <ModuleFrame>
       <ModuleHeader
-        title="Facturas Inteligentes"
-        description="Lectura automática de PDFs, imágenes y XML con asistencia IA."
+        title="Facturas"
+        description="Administre facturas registradas, creadas manualmente o generadas desde documentos XML procesados."
         action={
           <button
             type="button"

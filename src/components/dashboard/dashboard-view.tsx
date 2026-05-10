@@ -4,13 +4,18 @@ import { KPICard } from "@/components/dashboard/kpi-card";
 import { MovementsTable } from "@/components/dashboard/movements-table";
 import { PremiumCard } from "@/components/ui/premium-card";
 import type { ActiveContext } from "@/lib/active-context";
+import type { AdminDashboardMetrics } from "@/lib/admin-dashboard";
 import { kpis } from "@/lib/dashboard-data";
 
 type DashboardViewProps = {
   activeContext?: ActiveContext;
+  adminMetrics?: AdminDashboardMetrics;
 };
 
-export function DashboardView({ activeContext }: DashboardViewProps) {
+export function DashboardView({
+  activeContext,
+  adminMetrics,
+}: DashboardViewProps) {
   const organization = activeContext?.organization;
   const activeCompany = activeContext?.activeCompany;
   const suggestedCompany = activeContext?.suggestedCompany;
@@ -69,6 +74,65 @@ export function DashboardView({ activeContext }: DashboardViewProps) {
                 suggestedCompany?.name ??
                 "Sin empresa disponible"}
             </p>
+          </div>
+        </div>
+      </PremiumCard>
+
+      <PremiumCard className="p-5">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-sm font-medium text-white">Flujo documental</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+              Documentos centraliza XML, PDFs e imagenes; Bandeja permite
+              revisarlos; Compras y Facturas registran el resultado operativo.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-4">
+            {["Documentos", "Bandeja", "Compras/Facturas", "Reportes"].map(
+              (step, index) => (
+                <div
+                  className="rounded-xl border border-white/[0.08] bg-black/15 px-3 py-3"
+                  key={step}
+                >
+                  <p className="text-xs text-cyan-100">0{index + 1}</p>
+                  <p className="mt-1 text-xs font-medium text-slate-200">
+                    {step}
+                  </p>
+                </div>
+              ),
+            )}
+          </div>
+        </div>
+      </PremiumCard>
+
+      <PremiumCard className="p-5">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-sm font-medium text-white">
+              Portal cliente
+            </p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+              Administra accesos cliente y documentos recibidos para mantener
+              el flujo documental bajo control.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-4">
+            {[
+              ["Clientes activos", adminMetrics?.activeClients ?? 0],
+              ["Recibidos hoy", adminMetrics?.documentsReceivedToday ?? 0],
+              ["Pendientes revision", adminMetrics?.pendingReview ?? 0],
+              ["Accesos portal", adminMetrics?.portalAccesses ?? 0],
+            ].map(([label, value]) => (
+              <div
+                className="rounded-xl border border-white/[0.08] bg-black/15 px-3 py-3"
+                key={label}
+              >
+                <p className="text-xs text-slate-500">{label}</p>
+                <p className="mt-2 text-xl font-semibold text-white">
+                  {value}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </PremiumCard>

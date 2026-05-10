@@ -2,7 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { assignClientToCompany, createCompany } from "@/lib/companies";
+import {
+  assignClientToCompany,
+  removeClientFromCompany,
+} from "@/lib/company-clients";
+import { createCompany } from "@/lib/companies";
 
 export async function createCompanyAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
@@ -38,6 +42,20 @@ export async function assignClientToCompanyAction(formData: FormData) {
   }
 
   await assignClientToCompany(companyId, email);
+
+  revalidatePath("/empresas");
+  redirect("/empresas");
+}
+
+export async function removeClientFromCompanyAction(formData: FormData) {
+  const companyId = String(formData.get("companyId") ?? "").trim();
+  const userId = String(formData.get("userId") ?? "").trim();
+
+  if (!companyId || !userId) {
+    throw new Error("Empresa y usuario son requeridos.");
+  }
+
+  await removeClientFromCompany(companyId, userId);
 
   revalidatePath("/empresas");
   redirect("/empresas");

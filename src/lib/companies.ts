@@ -121,17 +121,3 @@ export async function updateCompanyStatus(companyId: string, status: string) {
 
   return data as Company;
 }
-
-export async function assignClientToCompany(companyId: string, email: string) {
-  const supabase = await getAuthenticatedSupabase();
-  const { data, error } = await supabase.rpc("assign_client_to_company", {
-    target_company_id: companyId,
-    client_email: email,
-  });
-
-  if (error || !data) {
-    throw new Error(error?.message ?? "No se pudo asignar el cliente.");
-  }
-
-  return data;
-}

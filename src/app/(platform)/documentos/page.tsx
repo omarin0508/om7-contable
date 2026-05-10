@@ -3,8 +3,13 @@ import {
   createInvoiceFromXmlAction,
   createPurchaseFromXmlAction,
   processDocumentAction,
+  processDocumentWithVisionAction,
   uploadDocumentAction,
 } from "@/app/(platform)/documentos/actions";
+import {
+  ExtractionSummary,
+  getExtractionReference,
+} from "@/components/documents/extraction-summary";
 import {
   MetricCard,
   ModuleFrame,
@@ -23,22 +28,23 @@ const statusLabels: Record<string, string> = {
   error: "Error",
 };
 
-type DisplayExtractionData = {
-  document_kind?: string;
-  clave?: string;
-  numero_consecutivo?: string;
-  fecha_emision?: string;
-  emisor_nombre?: string;
-  emisor_cedula?: string;
-  receptor_nombre?: string;
-  receptor_cedula?: string;
-  moneda?: string;
-  subtotal?: number;
-  impuesto?: number;
-  tax?: number;
-  total?: number;
-  line_items?: Array<Record<string, unknown>>;
-};
+function isXmlDocument(document: { mime_type: string | null; original_filename: string | null }) {
+  return (
+    document.mime_type?.includes("xml") ||
+    document.original_filename?.toLowerCase().endsWith(".xml") ||
+    false
+  );
+}
+
+function isAiProcessableDocument(document: {
+  mime_type: string | null;
+  original_filename: string | null;
+}) {
+  const mimeType = document.mime_type ?? "";
+  const filename = document.original_filename?.toLowerCase() ?? "";
+
+  return !isXmlDocument(document) && (mimeType === "application/pdf" || mimeType.startsWith("image/") || filename.endsWith(".pdf"));
+}
 
 function formatBytes(value: number | null) {
   const bytes = Number(value ?? 0);
@@ -89,8 +95,7 @@ export default async function DocumentsPage() {
   ).length;
   const xmlReferenceCounts = extractions.reduce<Record<string, number>>(
     (acc, extraction) => {
-      const data = extraction.extracted_data as DisplayExtractionData | null;
-      const reference = data?.clave || data?.numero_consecutivo;
+      const reference = getExtractionReference(extraction.extracted_data);
 
       if (reference) {
         acc[reference] = (acc[reference] ?? 0) + 1;
@@ -105,7 +110,7 @@ export default async function DocumentsPage() {
     <ModuleFrame>
       <ModuleHeader
         title="Documentos"
-        description="Repositorio privado para PDFs e imagenes asociados a facturas, compras y el futuro flujo OCR de OM7."
+        description="Centro documental para cargar XML, PDFs e imágenes. Los XML se procesan automáticamente y pueden convertirse en compras o facturas."
       />
 
       {!activeCompany ? (
@@ -167,7 +172,7 @@ export default async function DocumentsPage() {
 
             <label className="flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-cyan-200/20 bg-cyan-200/[0.04] px-5 py-8 text-center transition hover:border-cyan-200/35 hover:bg-cyan-200/[0.07]">
               <span className="text-sm font-medium text-cyan-100">
-                Arrastra o selecciona un PDF o imagen
+                Arrastra o selecciona XML, PDF o imagen
               </span>
               <span className="mt-2 max-w-xs text-xs leading-5 text-slate-500">
                 Bucket privado con URLs firmadas temporales. OCR e IA se
@@ -259,23 +264,12 @@ export default async function DocumentsPage() {
                 {documents.length > 0 ? (
                   documents.map((document) => {
                     const extraction = extractionByDocumentId.get(document.id);
-                    const defaultRawText = [
-                      `Archivo: ${document.original_filename ?? "documento"}`,
-                      `Tipo: ${document.document_type}`,
-                      "Proveedor: ",
-                      "Numero: ",
-                      "Total: 0",
-                    ].join("\n");
-                    const defaultExtractedData = JSON.stringify({
-                      supplier_name: "",
-                      document_number: "",
-                      date: "",
-                      currency: "",
-                      subtotal: 0,
-                      tax: 0,
-                      total: 0,
-                      line_items: [],
-                    });
+                    const aiProcessed =
+                      extraction?.extraction_provider === "openai-vision" &&
+                      extraction.extraction_status === "processed";
+                    const aiError =
+                      extraction?.extraction_provider === "openai-vision" &&
+                      extraction.extraction_status === "error";
 
                     return (
                       <tr key={document.id}>
@@ -293,8 +287,12 @@ export default async function DocumentsPage() {
                         </td>
                         <td className="px-5 py-4">
                           <StatusBadge>
-                            {document.processing_status === "processed" &&
-                            document.mime_type?.includes("xml")
+                            {aiProcessed
+                              ? "IA procesado"
+                              : aiError
+                                ? "Error IA"
+                                : document.processing_status === "processed" &&
+                            isXmlDocument(document)
                               ? "XML procesado"
                               : statusLabels[document.processing_status] ??
                                 document.processing_status}
@@ -327,34 +325,30 @@ export default async function DocumentsPage() {
                           </div>
                         </td>
                         <td className="px-5 py-4">
-                          <form action={processDocumentAction}>
-                            <input
-                              name="redirectTo"
-                              type="hidden"
-                              value="/documentos"
-                            />
-                            <input
-                              name="documentId"
-                              type="hidden"
-                              value={document.id}
-                            />
-                            <input
-                              name="rawText"
-                              type="hidden"
-                              value={defaultRawText}
-                            />
-                            <input
-                              name="extractedData"
-                              type="hidden"
-                              value={defaultExtractedData}
-                            />
-                            <button
-                              className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
-                              type="submit"
-                            >
-                              Procesar
-                            </button>
-                          </form>
+                          {isAiProcessableDocument(document) && !aiProcessed ? (
+                            <form action={processDocumentWithVisionAction}>
+                              <input
+                                name="redirectTo"
+                                type="hidden"
+                                value="/documentos"
+                              />
+                              <input
+                                name="documentId"
+                                type="hidden"
+                                value={document.id}
+                              />
+                              <button
+                                className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
+                                type="submit"
+                              >
+                                Procesar con IA
+                              </button>
+                            </form>
+                          ) : (
+                            <span className="text-xs text-slate-600">
+                              {aiProcessed ? "Listo" : "No requiere IA"}
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -377,86 +371,89 @@ export default async function DocumentsPage() {
 
       <section className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
         <PremiumCard className="p-5">
-          <p className="text-sm font-medium text-white">
-            Extraccion manual / simulada
-          </p>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            Base operativa para probar el flujo antes de conectar OCR real e IA.
-          </p>
+          <details>
+            <summary className="cursor-pointer text-sm font-medium text-white">
+              Herramienta tecnica de extraccion manual
+            </summary>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              Uso interno para pruebas antes de conectar OCR real. El flujo
+              normal para usuarios es subir XML y revisar los datos detectados.
+            </p>
 
-          <form action={processDocumentAction} className="mt-5 space-y-4">
-            <input name="redirectTo" type="hidden" value="/documentos" />
+            <form action={processDocumentAction} className="mt-5 space-y-4">
+              <input name="redirectTo" type="hidden" value="/documentos" />
 
-            <label className="block">
-              <span className="text-sm font-medium text-slate-300">
-                Documento
-              </span>
-              <select
-                className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                disabled={!activeCompany || documents.length === 0}
-                name="documentId"
-                required
-              >
-                <option className="bg-slate-950" value="">
-                  Seleccionar documento
-                </option>
-                {documents.map((document) => (
-                  <option
-                    className="bg-slate-950"
-                    key={document.id}
-                    value={document.id}
-                  >
-                    {document.original_filename ?? document.id}
+              <label className="block">
+                <span className="text-sm font-medium text-slate-300">
+                  Documento
+                </span>
+                <select
+                  className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+                  disabled={!activeCompany || documents.length === 0}
+                  name="documentId"
+                  required
+                >
+                  <option className="bg-slate-950" value="">
+                    Seleccionar documento
                   </option>
-                ))}
-              </select>
-            </label>
+                  {documents.map((document) => (
+                    <option
+                      className="bg-slate-950"
+                      key={document.id}
+                      value={document.id}
+                    >
+                      {document.original_filename ?? document.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            <label className="block">
-              <span className="text-sm font-medium text-slate-300">
-                Texto extraido
-              </span>
-              <textarea
-                className="mt-2 min-h-32 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+              <label className="block">
+                <span className="text-sm font-medium text-slate-300">
+                  Texto extraido
+                </span>
+                <textarea
+                  className="mt-2 min-h-32 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+                  disabled={!activeCompany || documents.length === 0}
+                  name="rawText"
+                  placeholder="Pega aqui texto OCR manual o una simulacion..."
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-medium text-slate-300">
+                  Datos tecnicos estructurados
+                </span>
+                <textarea
+                  className="mt-2 min-h-40 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 py-3 font-mono text-xs text-cyan-50 outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+                  defaultValue={JSON.stringify(
+                    {
+                      supplier_name: "",
+                      document_number: "",
+                      date: "",
+                      currency: "",
+                      subtotal: 0,
+                      tax: 0,
+                      total: 0,
+                      line_items: [],
+                    },
+                    null,
+                    2,
+                  )}
+                  disabled={!activeCompany || documents.length === 0}
+                  name="extractedData"
+                />
+              </label>
+
+              <button
+                className="flex h-12 w-full items-center justify-center rounded-xl bg-cyan-100 px-4 text-sm font-semibold text-slate-950 transition hover:bg-white disabled:opacity-50"
                 disabled={!activeCompany || documents.length === 0}
-                name="rawText"
-                placeholder="Pega aqui texto OCR manual o una simulacion..."
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-medium text-slate-300">
-                Datos extraidos JSON
-              </span>
-              <textarea
-                className="mt-2 min-h-40 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 py-3 font-mono text-xs text-cyan-50 outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                defaultValue={JSON.stringify(
-                  {
-                    supplier_name: "",
-                    document_number: "",
-                    date: "",
-                    currency: "",
-                    subtotal: 0,
-                    tax: 0,
-                    total: 0,
-                    line_items: [],
-                  },
-                  null,
-                  2,
-                )}
-                disabled={!activeCompany || documents.length === 0}
-                name="extractedData"
-              />
-            </label>
-
-            <button
-              className="flex h-12 w-full items-center justify-center rounded-xl bg-cyan-100 px-4 text-sm font-semibold text-slate-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!activeCompany || documents.length === 0}
-              type="submit"
-            >
-              Guardar extraccion
-            </button>
-          </form>
+                type="submit"
+              >
+                Guardar extraccion
+              </button>
+            </form>
+          </details>
         </PremiumCard>
 
         <PremiumCard className="overflow-hidden">
@@ -472,168 +469,91 @@ export default async function DocumentsPage() {
             {extractions.length > 0 ? (
               extractions.map((extraction) => (
                 <article
-                  className="grid gap-4 px-5 py-4 lg:grid-cols-[0.8fr_1.2fr]"
+                  className="px-5 py-4"
                   id={`extraccion-${extraction.id}`}
                   key={extraction.id}
                 >
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusBadge>
-                        {statusLabels[extraction.extraction_status] ??
-                          extraction.extraction_status}
-                      </StatusBadge>
-                      <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-slate-400">
-                        {extraction.extraction_provider}
-                      </span>
-                    </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge>
+                      {statusLabels[extraction.extraction_status] ??
+                        extraction.extraction_status}
+                    </StatusBadge>
+                    <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-slate-400">
+                      {extraction.extraction_provider}
+                    </span>
+                    <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-slate-400">
+                      Confianza {extraction.confidence ?? 0}%
+                    </span>
+                    <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-slate-400">
+                      Procesado: {formatDate(extraction.processed_at)}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-4">
+                    <ExtractionSummary extractedData={extraction.extracted_data} />
+
                     {(() => {
-                      const data =
-                        extraction.extracted_data as DisplayExtractionData | null;
-                      const reference = data?.clave || data?.numero_consecutivo;
+                      const reference = getExtractionReference(
+                        extraction.extracted_data,
+                      );
                       const duplicateWarning =
                         reference && xmlReferenceCounts[reference] > 1;
 
-                      return data?.clave || data?.numero_consecutivo ? (
-                        <div className="mt-4 rounded-xl border border-white/[0.08] bg-white/[0.035] p-4">
-                          <div className="grid gap-3 text-xs text-slate-400 sm:grid-cols-2">
-                            <p>
-                              <span className="block text-slate-500">Emisor</span>
-                              <span className="text-slate-200">
-                                {data.emisor_nombre || "No disponible"}
-                              </span>
-                            </p>
-                            <p>
-                              <span className="block text-slate-500">Receptor</span>
-                              <span className="text-slate-200">
-                                {data.receptor_nombre || "No disponible"}
-                              </span>
-                            </p>
-                            <p>
-                              <span className="block text-slate-500">
-                                Consecutivo
-                              </span>
-                              <span className="text-slate-200">
-                                {data.numero_consecutivo || "No disponible"}
-                              </span>
-                            </p>
-                            <p>
-                              <span className="block text-slate-500">Fecha</span>
-                              <span className="text-slate-200">
-                                {data.fecha_emision || "No disponible"}
-                              </span>
-                            </p>
-                            <p className="sm:col-span-2">
-                              <span className="block text-slate-500">Clave</span>
-                              <span className="break-all text-slate-200">
-                                {data.clave || "No disponible"}
-                              </span>
-                            </p>
-                            <p>
-                              <span className="block text-slate-500">Moneda</span>
-                              <span className="text-slate-200">
-                                {data.moneda || "CRC"}
-                              </span>
-                            </p>
-                            <p>
-                              <span className="block text-slate-500">Total</span>
-                              <span className="text-slate-200">
-                                {data.total ?? 0}
-                              </span>
-                            </p>
-                          </div>
-
-                          {duplicateWarning ? (
-                            <p className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">
-                              Posible duplicado: ya existe otra extraccion con
-                              la misma clave o consecutivo.
-                            </p>
-                          ) : null}
-
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            <form action={createPurchaseFromXmlAction}>
-                              <input
-                                name="extractionId"
-                                type="hidden"
-                                value={extraction.id}
-                              />
-                              <button
-                                className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-medium text-emerald-100 transition hover:bg-emerald-300/15"
-                                type="submit"
-                              >
-                                Crear compra desde XML
-                              </button>
-                            </form>
-                            <form action={createInvoiceFromXmlAction}>
-                              <input
-                                name="extractionId"
-                                type="hidden"
-                                value={extraction.id}
-                              />
-                              <button
-                                className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
-                                type="submit"
-                              >
-                                Crear factura desde XML
-                              </button>
-                            </form>
-                          </div>
-
-                          {data.line_items && data.line_items.length > 0 ? (
-                            <div className="mt-4 max-h-40 overflow-auto rounded-lg border border-white/[0.08]">
-                              <table className="w-full min-w-[520px] text-left text-xs">
-                                <thead className="text-slate-500">
-                                  <tr>
-                                    <th className="px-3 py-2 font-medium">
-                                      Detalle
-                                    </th>
-                                    <th className="px-3 py-2 font-medium">
-                                      Cant.
-                                    </th>
-                                    <th className="px-3 py-2 font-medium">
-                                      Total
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/[0.06]">
-                                  {data.line_items.map((line, index) => (
-                                    <tr key={`${extraction.id}-${index}`}>
-                                      <td className="px-3 py-2 text-slate-300">
-                                        {String(line.detalle ?? "")}
-                                      </td>
-                                      <td className="px-3 py-2 text-slate-400">
-                                        {String(line.cantidad ?? "")}
-                                      </td>
-                                      <td className="px-3 py-2 text-slate-300">
-                                        {String(line.total_linea ?? "")}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : null}
-                        </div>
+                      return duplicateWarning ? (
+                        <p className="rounded-xl border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs text-amber-100">
+                          Posible duplicado: ya existe otra extraccion con la
+                          misma clave o consecutivo.
+                        </p>
                       ) : null;
                     })()}
-                    <p className="mt-3 text-sm font-medium text-white">
-                      Confianza {extraction.confidence ?? 0}%
-                    </p>
-                    <p className="mt-2 text-xs leading-5 text-slate-500">
-                      Procesado: {formatDate(extraction.processed_at)}
-                    </p>
+
+                    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
+                      <p className="text-sm font-medium text-white">Acciones</p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <form action={createPurchaseFromXmlAction}>
+                          <input
+                            name="extractionId"
+                            type="hidden"
+                            value={extraction.id}
+                          />
+                          <button
+                            className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-medium text-emerald-100 transition hover:bg-emerald-300/15"
+                            type="submit"
+                          >
+                            Crear compra
+                          </button>
+                        </form>
+                        <form action={createInvoiceFromXmlAction}>
+                          <input
+                            name="extractionId"
+                            type="hidden"
+                            value={extraction.id}
+                          />
+                          <button
+                            className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
+                            type="submit"
+                          >
+                            Crear factura
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+
                     {extraction.error_message ? (
-                      <p className="mt-3 text-xs leading-5 text-rose-200">
+                      <p className="rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs leading-5 text-rose-100">
                         {extraction.error_message}
                       </p>
                     ) : null}
-                    <pre className="mt-4 max-h-40 overflow-auto rounded-xl border border-white/[0.08] bg-black/20 p-3 text-xs leading-5 text-slate-300">
-                      {extraction.raw_text || "Sin texto extraido."}
-                    </pre>
-                  </div>
 
-                  <pre className="max-h-80 overflow-auto rounded-xl border border-cyan-300/10 bg-cyan-300/[0.035] p-4 text-xs leading-5 text-cyan-50">
-                    {JSON.stringify(extraction.extracted_data ?? {}, null, 2)}
-                  </pre>
+                    <details className="rounded-2xl border border-white/[0.08] bg-black/15 p-4">
+                      <summary className="cursor-pointer text-sm font-medium text-slate-200">
+                        Ver texto extraido
+                      </summary>
+                      <pre className="mt-4 max-h-40 overflow-auto rounded-xl border border-white/[0.08] bg-black/25 p-3 text-xs leading-5 text-slate-300">
+                        {extraction.raw_text || "Sin texto extraido."}
+                      </pre>
+                    </details>
+                  </div>
                 </article>
               ))
             ) : (

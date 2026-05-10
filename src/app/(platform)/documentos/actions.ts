@@ -6,6 +6,7 @@ import {
   createManualExtraction,
   getDefaultExtractedData,
   getDocumentExtractionById,
+  processDocumentWithVision,
 } from "@/lib/document-processing";
 import { createInvoiceForActiveCompany } from "@/lib/invoices";
 import { createPurchase } from "@/lib/purchases";
@@ -73,6 +74,21 @@ export async function processDocumentAction(formData: FormData) {
   );
 
   revalidatePath("/documentos");
+  redirect(redirectTo);
+}
+
+export async function processDocumentWithVisionAction(formData: FormData) {
+  const documentId = String(formData.get("documentId") ?? "").trim();
+  const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+
+  if (!documentId) {
+    throw new Error("Documento requerido.");
+  }
+
+  await processDocumentWithVision(documentId);
+
+  revalidatePath("/documentos");
+  revalidatePath("/bandeja");
   redirect(redirectTo);
 }
 

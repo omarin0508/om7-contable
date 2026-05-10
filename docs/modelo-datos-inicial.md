@@ -103,6 +103,91 @@ Los clientes pueden acceder solo a `/cliente`, subir documentos con `related_typ
 
 La asignacion inicial se hace desde `/empresas` con el email de un usuario ya registrado. La funcion SQL `assign_client_to_company()` valida que quien asigna sea miembro interno de la organizacion de la empresa y luego crea o actualiza el registro en `company_users`.
 
+## Implementacion 012 - Acceso cliente por empresa
+
+La administracion de clientes queda integrada dentro de `/empresas` mediante el bloque "Acceso Portal Cliente" por cada empresa. El flujo operativo es:
+
+1. Admin entra a Empresas.
+2. Revisa o crea la empresa.
+3. Asigna usuarios cliente registrados por email.
+4. El cliente entra a `/cliente` y sube XML, PDF o imagenes.
+5. El equipo interno revisa en `/bandeja`.
+6. Un XML procesado puede convertirse en compra o factura.
+
+Se agrego `src/lib/company-clients.ts` para listar clientes asignados, asignar acceso, quitar acceso y obtener empresas disponibles para un usuario cliente. La UI muestra email, rol, estado, fecha de asignacion y acciones de acceso por empresa.
+
+Roles iniciales relevantes:
+
+- `org_owner`, `admin`, `accountant`, `assistant`: usuarios internos con acceso a administracion y bandeja.
+- `client`: usuario externo limitado al portal cliente y sus empresas asignadas.
+
+Pendiente futuro: invitacion por correo con token seguro, expiracion, aceptacion guiada y auditoria del ciclo de invitacion.
+
+## Implementacion 013 - Acceso cliente compartible
+
+El bloque "Acceso Portal Cliente" en `/empresas` ahora permite copiar el enlace directo a `/cliente` y un mensaje listo para enviar manualmente por WhatsApp o email. Esto mantiene el flujo simple mientras no exista automatizacion real de invitaciones.
+
+Flujo manual actual:
+
+1. El administrador asigna un usuario cliente registrado a una empresa.
+2. Copia el enlace o mensaje desde la empresa.
+3. Comparte el acceso por WhatsApp, email u otro canal externo.
+4. El cliente ingresa a `/cliente` con su correo registrado y sube XML, PDFs o imagenes.
+5. El equipo interno revisa documentos en `/bandeja`.
+
+Pendiente futuro: envio automatico de invitaciones por email, plantillas por organizacion, tokens de acceso, expiracion de invitaciones y seguimiento de entrega/apertura.
+
+## Implementacion 014 - Experiencia cliente cerrada
+
+El flujo de usuario cliente queda preparado para produccion inicial. Los usuarios con `company_users.role = client` y sin membresia interna activa viven dentro de `/cliente`: si intentan entrar a `/dashboard`, `/empresas`, `/facturas`, `/compras`, `/documentos`, `/bandeja`, `/reportes` o `/configuracion`, el proxy los redirige automaticamente al Portal Cliente.
+
+Permisos actuales:
+
+- `owner`, `platform_owner`, `org_owner`, `admin`, `accountant`, `assistant`: usuarios internos con acceso a administracion, empresas, bandeja, documentos y dashboard.
+- `client`: usuario externo limitado al Portal Cliente y a empresas asignadas en `company_users`.
+
+Experiencia cliente:
+
+1. El administrador crea o revisa una empresa.
+2. Asigna un usuario cliente registrado desde `/empresas`.
+3. Comparte el enlace o mensaje del Portal Cliente.
+4. El cliente entra a `/cliente`.
+5. Si tiene una empresa asignada, se usa automaticamente; si tiene varias, puede elegir.
+6. Sube XML, PDFs o imagenes.
+7. El equipo interno revisa en `/bandeja` y convierte XML en compras o facturas.
+
+El dashboard interno ahora muestra indicadores del flujo cliente: clientes activos, documentos recibidos hoy, pendientes de revision y accesos al portal.
+
+## Implementacion 015 - OCR IA con OpenAI Vision v1
+
+Se agrego una primera integracion de procesamiento IA para documentos no XML. El XML de Costa Rica mantiene el flujo deterministico con `xml-parser-cr`; PDFs e imagenes pueden procesarse manualmente desde `/documentos` o `/bandeja` mediante el boton "Procesar con IA".
+
+Flujo OpenAI Vision:
+
+1. El documento se sube a Supabase Storage privado.
+2. La app genera una signed URL temporal.
+3. Si es imagen, se envia la URL firmada a OpenAI Vision.
+4. Si es PDF, la app lee temporalmente el archivo firmado y lo envia como `input_file` base64.
+5. La respuesta se normaliza a `document_extractions.extracted_data`.
+6. La extraccion se guarda con `extraction_provider = openai-vision`.
+7. La UI muestra los datos en la misma vista amigable usada para XML.
+
+Diferencia entre XML y OCR IA:
+
+- XML: fuente estructurada y exacta, procesada localmente sin IA.
+- PDF/imagen: fuente visual o escaneada, procesada por OpenAI Vision para extraer proveedor, fecha, numero de documento, moneda, subtotal, impuesto, total y lineas.
+
+Variables necesarias:
+
+- `OPENAI_API_KEY`: clave server-side para llamar OpenAI.
+- `OPENAI_VISION_MODEL`: opcional. Si no se define, la app usa `gpt-4.1-mini`.
+
+Control inicial de costos:
+
+- La IA se ejecuta solo por accion manual del usuario.
+- Si ya existe una extraccion `openai-vision` procesada para el documento, no se reprocesa automaticamente.
+- Storage sigue privado y el acceso a documentos mantiene RLS y aislamiento por empresa/organizacion.
+
 ## Principios generales
 
 - Todas las tablas operativas deben tener ownership claro.

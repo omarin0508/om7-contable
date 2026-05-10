@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import {
   assignClientToCompanyAction,
   createCompanyAction,
+  removeClientFromCompanyAction,
 } from "@/app/(platform)/empresas/actions";
 import { setActiveCompanyAction } from "@/app/(platform)/empresas/context-actions";
 import {
@@ -10,8 +11,10 @@ import {
   ModuleHeader,
   StatusBadge,
 } from "@/components/modules/shared";
+import { ClientPortalShareActions } from "@/components/modules/client-portal-share-actions";
 import { PremiumCard } from "@/components/ui/premium-card";
 import { getActiveContext } from "@/lib/active-context";
+import { listCompanyClients } from "@/lib/company-clients";
 import { getCompaniesForActiveOrganization } from "@/lib/companies";
 
 const statusLabels: Record<string, string> = {
@@ -20,11 +23,29 @@ const statusLabels: Record<string, string> = {
   inactive: "Inactivo",
 };
 
+const clientStatusLabels: Record<string, string> = {
+  active: "Activo",
+  inactive: "Sin acceso",
+  invited: "Invitado",
+};
+
 function countByStatus(
   companies: Awaited<ReturnType<typeof getCompaniesForActiveOrganization>>["companies"],
   status: string,
 ) {
   return companies.filter((company) => company.status === status).length;
+}
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "Pendiente";
+  }
+
+  return new Intl.DateTimeFormat("es-CR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
 }
 
 export default async function CompaniesPage() {
@@ -37,6 +58,13 @@ export default async function CompaniesPage() {
   }
 
   const activeCompanyId = activeContext.activeCompany?.id ?? null;
+  const companyClientsEntries = await Promise.all(
+    companies.map(async (company) => [
+      company.id,
+      await listCompanyClients(company.id),
+    ] as const),
+  );
+  const companyClients = new Map(companyClientsEntries);
 
   const metrics = [
     {
@@ -272,57 +300,118 @@ export default async function CompaniesPage() {
             </button>
             </form>
           </PremiumCard>
-          <PremiumCard className="p-5">
-            <p className="text-sm font-medium text-white">Asignar cliente</p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              Asocia un usuario registrado al portal cliente de una empresa.
-            </p>
-
-            <form action={assignClientToCompanyAction} className="mt-5 space-y-4">
-              <label className="block">
-                <span className="text-sm font-medium text-slate-300">
-                  Empresa
-                </span>
-                <select
-                  className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
-                  name="companyId"
-                  required
-                >
-                  {companies.map((company) => (
-                    <option
-                      className="bg-slate-950"
-                      key={company.id}
-                      value={company.id}
-                    >
-                      {company.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-medium text-slate-300">
-                  Email del cliente
-                </span>
-                <input
-                  className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
-                  name="email"
-                  placeholder="cliente@empresa.com"
-                  required
-                  type="email"
-                />
-              </label>
-
-              <button
-                className="flex h-12 w-full items-center justify-center rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
-                type="submit"
-              >
-                Asignar al portal
-              </button>
-            </form>
-          </PremiumCard>
           </div>
         </div>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-2">
+        {companies.map((company) => {
+          const clients = companyClients.get(company.id) ?? [];
+
+          return (
+            <PremiumCard key={company.id} className="p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-white">
+                    {company.name}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Acceso Portal Cliente
+                  </p>
+                </div>
+                <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-xs font-medium text-cyan-100">
+                  {clients.filter((client) => client.status === "active").length}{" "}
+                  activos
+                </span>
+                {clients.some((client) => client.status === "active") ? (
+                  <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs font-medium text-emerald-100">
+                    Portal habilitado
+                  </span>
+                ) : null}
+              </div>
+
+              <p className="mt-4 text-sm leading-6 text-slate-400">
+                Los usuarios asignados aqui podran entrar al Portal Cliente y
+                subir XML, PDFs o imagenes para esta empresa.
+              </p>
+              <ClientPortalShareActions />
+
+              <div className="mt-5 space-y-3">
+                {clients.length > 0 ? (
+                  clients.map((client) => (
+                    <div
+                      className="rounded-2xl border border-white/[0.08] bg-black/15 p-4"
+                      key={`${client.company_id}-${client.user_id}`}
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-white">
+                            {client.email ?? "Email no disponible"}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Rol {client.role} · asignado{" "}
+                            {formatDate(client.invited_at)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <StatusBadge>
+                            {clientStatusLabels[client.status] ?? client.status}
+                          </StatusBadge>
+                          {client.status === "active" ? (
+                            <form action={removeClientFromCompanyAction}>
+                              <input
+                                name="companyId"
+                                type="hidden"
+                                value={company.id}
+                              />
+                              <input
+                                name="userId"
+                                type="hidden"
+                                value={client.user_id}
+                              />
+                              <button
+                                className="rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs font-medium text-rose-100 transition hover:bg-rose-300/15"
+                                type="submit"
+                              >
+                                Quitar acceso
+                              </button>
+                            </form>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-white/[0.1] bg-white/[0.025] p-4 text-sm text-slate-500">
+                    Todavia no hay clientes asignados a esta empresa.
+                  </div>
+                )}
+              </div>
+
+              <form action={assignClientToCompanyAction} className="mt-5 space-y-3">
+                <input name="companyId" type="hidden" value={company.id} />
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-300">
+                    Email del cliente registrado
+                  </span>
+                  <input
+                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
+                    name="email"
+                    placeholder="cliente@empresa.com"
+                    required
+                    type="email"
+                  />
+                </label>
+                <button
+                  className="flex h-11 w-full items-center justify-center rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
+                  type="submit"
+                >
+                  Dar acceso
+                </button>
+              </form>
+            </PremiumCard>
+          );
+        })}
       </section>
     </ModuleFrame>
   );

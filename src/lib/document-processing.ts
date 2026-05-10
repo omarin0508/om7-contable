@@ -1,4 +1,5 @@
 import { getActiveContext } from "@/lib/active-context";
+import { extractDocumentDataWithVision } from "@/lib/openai-document-vision";
 import { createClient } from "@/lib/supabase/server";
 
 export type ExtractedDocumentData = {
@@ -73,6 +74,16 @@ function defaultExtractedData(): ExtractedDocumentData {
   };
 }
 
+type ProcessableDocument = {
+  id: string;
+  organization_id: string;
+  company_id: string;
+  storage_path: string;
+  mime_type: string | null;
+  original_filename: string | null;
+  processing_status: string;
+};
+
 async function getDocumentInActiveContext(documentId: string) {
   const { supabase } = await getAuthenticatedSupabase();
   const activeContext = await getActiveContext();
@@ -94,6 +105,31 @@ async function getDocumentInActiveContext(documentId: string) {
   }
 
   return document;
+}
+
+async function getProcessableDocumentInActiveContext(documentId: string) {
+  const { supabase } = await getAuthenticatedSupabase();
+  const activeContext = await getActiveContext();
+
+  if (!activeContext.organization || !activeContext.activeCompany) {
+    throw new Error("Selecciona una empresa activa antes de procesar documentos.");
+  }
+
+  const { data: document, error } = await supabase
+    .from("documents")
+    .select(
+      "id, organization_id, company_id, storage_path, mime_type, original_filename, processing_status",
+    )
+    .eq("id", documentId)
+    .eq("organization_id", activeContext.organization.id)
+    .eq("company_id", activeContext.activeCompany.id)
+    .single();
+
+  if (error || !document) {
+    throw new Error(error?.message ?? "Documento no encontrado.");
+  }
+
+  return document as ProcessableDocument;
 }
 
 async function getAccessibleDocument(documentId: string) {
@@ -249,6 +285,104 @@ export async function createDocumentExtraction(
   }
 
   return data as DocumentExtraction;
+}
+
+function isAiProcessableDocument(document: ProcessableDocument) {
+  const mimeType = document.mime_type ?? "";
+  const filename = document.original_filename?.toLowerCase() ?? "";
+
+  if (mimeType.includes("xml") || filename.endsWith(".xml")) {
+    return false;
+  }
+
+  return mimeType === "application/pdf" || mimeType.startsWith("image/");
+}
+
+export async function processDocumentWithVision(documentId: string) {
+  const { supabase } = await getAuthenticatedSupabase();
+  const document = await getProcessableDocumentInActiveContext(documentId);
+
+  if (!isAiProcessableDocument(document)) {
+    await createDocumentExtraction(document.id, {
+      provider: "openai-vision",
+      status: "error",
+      rawText: "",
+      extractedData: defaultExtractedData(),
+      confidence: 0,
+      errorMessage: "Solo PDFs e imagenes pueden procesarse con IA.",
+    });
+    return;
+  }
+
+  const { data: existingProcessed, error: existingError } = await supabase
+    .from("document_extractions")
+    .select("id")
+    .eq("document_id", document.id)
+    .eq("extraction_provider", "openai-vision")
+    .eq("extraction_status", "processed")
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+
+  if (existingProcessed) {
+    throw new Error("Este documento ya fue procesado con IA.");
+  }
+
+  const { error: processingError } = await supabase
+    .from("documents")
+    .update({ processing_status: "processing" })
+    .eq("id", document.id)
+    .eq("organization_id", document.organization_id)
+    .eq("company_id", document.company_id);
+
+  if (processingError) {
+    throw new Error(processingError.message);
+  }
+
+  const { data: signed, error: signedError } = await supabase.storage
+    .from("om7-documents")
+    .createSignedUrl(document.storage_path, 60 * 10);
+
+  if (signedError || !signed?.signedUrl) {
+    await createDocumentExtraction(document.id, {
+      provider: "openai-vision",
+      status: "error",
+      rawText: "",
+      extractedData: defaultExtractedData(),
+      confidence: 0,
+      errorMessage: signedError?.message ?? "No se pudo firmar el documento.",
+    });
+    return;
+  }
+
+  try {
+    const result = await extractDocumentDataWithVision({
+      signedUrl: signed.signedUrl,
+      filename: document.original_filename ?? "documento",
+      mimeType: document.mime_type ?? "application/octet-stream",
+    });
+
+    await createDocumentExtraction(document.id, {
+      provider: "openai-vision",
+      status: "processed",
+      rawText: result.rawText,
+      extractedData: result.extractedData,
+      confidence: result.confidence,
+    });
+  } catch (error) {
+    await createDocumentExtraction(document.id, {
+      provider: "openai-vision",
+      status: "error",
+      rawText: "",
+      extractedData: defaultExtractedData(),
+      confidence: 0,
+      errorMessage:
+        error instanceof Error ? error.message : "No se pudo procesar con IA.",
+    });
+  }
 }
 
 export async function updateExtractionStatus(documentId: string, status: string) {

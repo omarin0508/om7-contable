@@ -41,6 +41,7 @@ export async function getCurrentUserRole(): Promise<CurrentUserRole> {
   }
 
   const internalRoles = new Set([
+    "owner",
     "platform_owner",
     "org_owner",
     "admin",

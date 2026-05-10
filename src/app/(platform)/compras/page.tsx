@@ -54,7 +54,7 @@ export default async function PurchasesPage() {
     <ModuleFrame>
       <ModuleHeader
         title="Compras y Gastos"
-        description="Registro manual v1 de compras y gastos asociados a la empresa activa. Preparado para conciliacion, reportes e IA en fases posteriores."
+        description="Administre compras y gastos registrados, creados manualmente o generados desde documentos XML procesados."
         action={
           <a
             className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-2.5 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/15"
