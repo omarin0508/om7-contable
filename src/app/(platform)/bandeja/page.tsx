@@ -294,6 +294,7 @@ export default async function ReviewInboxPage({
 }: BandejaPageProps) {
   const params = (await searchParams) ?? {};
   const activeFilter = getParam(params, "filter") ?? "all";
+  const actionError = getParam(params, "error") ?? null;
   const { activeContext, documents } = await listClientUploadReviewDocuments();
   const activeCompany = activeContext.activeCompany;
   const visibleDocuments = documents.filter((document) =>
@@ -330,6 +331,17 @@ export default async function ReviewInboxPage({
         description="La cola diaria para revisar documentos de clientes y convertirlos en registros contables."
         action={<BackLink />}
       />
+
+      {actionError ? (
+        <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
+          <p className="text-sm font-semibold text-amber-100">
+            No se pudo completar la accion
+          </p>
+          <p className="mt-2 text-sm leading-6 text-amber-100/75">
+            {actionError}
+          </p>
+        </PremiumCard>
+      ) : null}
 
       {!activeCompany ? (
         <PremiumCard className="border-amber-300/15 bg-amber-300/10 p-5">

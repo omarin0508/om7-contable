@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   acceptCounterpartyMatchAction,
   createCounterpartyFromMatchAction,
@@ -47,6 +48,13 @@ export function CounterpartyDetectionCard({
   match,
   redirectTo,
 }: CounterpartyDetectionCardProps) {
+  const isAssociated = Boolean(
+    match?.counterparty_id &&
+      (match.status === "accepted" ||
+        match.status === "created" ||
+        match.status === "edited"),
+  );
+
   return (
     <section
       className="rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.12),transparent_30%),rgba(255,255,255,0.035)] p-5"
@@ -132,7 +140,17 @@ export function CounterpartyDetectionCard({
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            {match.counterparty_id ? (
+            {isAssociated ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-sm text-emerald-50">
+                <span>Contraparte asociada correctamente.</span>
+                <Link
+                  className="font-semibold text-emerald-100 underline-offset-4 hover:underline"
+                  href={`/contrapartes/${match.counterparty_id}`}
+                >
+                  Ver contraparte
+                </Link>
+              </div>
+            ) : match.counterparty_id ? (
               <form action={acceptCounterpartyMatchAction}>
                 <input name="matchId" type="hidden" value={match.id} />
                 <input name="redirectTo" type="hidden" value={redirectTo} />
@@ -141,13 +159,15 @@ export function CounterpartyDetectionCard({
                 </button>
               </form>
             ) : null}
-            <form action={createCounterpartyFromMatchAction}>
-              <input name="matchId" type="hidden" value={match.id} />
-              <input name="redirectTo" type="hidden" value={redirectTo} />
-              <button className="om7-btn-secondary px-4 py-2.5" type="submit">
-                Crear nuevo {match.counterparty_type === "customer" ? "cliente" : "proveedor"}
-              </button>
-            </form>
+            {!isAssociated ? (
+              <form action={createCounterpartyFromMatchAction}>
+                <input name="matchId" type="hidden" value={match.id} />
+                <input name="redirectTo" type="hidden" value={redirectTo} />
+                <button className="om7-btn-secondary px-4 py-2.5" type="submit">
+                  Crear nuevo {match.counterparty_type === "customer" ? "cliente" : "proveedor"}
+                </button>
+              </form>
+            ) : null}
           </div>
 
           <details className="mt-4 rounded-2xl border border-white/[0.08] bg-black/15 p-4">

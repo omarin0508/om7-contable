@@ -40,7 +40,17 @@ function getEntryStatusLabel(status: string | null | undefined) {
   return "Sugerido";
 }
 
-export default async function AccountingPage() {
+type AccountingPageProps = {
+  searchParams?: Promise<{
+    error?: string;
+  }>;
+};
+
+export default async function AccountingPage({
+  searchParams,
+}: AccountingPageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const actionError = resolvedSearchParams.error ?? null;
   const [
     entriesResult,
     accountsResult,
@@ -104,6 +114,17 @@ export default async function AccountingPage() {
           </div>
         }
       />
+
+      {actionError ? (
+        <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
+          <p className="text-sm font-semibold text-amber-100">
+            No se pudo completar la accion
+          </p>
+          <p className="mt-2 text-sm leading-6 text-amber-100/75">
+            {actionError}
+          </p>
+        </PremiumCard>
+      ) : null}
 
       {!activeCompany ? (
         <PremiumCard className="border-amber-300/15 bg-amber-300/10 p-5">

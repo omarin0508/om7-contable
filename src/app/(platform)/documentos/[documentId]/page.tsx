@@ -31,6 +31,10 @@ type DocumentWorkspacePageProps = {
   params: Promise<{
     documentId: string;
   }>;
+  searchParams?: Promise<{
+    error?: string;
+    notice?: string;
+  }>;
 };
 
 const documentTypes = ["factura", "compra", "contrato", "estado_cuenta", "otro"];
@@ -318,8 +322,12 @@ function DocumentConvertedBanner({
 
 export default async function DocumentWorkspacePage({
   params,
+  searchParams,
 }: DocumentWorkspacePageProps) {
   const { documentId } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const actionError = resolvedSearchParams.error ?? null;
+  const actionNotice = resolvedSearchParams.notice ?? null;
   const viewer = await getDocumentViewerData(documentId).catch(() => null);
 
   if (!viewer) {
@@ -349,6 +357,28 @@ export default async function DocumentWorkspacePage({
         description="Revise el archivo, apruebe los datos y conviertalo en compra o factura."
         action={<BackLink href="/documentos" label="Volver a documentos" />}
       />
+
+      {actionError ? (
+        <PremiumCard className="border-rose-300/20 bg-rose-300/10 p-5">
+          <p className="text-base font-semibold text-rose-50">
+            No se pudo completar la accion
+          </p>
+          <p className="mt-2 text-sm leading-6 text-rose-100/80">
+            {actionError}
+          </p>
+        </PremiumCard>
+      ) : null}
+
+      {actionNotice ? (
+        <PremiumCard className="border-emerald-300/20 bg-emerald-300/10 p-5">
+          <p className="text-base font-semibold text-emerald-50">
+            Accion completada
+          </p>
+          <p className="mt-2 text-sm leading-6 text-emerald-100/80">
+            {actionNotice}
+          </p>
+        </PremiumCard>
+      ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard

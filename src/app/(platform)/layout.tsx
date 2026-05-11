@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { setActiveCompanyAction } from "@/app/(platform)/empresas/context-actions";
 import { getActiveContext } from "@/lib/active-context";
+import { getAssistantSnapshot } from "@/lib/assistant/context";
 import { getCurrentUserRole } from "@/lib/permissions";
 import { getCurrentUserEmail } from "@/lib/supabase/server";
 
@@ -24,10 +25,13 @@ export default async function PlatformLayout({
     redirect("/onboarding");
   }
 
+  const assistantSnapshot = await getAssistantSnapshot();
+
   return (
     <AppShell
       activeCompanyId={activeContext.activeCompany?.id}
       activeCompanyName={activeContext.activeCompany?.name}
+      assistantSnapshot={assistantSnapshot}
       companies={activeContext.companies}
       onSelectCompany={setActiveCompanyAction}
       organizationName={activeContext.organization.name}

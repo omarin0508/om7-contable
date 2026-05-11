@@ -350,7 +350,17 @@ function ObservedRecordCard({ record }: { record: ObservedRecord }) {
   );
 }
 
-export default async function ObservedRecordsPage() {
+type ObservedRecordsPageProps = {
+  searchParams?: Promise<{
+    error?: string;
+  }>;
+};
+
+export default async function ObservedRecordsPage({
+  searchParams,
+}: ObservedRecordsPageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const actionError = resolvedSearchParams.error ?? null;
   const [purchasesResult, invoicesResult, periodsResult] = await Promise.all([
     listPurchases(),
     getInvoicesForActiveCompany(),
@@ -390,6 +400,17 @@ export default async function ObservedRecordsPage() {
         description="Compras y facturas que necesitan correccion antes de aprobarse."
         action={<BackLink />}
       />
+
+      {actionError ? (
+        <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
+          <p className="text-sm font-semibold text-amber-100">
+            No se pudo completar la accion
+          </p>
+          <p className="mt-2 text-sm leading-6 text-amber-100/75">
+            {actionError}
+          </p>
+        </PremiumCard>
+      ) : null}
 
       {!activeCompany ? (
         <PremiumCard className="border-amber-300/15 bg-amber-300/10 p-5">

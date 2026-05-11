@@ -140,6 +140,26 @@ function parseCounterpartyType(value: FormDataEntryValue | null): CounterpartyTy
   return "supplier";
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function redirectWithError(path: string, message: string) {
+  const [basePath, hash] = path.split("#");
+  const separator = basePath.includes("?") ? "&" : "?";
+  const target = `${basePath}${separator}error=${encodeURIComponent(message)}`;
+
+  return hash ? `${target}#${hash}` : target;
+}
+
+function redirectWithNotice(path: string, message: string) {
+  const [basePath, hash] = path.split("#");
+  const separator = basePath.includes("?") ? "&" : "?";
+  const target = `${basePath}${separator}notice=${encodeURIComponent(message)}`;
+
+  return hash ? `${target}#${hash}` : target;
+}
+
 function assertReviewedExtractionStatus(status: string) {
   if (status !== "reviewed") {
     throw new Error("Revisa y aprueba los datos antes de crear una compra o factura.");
@@ -514,76 +534,124 @@ export async function updateExtractionDataAction(formData: FormData) {
 export async function classifyDocumentExtractionAction(formData: FormData) {
   const extractionId = String(formData.get("extractionId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = `${redirectTo}#clasificacion`;
 
-  if (!extractionId) {
-    throw new Error("Extraccion requerida.");
+  try {
+    if (!extractionId) {
+      throw new Error("Extraccion requerida.");
+    }
+
+    await assertInternalUser();
+    await classifyAndStoreDocumentExtraction(extractionId);
+    target = redirectWithNotice(
+      `${redirectTo}#clasificacion`,
+      "Clasificacion generada correctamente.",
+    );
+  } catch (error) {
+    target = redirectWithError(
+      `${redirectTo}#clasificacion`,
+      getErrorMessage(error, "No se pudo generar la clasificacion."),
+    );
   }
-
-  await assertInternalUser();
-  await classifyAndStoreDocumentExtraction(extractionId);
 
   revalidatePath("/documentos");
   revalidatePath("/bandeja");
-  redirect(`${redirectTo}#clasificacion`);
+  redirect(target);
 }
 
 export async function acceptDocumentClassificationAction(formData: FormData) {
   const classificationId = String(formData.get("classificationId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = `${redirectTo}#clasificacion`;
 
-  if (!classificationId) {
-    throw new Error("Clasificacion requerida.");
+  try {
+    if (!classificationId) {
+      throw new Error("Clasificacion requerida.");
+    }
+
+    await assertInternalUser();
+    await updateDocumentClassificationStatus(classificationId, "accepted");
+    target = redirectWithNotice(
+      `${redirectTo}#clasificacion`,
+      "Sugerencia OM7 aceptada correctamente.",
+    );
+  } catch (error) {
+    target = redirectWithError(
+      `${redirectTo}#clasificacion`,
+      getErrorMessage(error, "No se pudo aceptar la clasificacion."),
+    );
   }
-
-  await assertInternalUser();
-  await updateDocumentClassificationStatus(classificationId, "accepted");
 
   revalidatePath("/documentos");
   revalidatePath("/bandeja");
-  redirect(`${redirectTo}#clasificacion`);
+  redirect(target);
 }
 
 export async function rejectDocumentClassificationAction(formData: FormData) {
   const classificationId = String(formData.get("classificationId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = `${redirectTo}#clasificacion`;
 
-  if (!classificationId) {
-    throw new Error("Clasificacion requerida.");
+  try {
+    if (!classificationId) {
+      throw new Error("Clasificacion requerida.");
+    }
+
+    await assertInternalUser();
+    await updateDocumentClassificationStatus(classificationId, "rejected");
+    target = redirectWithNotice(
+      `${redirectTo}#clasificacion`,
+      "Sugerencia OM7 rechazada.",
+    );
+  } catch (error) {
+    target = redirectWithError(
+      `${redirectTo}#clasificacion`,
+      getErrorMessage(error, "No se pudo rechazar la clasificacion."),
+    );
   }
-
-  await assertInternalUser();
-  await updateDocumentClassificationStatus(classificationId, "rejected");
 
   revalidatePath("/documentos");
   revalidatePath("/bandeja");
-  redirect(`${redirectTo}#clasificacion`);
+  redirect(target);
 }
 
 export async function editDocumentClassificationAction(formData: FormData) {
   const classificationId = String(formData.get("classificationId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = `${redirectTo}#clasificacion`;
 
-  if (!classificationId) {
-    throw new Error("Clasificacion requerida.");
+  try {
+    if (!classificationId) {
+      throw new Error("Clasificacion requerida.");
+    }
+
+    await assertInternalUser();
+    await editDocumentClassification(classificationId, {
+      flow_type: parseFlowType(formData.get("flowType")),
+      suggested_account: String(formData.get("suggestedAccount") ?? "").trim() || null,
+      suggested_category:
+        String(formData.get("suggestedCategory") ?? "").trim() || null,
+      suggested_cost_center_id:
+        String(formData.get("suggestedCostCenterId") ?? "").trim() || null,
+      confidence_score: parseConfidence(formData.get("confidenceScore")),
+      rule_applied: String(formData.get("ruleApplied") ?? "manual_edit").trim(),
+      explanation: String(formData.get("explanation") ?? "").trim(),
+      needs_review: false,
+    });
+    target = redirectWithNotice(
+      `${redirectTo}#clasificacion`,
+      "Clasificacion editada correctamente.",
+    );
+  } catch (error) {
+    target = redirectWithError(
+      `${redirectTo}#clasificacion`,
+      getErrorMessage(error, "No se pudo editar la clasificacion."),
+    );
   }
-
-  await assertInternalUser();
-  await editDocumentClassification(classificationId, {
-    flow_type: parseFlowType(formData.get("flowType")),
-    suggested_account: String(formData.get("suggestedAccount") ?? "").trim() || null,
-    suggested_category:
-      String(formData.get("suggestedCategory") ?? "").trim() || null,
-    suggested_cost_center_id:
-      String(formData.get("suggestedCostCenterId") ?? "").trim() || null,
-    confidence_score: parseConfidence(formData.get("confidenceScore")),
-    rule_applied: String(formData.get("ruleApplied") ?? "manual_edit").trim(),
-    explanation: String(formData.get("explanation") ?? "").trim(),
-    needs_review: false,
-  });
 
   revalidatePath("/documentos");
   revalidatePath("/bandeja");
-  redirect(`${redirectTo}#clasificacion`);
+  redirect(target);
 }
 
 export async function createCounterpartyRuleFromClassificationAction(
@@ -592,73 +660,125 @@ export async function createCounterpartyRuleFromClassificationAction(
   const classificationId = String(formData.get("classificationId") ?? "").trim();
   const matchId = String(formData.get("matchId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = `${redirectTo}#clasificacion`;
 
-  if (!classificationId || !matchId) {
-    throw new Error("Clasificacion y contraparte requeridas.");
+  try {
+    if (!classificationId || !matchId) {
+      throw new Error("Clasificacion y contraparte requeridas.");
+    }
+
+    await assertInternalUser();
+    await createCounterpartyRuleFromClassification(classificationId, matchId, {
+      ruleName: String(formData.get("ruleName") ?? "").trim(),
+      suggestedAccount: String(formData.get("suggestedAccount") ?? "").trim(),
+      suggestedCategory: String(formData.get("suggestedCategory") ?? "").trim(),
+      suggestedCostCenterId: String(
+        formData.get("suggestedCostCenterId") ?? "",
+      ).trim(),
+    });
+    target = redirectWithNotice(
+      `${redirectTo}#clasificacion`,
+      "Regla guardada para esta contraparte.",
+    );
+  } catch (error) {
+    target = redirectWithError(
+      `${redirectTo}#clasificacion`,
+      getErrorMessage(error, "No se pudo guardar la regla de contraparte."),
+    );
   }
-
-  await assertInternalUser();
-  await createCounterpartyRuleFromClassification(classificationId, matchId, {
-    ruleName: String(formData.get("ruleName") ?? "").trim(),
-    suggestedAccount: String(formData.get("suggestedAccount") ?? "").trim(),
-    suggestedCategory: String(formData.get("suggestedCategory") ?? "").trim(),
-    suggestedCostCenterId: String(
-      formData.get("suggestedCostCenterId") ?? "",
-    ).trim(),
-  });
 
   revalidatePath("/documentos");
   revalidatePath("/bandeja");
-  redirect(`${redirectTo}#clasificacion`);
+  redirect(target);
 }
 
 export async function detectDocumentCounterpartyAction(formData: FormData) {
   const extractionId = String(formData.get("extractionId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = `${redirectTo}#contraparte`;
 
-  if (!extractionId) {
-    throw new Error("Extraccion requerida.");
+  try {
+    if (!extractionId) {
+      throw new Error("Extraccion requerida.");
+    }
+
+    await assertInternalUser();
+    const classification = await getPreferredDocumentClassification(extractionId);
+    await detectAndStoreCounterpartyMatch(extractionId, classification);
+    target = redirectWithNotice(
+      `${redirectTo}#contraparte`,
+      "Contraparte detectada correctamente.",
+    );
+  } catch (error) {
+    target = redirectWithError(
+      `${redirectTo}#contraparte`,
+      getErrorMessage(error, "No se pudo detectar la contraparte."),
+    );
   }
-
-  await assertInternalUser();
-  const classification = await getPreferredDocumentClassification(extractionId);
-  await detectAndStoreCounterpartyMatch(extractionId, classification);
 
   revalidatePath("/documentos");
   revalidatePath("/bandeja");
-  redirect(`${redirectTo}#contraparte`);
+  redirect(target);
 }
 
 export async function acceptCounterpartyMatchAction(formData: FormData) {
   const matchId = String(formData.get("matchId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = `${redirectTo}#contraparte`;
 
-  if (!matchId) {
-    throw new Error("Contraparte requerida.");
+  try {
+    if (!matchId) {
+      throw new Error("Contraparte requerida.");
+    }
+
+    await assertInternalUser();
+    await acceptCounterpartyMatch(matchId);
+    target = redirectWithNotice(
+      `${redirectTo}#contraparte`,
+      "Contraparte asociada correctamente.",
+    );
+  } catch (error) {
+    target = redirectWithError(
+      `${redirectTo}#contraparte`,
+      getErrorMessage(error, "No se pudo asociar la contraparte."),
+    );
   }
 
-  await assertInternalUser();
-  await acceptCounterpartyMatch(matchId);
-
   revalidatePath("/documentos");
+  revalidatePath("/compras");
+  revalidatePath("/facturas");
   revalidatePath("/bandeja");
-  redirect(`${redirectTo}#contraparte`);
+  redirect(target);
 }
 
 export async function createCounterpartyFromMatchAction(formData: FormData) {
   const matchId = String(formData.get("matchId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = `${redirectTo}#contraparte`;
 
-  if (!matchId) {
-    throw new Error("Contraparte requerida.");
+  try {
+    if (!matchId) {
+      throw new Error("Contraparte requerida.");
+    }
+
+    await assertInternalUser();
+    await createCounterpartyFromMatch(matchId);
+    target = redirectWithNotice(
+      `${redirectTo}#contraparte`,
+      "Contraparte creada y asociada correctamente.",
+    );
+  } catch (error) {
+    target = redirectWithError(
+      `${redirectTo}#contraparte`,
+      getErrorMessage(error, "No se pudo crear o asociar la contraparte."),
+    );
   }
 
-  await assertInternalUser();
-  await createCounterpartyFromMatch(matchId);
-
   revalidatePath("/documentos");
+  revalidatePath("/compras");
+  revalidatePath("/facturas");
   revalidatePath("/bandeja");
-  redirect(`${redirectTo}#contraparte`);
+  redirect(target);
 }
 
 export async function editCounterpartyMatchAction(formData: FormData) {
@@ -666,141 +786,177 @@ export async function editCounterpartyMatchAction(formData: FormData) {
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
   const name = String(formData.get("name") ?? "").trim();
   const taxId = String(formData.get("taxId") ?? "").trim();
+  let target = `${redirectTo}#contraparte`;
 
-  if (!matchId || !name) {
-    throw new Error("Nombre de contraparte requerido.");
+  try {
+    if (!matchId || !name) {
+      throw new Error("Nombre de contraparte requerido.");
+    }
+
+    await assertInternalUser();
+    await editCounterpartyMatch(matchId, {
+      counterpartyType: parseCounterpartyType(formData.get("counterpartyType")),
+      name,
+      taxId,
+    });
+    target = redirectWithNotice(
+      `${redirectTo}#contraparte`,
+      "Contraparte ajustada correctamente.",
+    );
+  } catch (error) {
+    target = redirectWithError(
+      `${redirectTo}#contraparte`,
+      getErrorMessage(error, "No se pudo ajustar la contraparte."),
+    );
   }
-
-  await assertInternalUser();
-  await editCounterpartyMatch(matchId, {
-    counterpartyType: parseCounterpartyType(formData.get("counterpartyType")),
-    name,
-    taxId,
-  });
 
   revalidatePath("/documentos");
   revalidatePath("/bandeja");
-  redirect(`${redirectTo}#contraparte`);
+  redirect(target);
 }
 
 export async function createPurchaseFromXmlAction(formData: FormData) {
   const extractionId = String(formData.get("extractionId") ?? "").trim();
 
   if (!extractionId) {
-    throw new Error("Extraccion requerida.");
+    redirect(redirectWithError("/documentos", "Extraccion requerida."));
   }
 
-  const extraction = await getDocumentExtractionById(extractionId);
-  assertReviewedExtractionStatus(extraction.extraction_status);
-  const { currentUser } = await getConvertibleDocument(extraction.document_id);
-  const data = extraction.extracted_data ?? {};
-  const classification = await getPreferredDocumentClassification(extraction.id);
-  const counterparty = await getAcceptedCounterpartyMatch(extraction.id);
-  const clave = data.clave ?? "";
-  const sourceLabel =
-    extraction.extraction_provider === "xml-parser-cr" ? "XML" : "documento";
-  const classificationNote = classification
-    ? ` Clasificacion OM7: ${classification.suggested_category ?? "Sin categoria"} / ${classification.suggested_account ?? "Sin cuenta"}.`
-    : "";
+  let redirectTo = "/compras";
 
-  const purchase = await createPurchase({
-    supplierName: data.emisor_nombre || data.supplier_name || "",
-    documentNumber: data.numero_consecutivo || data.document_number || "",
-    purchaseDate: data.fecha_emision || data.date || "",
-    category:
-      classification?.suggested_category ||
-      (extraction.extraction_provider === "xml-parser-cr"
-        ? "XML Costa Rica"
-        : "Documento procesado"),
-    description: `Creado desde ${sourceLabel}: ${clave}`,
-    currency: normalizeCurrencyCode(data.moneda || data.currency),
-    subtotal: Number(data.subtotal ?? 0),
-    tax: Number(data.impuesto ?? data.tax ?? 0),
-    total: Number(data.total ?? 0),
-    paymentMethod: data.medio_pago || "",
-    status: "registrada",
-    notes: data.notes || `Creado desde ${sourceLabel}: ${clave}.${classificationNote}`,
-    classificationId: classification?.id,
-    classificationRuleApplied: classification?.rule_applied,
-    classificationConfidence: classification?.confidence_score,
-    suggestedAccount: classification?.suggested_account ?? undefined,
-    suggestedCostCenterId:
-      classification?.suggested_cost_center_id ?? undefined,
-    counterpartyId: counterparty?.counterparty_id ?? undefined,
-    sourceDocumentId: extraction.document_id,
-    sourceExtractionId: extraction.id,
-  });
+  try {
+    const extraction = await getDocumentExtractionById(extractionId);
+    redirectTo = `/documentos/${extraction.document_id}`;
+    assertReviewedExtractionStatus(extraction.extraction_status);
+    const { currentUser } = await getConvertibleDocument(extraction.document_id);
+    const data = extraction.extracted_data ?? {};
+    const classification = await getPreferredDocumentClassification(extraction.id);
+    const counterparty = await getAcceptedCounterpartyMatch(extraction.id);
+    const clave = data.clave ?? "";
+    const sourceLabel =
+      extraction.extraction_provider === "xml-parser-cr" ? "XML" : "documento";
+    const classificationNote = classification
+      ? ` Clasificacion OM7: ${classification.suggested_category ?? "Sin categoria"} / ${classification.suggested_account ?? "Sin cuenta"}.`
+      : "";
 
-  await markDocumentAsConverted({
-    convertedBy: currentUser.userId,
-    conversionNotes: `Compra creada desde extraccion ${extraction.id}.`,
-    convertedRecordId: purchase.id,
-    convertedType: "purchase",
-    documentId: extraction.document_id,
-    extractionId: extraction.id,
-  });
+    const purchase = await createPurchase({
+      supplierName: data.emisor_nombre || data.supplier_name || "",
+      documentNumber: data.numero_consecutivo || data.document_number || "",
+      purchaseDate: data.fecha_emision || data.date || "",
+      category:
+        classification?.suggested_category ||
+        (extraction.extraction_provider === "xml-parser-cr"
+          ? "XML Costa Rica"
+          : "Documento procesado"),
+      description: `Creado desde ${sourceLabel}: ${clave}`,
+      currency: normalizeCurrencyCode(data.moneda || data.currency),
+      subtotal: Number(data.subtotal ?? 0),
+      tax: Number(data.impuesto ?? data.tax ?? 0),
+      total: Number(data.total ?? 0),
+      paymentMethod: data.medio_pago || "",
+      status: "registrada",
+      notes: data.notes || `Creado desde ${sourceLabel}: ${clave}.${classificationNote}`,
+      classificationId: classification?.id,
+      classificationRuleApplied: classification?.rule_applied,
+      classificationConfidence: classification?.confidence_score,
+      suggestedAccount: classification?.suggested_account ?? undefined,
+      suggestedCostCenterId:
+        classification?.suggested_cost_center_id ?? undefined,
+      counterpartyId: counterparty?.counterparty_id ?? undefined,
+      sourceDocumentId: extraction.document_id,
+      sourceExtractionId: extraction.id,
+    });
 
-  revalidatePath("/compras");
-  revalidatePath("/documentos");
-  revalidatePath(`/documentos/${extraction.document_id}`);
-  revalidatePath("/bandeja");
-  redirect("/compras");
+    await markDocumentAsConverted({
+      convertedBy: currentUser.userId,
+      conversionNotes: `Compra creada desde extraccion ${extraction.id}.`,
+      convertedRecordId: purchase.id,
+      convertedType: "purchase",
+      documentId: extraction.document_id,
+      extractionId: extraction.id,
+    });
+
+    revalidatePath("/compras");
+    revalidatePath("/documentos");
+    revalidatePath(`/documentos/${extraction.document_id}`);
+    revalidatePath("/bandeja");
+    redirectTo = "/compras";
+  } catch (error) {
+    redirectTo = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo crear la compra desde el documento."),
+    );
+  }
+
+  redirect(redirectTo);
 }
 
 export async function createInvoiceFromXmlAction(formData: FormData) {
   const extractionId = String(formData.get("extractionId") ?? "").trim();
 
   if (!extractionId) {
-    throw new Error("Extraccion requerida.");
+    redirect(redirectWithError("/documentos", "Extraccion requerida."));
   }
 
-  const extraction = await getDocumentExtractionById(extractionId);
-  assertReviewedExtractionStatus(extraction.extraction_status);
-  const { currentUser } = await getConvertibleDocument(extraction.document_id);
-  const data = extraction.extracted_data ?? {};
-  const classification = await getPreferredDocumentClassification(extraction.id);
-  const counterparty = await getAcceptedCounterpartyMatch(extraction.id);
-  const clave = data.clave ?? "";
-  const sourceLabel =
-    extraction.extraction_provider === "xml-parser-cr" ? "XML" : "documento";
-  const classificationNote = classification
-    ? ` Clasificacion OM7: ${classification.suggested_category ?? "Sin categoria"} / ${classification.suggested_account ?? "Sin cuenta"}.`
-    : "";
+  let redirectTo = "/facturas";
 
-  const invoice = await createInvoiceForActiveCompany({
-    tipoDocumento: data.document_kind || "factura",
-    proveedor: data.receptor_nombre || data.emisor_nombre || data.supplier_name || "",
-    numeroDocumento: data.numero_consecutivo || data.document_number || "",
-    fecha: data.fecha_emision || data.date || "",
-    moneda: normalizeCurrencyCode(data.moneda || data.currency),
-    subtotal: Number(data.subtotal ?? 0),
-    impuesto: Number(data.impuesto ?? data.tax ?? 0),
-    total: Number(data.total ?? 0),
-    estado: "registrada",
-    notas: data.notes || `Creado desde ${sourceLabel}: ${clave}.${classificationNote}`,
-    classificationId: classification?.id,
-    classificationRuleApplied: classification?.rule_applied,
-    classificationConfidence: classification?.confidence_score,
-    suggestedAccount: classification?.suggested_account ?? undefined,
-    suggestedCostCenterId:
-      classification?.suggested_cost_center_id ?? undefined,
-    counterpartyId: counterparty?.counterparty_id ?? undefined,
-    sourceDocumentId: extraction.document_id,
-    sourceExtractionId: extraction.id,
-  });
+  try {
+    const extraction = await getDocumentExtractionById(extractionId);
+    redirectTo = `/documentos/${extraction.document_id}`;
+    assertReviewedExtractionStatus(extraction.extraction_status);
+    const { currentUser } = await getConvertibleDocument(extraction.document_id);
+    const data = extraction.extracted_data ?? {};
+    const classification = await getPreferredDocumentClassification(extraction.id);
+    const counterparty = await getAcceptedCounterpartyMatch(extraction.id);
+    const clave = data.clave ?? "";
+    const sourceLabel =
+      extraction.extraction_provider === "xml-parser-cr" ? "XML" : "documento";
+    const classificationNote = classification
+      ? ` Clasificacion OM7: ${classification.suggested_category ?? "Sin categoria"} / ${classification.suggested_account ?? "Sin cuenta"}.`
+      : "";
 
-  await markDocumentAsConverted({
-    convertedBy: currentUser.userId,
-    conversionNotes: `Factura creada desde extraccion ${extraction.id}.`,
-    convertedRecordId: invoice.id,
-    convertedType: "invoice",
-    documentId: extraction.document_id,
-    extractionId: extraction.id,
-  });
+    const invoice = await createInvoiceForActiveCompany({
+      tipoDocumento: data.document_kind || "factura",
+      proveedor: data.receptor_nombre || data.emisor_nombre || data.supplier_name || "",
+      numeroDocumento: data.numero_consecutivo || data.document_number || "",
+      fecha: data.fecha_emision || data.date || "",
+      moneda: normalizeCurrencyCode(data.moneda || data.currency),
+      subtotal: Number(data.subtotal ?? 0),
+      impuesto: Number(data.impuesto ?? data.tax ?? 0),
+      total: Number(data.total ?? 0),
+      estado: "registrada",
+      notas: data.notes || `Creado desde ${sourceLabel}: ${clave}.${classificationNote}`,
+      classificationId: classification?.id,
+      classificationRuleApplied: classification?.rule_applied,
+      classificationConfidence: classification?.confidence_score,
+      suggestedAccount: classification?.suggested_account ?? undefined,
+      suggestedCostCenterId:
+        classification?.suggested_cost_center_id ?? undefined,
+      counterpartyId: counterparty?.counterparty_id ?? undefined,
+      sourceDocumentId: extraction.document_id,
+      sourceExtractionId: extraction.id,
+    });
 
-  revalidatePath("/facturas");
-  revalidatePath("/documentos");
-  revalidatePath(`/documentos/${extraction.document_id}`);
-  revalidatePath("/bandeja");
-  redirect("/facturas");
+    await markDocumentAsConverted({
+      convertedBy: currentUser.userId,
+      conversionNotes: `Factura creada desde extraccion ${extraction.id}.`,
+      convertedRecordId: invoice.id,
+      convertedType: "invoice",
+      documentId: extraction.document_id,
+      extractionId: extraction.id,
+    });
+
+    revalidatePath("/facturas");
+    revalidatePath("/documentos");
+    revalidatePath(`/documentos/${extraction.document_id}`);
+    revalidatePath("/bandeja");
+    redirectTo = "/facturas";
+  } catch (error) {
+    redirectTo = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo crear la factura desde el documento."),
+    );
+  }
+
+  redirect(redirectTo);
 }

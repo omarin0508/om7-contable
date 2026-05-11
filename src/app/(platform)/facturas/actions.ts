@@ -22,26 +22,34 @@ function redirectWithError(path: string, message: string) {
 
 export async function createInvoiceAction(formData: FormData) {
   const proveedor = String(formData.get("proveedor") ?? "").trim();
+  let target = "/facturas";
 
-  if (!proveedor) {
-    throw new Error("El proveedor es requerido.");
+  try {
+    if (!proveedor) {
+      throw new Error("El proveedor es requerido.");
+    }
+
+    await createInvoiceForActiveCompany({
+      tipoDocumento: String(formData.get("tipoDocumento") ?? "factura").trim(),
+      proveedor,
+      numeroDocumento: String(formData.get("numeroDocumento") ?? "").trim(),
+      fecha: String(formData.get("fecha") ?? "").trim(),
+      moneda: normalizeCurrencyCode(formData.get("moneda")),
+      subtotal: parseAmount(formData.get("subtotal")),
+      impuesto: parseAmount(formData.get("impuesto")),
+      total: parseAmount(formData.get("total")),
+      estado: String(formData.get("estado") ?? "borrador").trim(),
+      notas: String(formData.get("notas") ?? "").trim(),
+    });
+  } catch (error) {
+    target = redirectWithError(
+      "/facturas",
+      error instanceof Error ? error.message : "No se pudo crear la factura.",
+    );
   }
 
-  await createInvoiceForActiveCompany({
-    tipoDocumento: String(formData.get("tipoDocumento") ?? "factura").trim(),
-    proveedor,
-    numeroDocumento: String(formData.get("numeroDocumento") ?? "").trim(),
-    fecha: String(formData.get("fecha") ?? "").trim(),
-    moneda: normalizeCurrencyCode(formData.get("moneda")),
-    subtotal: parseAmount(formData.get("subtotal")),
-    impuesto: parseAmount(formData.get("impuesto")),
-    total: parseAmount(formData.get("total")),
-    estado: String(formData.get("estado") ?? "borrador").trim(),
-    notas: String(formData.get("notas") ?? "").trim(),
-  });
-
   revalidatePath("/facturas");
-  redirect("/facturas");
+  redirect(target);
 }
 
 export async function updateInvoiceReviewStatusAction(formData: FormData) {
@@ -70,19 +78,27 @@ export async function updateInvoiceReviewStatusAction(formData: FormData) {
 
 export async function registerInvoiceCollectionAction(formData: FormData) {
   const redirectTo = String(formData.get("redirectTo") ?? "/facturas");
+  let target = redirectTo;
 
-  await registerInvoiceCollection({
-    amount: parseAmount(formData.get("amount")),
-    collectionDate:
-      String(formData.get("collectionDate") ?? "").trim() ||
-      new Date().toISOString().slice(0, 10),
-    invoiceId: String(formData.get("invoiceId") ?? ""),
-    notes: String(formData.get("notes") ?? "").trim(),
-    paymentMethodId: String(formData.get("paymentMethodId") ?? ""),
-  });
+  try {
+    await registerInvoiceCollection({
+      amount: parseAmount(formData.get("amount")),
+      collectionDate:
+        String(formData.get("collectionDate") ?? "").trim() ||
+        new Date().toISOString().slice(0, 10),
+      invoiceId: String(formData.get("invoiceId") ?? ""),
+      notes: String(formData.get("notes") ?? "").trim(),
+      paymentMethodId: String(formData.get("paymentMethodId") ?? ""),
+    });
+  } catch (error) {
+    target = redirectWithError(
+      redirectTo,
+      error instanceof Error ? error.message : "No se pudo registrar el cobro.",
+    );
+  }
 
   revalidatePath("/facturas");
   revalidatePath("/movimientos");
   revalidatePath("/dashboard");
-  redirect(redirectTo);
+  redirect(target);
 }

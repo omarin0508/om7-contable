@@ -11,54 +11,91 @@ function parseAmount(value: FormDataEntryValue | null) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function redirectWithError(path: string, message: string) {
+  const [basePath, hash] = path.split("#");
+  const separator = basePath.includes("?") ? "&" : "?";
+  const target = `${basePath}${separator}error=${encodeURIComponent(message)}`;
+
+  return hash ? `${target}#${hash}` : target;
+}
+
 export async function createPurchaseAction(formData: FormData) {
-  await createPurchase({
-    supplierName: String(formData.get("supplierName") ?? "").trim(),
-    documentNumber: String(formData.get("documentNumber") ?? "").trim(),
-    purchaseDate: String(formData.get("purchaseDate") ?? "").trim(),
-    category: String(formData.get("category") ?? "").trim(),
-    description: String(formData.get("description") ?? "").trim(),
-    currency: normalizeCurrencyCode(formData.get("currency")),
-    subtotal: parseAmount(formData.get("subtotal")),
-    tax: parseAmount(formData.get("tax")),
-    total: parseAmount(formData.get("total")),
-    paymentMethod: String(formData.get("paymentMethod") ?? "").trim(),
-    status: String(formData.get("status") ?? "registrada").trim(),
-    notes: String(formData.get("notes") ?? "").trim(),
-  });
+  let target = "/compras";
+
+  try {
+    await createPurchase({
+      supplierName: String(formData.get("supplierName") ?? "").trim(),
+      documentNumber: String(formData.get("documentNumber") ?? "").trim(),
+      purchaseDate: String(formData.get("purchaseDate") ?? "").trim(),
+      category: String(formData.get("category") ?? "").trim(),
+      description: String(formData.get("description") ?? "").trim(),
+      currency: normalizeCurrencyCode(formData.get("currency")),
+      subtotal: parseAmount(formData.get("subtotal")),
+      tax: parseAmount(formData.get("tax")),
+      total: parseAmount(formData.get("total")),
+      paymentMethod: String(formData.get("paymentMethod") ?? "").trim(),
+      status: String(formData.get("status") ?? "registrada").trim(),
+      notes: String(formData.get("notes") ?? "").trim(),
+    });
+  } catch (error) {
+    target = redirectWithError(
+      "/compras",
+      getErrorMessage(error, "No se pudo crear la compra."),
+    );
+  }
 
   revalidatePath("/compras");
-  redirect("/compras");
+  redirect(target);
 }
 
 export async function updatePurchaseReviewStatusAction(formData: FormData) {
   const redirectTo = String(formData.get("redirectTo") ?? "/compras");
+  let target = redirectTo;
 
-  await updatePurchaseReviewStatus({
-    notes: String(formData.get("reviewNotes") ?? "").trim(),
-    purchaseId: String(formData.get("purchaseId") ?? ""),
-    status: String(formData.get("reviewStatus") ?? "pending"),
-  });
+  try {
+    await updatePurchaseReviewStatus({
+      notes: String(formData.get("reviewNotes") ?? "").trim(),
+      purchaseId: String(formData.get("purchaseId") ?? ""),
+      status: String(formData.get("reviewStatus") ?? "pending"),
+    });
+  } catch (error) {
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo actualizar la revision de la compra."),
+    );
+  }
 
   revalidatePath("/compras");
-  redirect(redirectTo);
+  redirect(target);
 }
 
 export async function registerPurchasePaymentAction(formData: FormData) {
   const redirectTo = String(formData.get("redirectTo") ?? "/compras");
+  let target = redirectTo;
 
-  await registerPurchasePayment({
-    amount: parseAmount(formData.get("amount")),
-    notes: String(formData.get("notes") ?? "").trim(),
-    paymentDate:
-      String(formData.get("paymentDate") ?? "").trim() ||
-      new Date().toISOString().slice(0, 10),
-    paymentMethodId: String(formData.get("paymentMethodId") ?? ""),
-    purchaseId: String(formData.get("purchaseId") ?? ""),
-  });
+  try {
+    await registerPurchasePayment({
+      amount: parseAmount(formData.get("amount")),
+      notes: String(formData.get("notes") ?? "").trim(),
+      paymentDate:
+        String(formData.get("paymentDate") ?? "").trim() ||
+        new Date().toISOString().slice(0, 10),
+      paymentMethodId: String(formData.get("paymentMethodId") ?? ""),
+      purchaseId: String(formData.get("purchaseId") ?? ""),
+    });
+  } catch (error) {
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo registrar el pago."),
+    );
+  }
 
   revalidatePath("/compras");
   revalidatePath("/movimientos");
   revalidatePath("/dashboard");
-  redirect(redirectTo);
+  redirect(target);
 }

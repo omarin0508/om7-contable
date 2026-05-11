@@ -398,7 +398,59 @@ export async function acceptCounterpartyMatch(matchId: string) {
     );
   }
 
-  return data as DocumentCounterpartyMatchRecord;
+  const match = data as DocumentCounterpartyMatchRecord;
+  await attachCounterpartyToConvertedRecord(match);
+
+  return match;
+}
+
+async function attachCounterpartyToConvertedRecord(
+  match: DocumentCounterpartyMatchRecord,
+) {
+  if (!match.counterparty_id) {
+    return;
+  }
+
+  const { supabase } = await getAuthenticatedSupabase();
+  const { data: document, error: documentError } = await supabase
+    .from("documents")
+    .select("id, converted_type, converted_record_id")
+    .eq("id", match.document_id)
+    .eq("organization_id", match.organization_id)
+    .eq("company_id", match.company_id)
+    .maybeSingle();
+
+  if (documentError) {
+    throw new Error(documentError.message);
+  }
+
+  if (!document?.converted_type || !document.converted_record_id) {
+    return;
+  }
+
+  const table =
+    document.converted_type === "purchase"
+      ? "purchases"
+      : document.converted_type === "invoice"
+        ? "invoices"
+        : null;
+
+  if (!table) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from(table)
+    .update({
+      counterparty_id: match.counterparty_id,
+    })
+    .eq("id", document.converted_record_id)
+    .eq("organization_id", match.organization_id)
+    .eq("company_id", match.company_id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 export async function createCounterpartyFromMatch(matchId: string) {
@@ -446,7 +498,10 @@ export async function createCounterpartyFromMatch(matchId: string) {
         throw new Error(updateError?.message ?? "No se pudo asociar la contraparte.");
       }
 
-      return updatedMatch as DocumentCounterpartyMatchRecord;
+      const typedMatch = updatedMatch as DocumentCounterpartyMatchRecord;
+      await attachCounterpartyToConvertedRecord(typedMatch);
+
+      return typedMatch;
     }
   }
 
@@ -480,7 +535,10 @@ export async function createCounterpartyFromMatch(matchId: string) {
         throw new Error(updateError?.message ?? "No se pudo asociar la contraparte.");
       }
 
-      return updatedMatch as DocumentCounterpartyMatchRecord;
+      const typedMatch = updatedMatch as DocumentCounterpartyMatchRecord;
+      await attachCounterpartyToConvertedRecord(typedMatch);
+
+      return typedMatch;
     }
   }
 
@@ -521,7 +579,10 @@ export async function createCounterpartyFromMatch(matchId: string) {
     throw new Error(updateError?.message ?? "No se pudo asociar la contraparte.");
   }
 
-  return updatedMatch as DocumentCounterpartyMatchRecord;
+  const typedMatch = updatedMatch as DocumentCounterpartyMatchRecord;
+  await attachCounterpartyToConvertedRecord(typedMatch);
+
+  return typedMatch;
 }
 
 export async function editCounterpartyMatch(

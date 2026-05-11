@@ -307,7 +307,17 @@ function PeriodCard({
   );
 }
 
-export default async function AccountingPeriodsPage() {
+type AccountingPeriodsPageProps = {
+  searchParams?: Promise<{
+    error?: string;
+  }>;
+};
+
+export default async function AccountingPeriodsPage({
+  searchParams,
+}: AccountingPeriodsPageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const actionError = resolvedSearchParams.error ?? null;
   const [{ activeContext, purchases }, { invoices }, periodsResult] =
     await Promise.all([
       listPurchases(),
@@ -333,6 +343,17 @@ export default async function AccountingPeriodsPage() {
         description="Revision y cierre mensual por cliente/empresa."
         action={<BackLink />}
       />
+
+      {actionError ? (
+        <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
+          <p className="text-sm font-semibold text-amber-100">
+            No se pudo completar la accion
+          </p>
+          <p className="mt-2 text-sm leading-6 text-amber-100/75">
+            {actionError}
+          </p>
+        </PremiumCard>
+      ) : null}
 
       {!activeCompany ? (
         <PremiumCard className="border-amber-300/15 bg-amber-300/10 p-5">

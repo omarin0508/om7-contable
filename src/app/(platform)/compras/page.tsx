@@ -53,6 +53,7 @@ import { listPurchases, type Purchase } from "@/lib/purchases";
 
 type PurchasesPageProps = {
   searchParams?: Promise<{
+    error?: string;
     filter?: string;
     q?: string;
   }>;
@@ -580,6 +581,7 @@ export default async function PurchasesPage({
 }: PurchasesPageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const activeFilter = resolvedSearchParams.filter ?? "all";
+  const actionError = resolvedSearchParams.error ?? null;
   const searchTerm = resolvedSearchParams.q ?? "";
   const redirectTo = `/compras?filter=${activeFilter}${
     searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""
@@ -644,6 +646,17 @@ export default async function PurchasesPage({
           </div>
         }
       />
+
+      {actionError ? (
+        <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
+          <p className="text-sm font-semibold text-amber-100">
+            No se pudo completar la accion
+          </p>
+          <p className="mt-2 text-sm leading-6 text-amber-100/75">
+            {actionError}
+          </p>
+        </PremiumCard>
+      ) : null}
 
       {!activeCompany ? (
         <PremiumCard className="border-amber-300/15 bg-amber-300/10 p-5">
