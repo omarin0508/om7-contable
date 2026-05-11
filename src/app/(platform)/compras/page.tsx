@@ -38,7 +38,11 @@ import {
   type JournalEntry,
 } from "@/lib/accounting-entries";
 import { formatCurrencyAmount, normalizeCurrencyCode } from "@/lib/currency";
-import { getConversionMetadataValue } from "@/lib/document-ui";
+import {
+  getConversionMetadataString,
+  getConversionMetadataValue,
+  hasE7MindTrace,
+} from "@/lib/document-ui";
 import {
   getMovementStatusBadgeClass,
   getPaymentStatusKey,
@@ -56,6 +60,8 @@ type PurchasesPageProps = {
     error?: string;
     filter?: string;
     q?: string;
+    returnLabel?: string;
+    returnTo?: string;
   }>;
 };
 
@@ -143,6 +149,13 @@ function getPurchasePeriodLabel(purchase: Purchase) {
   }
 
   return getPeriodLabel(date.getFullYear(), date.getMonth() + 1);
+}
+
+function getPurchaseTraceDocumentId(purchase: Purchase) {
+  return (
+    purchase.source_document_id ??
+    getConversionMetadataString(purchase.conversion_metadata, "source_document_id")
+  );
 }
 
 function getSearchText(purchase: Purchase) {
@@ -275,6 +288,7 @@ function PurchasePaymentForm({
             <input
               className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
               defaultValue={remaining.toFixed(2)}
+              max={remaining.toFixed(2)}
               min="0"
               name="amount"
               step="0.01"
@@ -333,6 +347,8 @@ function PurchaseCard({
     purchase.source_document?.display_name ??
     purchase.source_document?.original_filename ??
     "Documento procesado";
+  const traceDocumentId = getPurchaseTraceDocumentId(purchase);
+  const e7Synced = hasE7MindTrace(purchase.conversion_metadata);
   const lockedByPeriod = isRecordLockedByPeriod(period);
   const periodLabel = getPurchasePeriodLabel(purchase);
   const paidAmount = paymentSummary?.amount ?? 0;
@@ -343,10 +359,11 @@ function PurchaseCard({
     (purchase.review_status ?? "pending") === "observed"
       ? "Marcar corregido"
       : "Marcar revisada";
+  const isPosted = journalEntry?.status === "posted";
 
   return (
     <article className="rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.08),transparent_34%),rgba(255,255,255,0.035)] p-5 shadow-2xl shadow-black/15 transition hover:border-cyan-300/20 hover:bg-white/[0.05]">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="grid max-w-6xl gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,280px)] lg:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             {purchase.source_document_id ? (
@@ -354,6 +371,11 @@ function PurchaseCard({
             ) : (
               <span className="om7-chip text-slate-400">Manual</span>
             )}
+            {e7Synced ? (
+              <span className="om7-chip om7-chip-emerald">
+                Sincronizado con E7 Mind
+              </span>
+            ) : null}
             {purchase.counterparty_id ? (
               <span className="om7-chip om7-chip-emerald">Contraparte</span>
             ) : (
@@ -369,6 +391,9 @@ function PurchaseCard({
               <span className={getPeriodStatusBadgeClass(period?.status)}>
                 Periodo cerrado
               </span>
+            ) : null}
+            {isPosted ? (
+              <span className="om7-chip om7-chip-emerald">Contabilizada</span>
             ) : null}
             <span className={getMovementStatusBadgeClass(paymentStatus)}>
               {paymentLabel}
@@ -388,7 +413,7 @@ function PurchaseCard({
           </p>
         </div>
 
-        <div className="text-left lg:text-right">
+        <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-4 text-left lg:text-right">
           <p className="text-xs uppercase tracking-[0.18em] text-slate-600">
             Monto
           </p>
@@ -445,18 +470,25 @@ function PurchaseCard({
         />
       </div>
 
-      <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/75">
+      <details className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">
+        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/75">
           Trazabilidad OM7
-        </p>
-        <p className="mt-2 text-sm text-slate-300">
-          Origen: {purchase.source_document_id ? sourceName : "Registro manual"}
-        </p>
-        <p className="mt-1 text-sm text-slate-500">
-          Regla aplicada:{" "}
-          {ruleApplied}
-        </p>
-      </div>
+        </summary>
+        <div className="mt-3">
+          <p className="text-sm text-slate-300">
+            Origen: {traceDocumentId ? sourceName : "Registro manual"}
+          </p>
+          <p className="mt-1 text-sm text-slate-500">
+            Regla aplicada: {ruleApplied}
+          </p>
+          {e7Synced ? (
+            <p className="mt-2 text-sm text-emerald-100/80">
+              Distribucion aprobada y vinculada al registro. Puedes reabrir E7
+              Mind para validar y sincronizar de nuevo sin duplicar.
+            </p>
+          ) : null}
+        </div>
+      </details>
 
       <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -541,12 +573,20 @@ function PurchaseCard({
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        {purchase.source_document_id ? (
+        {traceDocumentId ? (
           <Link
             className="om7-btn-secondary px-4 py-2.5"
-            href={`/documentos/${purchase.source_document_id}`}
+            href={`/documentos/${traceDocumentId}`}
           >
             Ver documento
+          </Link>
+        ) : null}
+        {e7Synced && traceDocumentId ? (
+          <Link
+            className="om7-btn-primary px-4 py-2.5"
+            href={`/documentos/${traceDocumentId}/distribucion`}
+          >
+            Abrir E7 Mind
           </Link>
         ) : null}
         {purchase.counterparty_id ? (
@@ -583,9 +623,17 @@ export default async function PurchasesPage({
   const activeFilter = resolvedSearchParams.filter ?? "all";
   const actionError = resolvedSearchParams.error ?? null;
   const searchTerm = resolvedSearchParams.q ?? "";
+  const returnTo = resolvedSearchParams.returnTo?.startsWith("/")
+    ? resolvedSearchParams.returnTo
+    : "/dashboard";
+  const returnLabel = resolvedSearchParams.returnLabel ?? "Volver al dashboard";
+  const returnQuery =
+    returnTo !== "/dashboard"
+      ? `&returnTo=${encodeURIComponent(returnTo)}&returnLabel=${encodeURIComponent(returnLabel)}`
+      : "";
   const redirectTo = `/compras?filter=${activeFilter}${
     searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""
-  }`;
+  }${returnQuery}`;
   const [
     { activeContext, purchases },
     periodsResult,
@@ -639,7 +687,7 @@ export default async function PurchasesPage({
         description="Control operativo de gastos, proveedores y documentos convertidos."
         action={
           <div className="flex flex-wrap gap-2">
-            <BackLink />
+            <BackLink href={returnTo} label={returnLabel} />
             <a className="om7-btn-primary px-4 py-2.5" href="#nueva-compra">
               Nueva compra
             </a>
@@ -709,8 +757,7 @@ export default async function PurchasesPage({
                     Bandeja de compras
                   </p>
                   <p className="mt-1 text-sm text-slate-500">
-                    Documento recibido, datos revisados, compra creada y
-                    trazabilidad lista.
+                    Revisión, pago y trazabilidad en una sola bandeja.
                   </p>
                 </div>
                 <span className="text-sm text-slate-500">
@@ -742,7 +789,7 @@ export default async function PurchasesPage({
                     ].join(" ")}
                     href={`/compras?filter=${filter}${
                       searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""
-                    }`}
+                    }${returnQuery}`}
                     key={filter}
                   >
                     {label}

@@ -15,6 +15,13 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function logActionError(action: string, error: unknown) {
+  console.error("[OM7 action error]", {
+    action,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 function redirectWithError(path: string, message: string) {
   const [basePath, hash] = path.split("#");
   const separator = basePath.includes("?") ? "&" : "?";
@@ -42,6 +49,7 @@ export async function createPurchaseAction(formData: FormData) {
       notes: String(formData.get("notes") ?? "").trim(),
     });
   } catch (error) {
+    logActionError("createPurchaseAction", error);
     target = redirectWithError(
       "/compras",
       getErrorMessage(error, "No se pudo crear la compra."),
@@ -63,6 +71,7 @@ export async function updatePurchaseReviewStatusAction(formData: FormData) {
       status: String(formData.get("reviewStatus") ?? "pending"),
     });
   } catch (error) {
+    logActionError("updatePurchaseReviewStatusAction", error);
     target = redirectWithError(
       redirectTo,
       getErrorMessage(error, "No se pudo actualizar la revision de la compra."),
@@ -88,6 +97,7 @@ export async function registerPurchasePaymentAction(formData: FormData) {
       purchaseId: String(formData.get("purchaseId") ?? ""),
     });
   } catch (error) {
+    logActionError("registerPurchasePaymentAction", error);
     target = redirectWithError(
       redirectTo,
       getErrorMessage(error, "No se pudo registrar el pago."),

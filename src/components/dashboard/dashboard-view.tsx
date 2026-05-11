@@ -74,6 +74,12 @@ const workflowSteps = [
   },
 ];
 
+const dashboardCardFrame =
+  "border border-white/[0.18] bg-[linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.032)),radial-gradient(circle_at_top_right,rgba(34,211,238,0.095),transparent_36%)] shadow-[0_22px_70px_rgba(0,0,0,0.30),inset_0_1px_0_rgba(255,255,255,0.075)] ring-1 ring-cyan-100/[0.045]";
+
+const dashboardHoverFrame =
+  "transition hover:-translate-y-0.5 hover:border-cyan-300/36 hover:bg-cyan-300/[0.06] hover:shadow-[0_26px_82px_rgba(8,47,73,0.30),inset_0_1px_0_rgba(255,255,255,0.10)]";
+
 function getDocumentState(document: DashboardDocument) {
   return getDocumentHumanStatus(document).label;
 }
@@ -124,7 +130,7 @@ function OperatingCenterCard({
 
   return (
     <Link
-      className="group flex min-h-44 flex-col justify-between rounded-2xl border border-white/[0.14] bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.08),transparent_34%),rgba(0,0,0,0.25)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_18px_60px_rgba(0,0,0,0.18)] ring-1 ring-white/[0.03] transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-cyan-300/[0.055] hover:shadow-cyan-950/20"
+      className={`group flex min-h-44 flex-col justify-between rounded-2xl p-5 ${dashboardCardFrame} ${dashboardHoverFrame}`}
       href={href}
     >
       <div>
@@ -314,7 +320,7 @@ export function DashboardView({
         </section>
 
         <section className="grid gap-4 xl:grid-cols-3">
-          <PremiumCard className="border-white/[0.13] p-5 ring-1 ring-white/[0.035]">
+          <PremiumCard className={`${dashboardCardFrame} p-5`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="text-base font-semibold text-white">
@@ -341,7 +347,7 @@ export function DashboardView({
             </div>
           </PremiumCard>
 
-          <PremiumCard className="border-cyan-300/15 bg-cyan-300/[0.025] p-5 ring-1 ring-cyan-200/[0.035]">
+          <PremiumCard className={`${dashboardCardFrame} p-5`}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-base font-semibold text-white">
@@ -360,7 +366,7 @@ export function DashboardView({
             </div>
           </PremiumCard>
 
-          <PremiumCard className="border-white/[0.13] p-5 ring-1 ring-white/[0.035]">
+          <PremiumCard className={`${dashboardCardFrame} p-5`}>
             <p className="text-base font-semibold text-white">
               Estado general
             </p>
@@ -397,7 +403,7 @@ export function DashboardView({
                 ["Reportes", "/reportes", "reports", "Resumen ejecutivo"],
               ].map(([label, href, icon, description]) => (
                 <Link
-                  className="group rounded-2xl border border-white/[0.08] bg-black/20 p-4 transition hover:border-cyan-300/25 hover:bg-cyan-300/[0.04]"
+                  className="group rounded-2xl border border-white/[0.13] bg-black/24 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] transition hover:border-cyan-300/28 hover:bg-cyan-300/[0.05]"
                   href={href}
                   key={label}
                 >
@@ -480,7 +486,7 @@ export function DashboardView({
         </PremiumCard>
       ) : null}
 
-      <PremiumCard className="border-cyan-300/20 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.12),transparent_38%),rgba(255,255,255,0.045)] p-5 shadow-[0_24px_80px_rgba(8,47,73,0.16),inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-cyan-200/[0.045] sm:p-6">
+      <PremiumCard className="border-cyan-300/24 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_38%),rgba(255,255,255,0.055)] p-5 shadow-[0_26px_86px_rgba(8,47,73,0.22),inset_0_1px_0_rgba(255,255,255,0.08)] ring-1 ring-cyan-200/[0.06] sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200/80">
@@ -500,7 +506,7 @@ export function DashboardView({
         <div className="mt-6 grid gap-3 lg:grid-cols-6">
           {workflowSteps.map((step, index) => (
             <Link
-              className="group relative rounded-2xl border border-white/[0.14] bg-black/25 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] ring-1 ring-white/[0.03] transition hover:border-cyan-300/30 hover:bg-cyan-300/[0.055] lg:min-h-40"
+              className="group relative rounded-2xl border border-white/[0.18] bg-black/28 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.065),0_14px_42px_rgba(0,0,0,0.16)] ring-1 ring-cyan-100/[0.035] transition hover:border-cyan-300/34 hover:bg-cyan-300/[0.06] lg:min-h-40"
               href={step.href}
               key={step.key}
             >
@@ -597,7 +603,7 @@ export function DashboardView({
 
       <section className="grid gap-4 xl:grid-cols-3">
         <Link
-          className="group flex min-h-44 flex-col justify-between rounded-2xl border border-white/[0.14] bg-black/25 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] ring-1 ring-white/[0.03] transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-cyan-300/[0.045]"
+          className={`group flex min-h-44 flex-col justify-between rounded-2xl p-5 ${dashboardCardFrame} ${dashboardHoverFrame}`}
           href="/periodos"
         >
           <div>
@@ -622,7 +628,7 @@ export function DashboardView({
         </Link>
 
         <Link
-          className="group flex min-h-44 flex-col justify-between rounded-2xl border border-cyan-300/16 bg-cyan-300/[0.025] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] ring-1 ring-cyan-200/[0.035] transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-cyan-300/[0.055]"
+          className={`group flex min-h-44 flex-col justify-between rounded-2xl p-5 ${dashboardCardFrame} ${dashboardHoverFrame}`}
           href="/contabilidad"
         >
           <div>
@@ -640,7 +646,7 @@ export function DashboardView({
         </Link>
 
         <Link
-          className="group flex min-h-44 flex-col justify-between rounded-2xl border border-white/[0.14] bg-black/25 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] ring-1 ring-white/[0.03] transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-cyan-300/[0.045]"
+          className={`group flex min-h-44 flex-col justify-between rounded-2xl p-5 ${dashboardCardFrame} ${dashboardHoverFrame}`}
           href="/dashboard?view=operativo"
         >
           <div>

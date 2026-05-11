@@ -14,6 +14,17 @@ function parseAmount(value: FormDataEntryValue | null) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function logActionError(action: string, error: unknown) {
+  console.error("[OM7 action error]", {
+    action,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 function redirectWithError(path: string, message: string) {
   const separator = path.includes("?") ? "&" : "?";
 
@@ -21,8 +32,10 @@ function redirectWithError(path: string, message: string) {
 }
 
 export async function createInvoiceAction(formData: FormData) {
+  const errorRedirectTo = String(formData.get("errorRedirectTo") ?? "/facturas");
+  const successRedirectTo = String(formData.get("successRedirectTo") ?? "/facturas");
   const proveedor = String(formData.get("proveedor") ?? "").trim();
-  let target = "/facturas";
+  let target = successRedirectTo;
 
   try {
     if (!proveedor) {
@@ -42,9 +55,10 @@ export async function createInvoiceAction(formData: FormData) {
       notas: String(formData.get("notas") ?? "").trim(),
     });
   } catch (error) {
+    logActionError("createInvoiceAction", error);
     target = redirectWithError(
-      "/facturas",
-      error instanceof Error ? error.message : "No se pudo crear la factura.",
+      errorRedirectTo,
+      getErrorMessage(error, "No se pudo crear la factura."),
     );
   }
 
@@ -64,11 +78,10 @@ export async function updateInvoiceReviewStatusAction(formData: FormData) {
       status: String(formData.get("reviewStatus") ?? "pending"),
     });
   } catch (error) {
+    logActionError("updateInvoiceReviewStatusAction", error);
     target = redirectWithError(
       redirectTo,
-      error instanceof Error
-        ? error.message
-        : "No se pudo actualizar la revision de la factura.",
+      getErrorMessage(error, "No se pudo actualizar la revision de la factura."),
     );
   }
 
@@ -91,9 +104,10 @@ export async function registerInvoiceCollectionAction(formData: FormData) {
       paymentMethodId: String(formData.get("paymentMethodId") ?? ""),
     });
   } catch (error) {
+    logActionError("registerInvoiceCollectionAction", error);
     target = redirectWithError(
       redirectTo,
-      error instanceof Error ? error.message : "No se pudo registrar el cobro.",
+      getErrorMessage(error, "No se pudo registrar el cobro."),
     );
   }
 

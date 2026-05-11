@@ -23,6 +23,7 @@ import { normalizeReviewStatus } from "@/lib/accounting-review-ui";
 import { formatCurrencyAmount, normalizeCurrencyCode } from "@/lib/currency";
 import { getInvoicesForActiveCompany, type Invoice } from "@/lib/invoices";
 import { listPurchases, type Purchase } from "@/lib/purchases";
+import { getTaxCenterData } from "@/lib/tax-center";
 
 type PeriodSummary = {
   approvedCount: number;
@@ -335,6 +336,12 @@ export default async function AccountingPeriodsPage({
     purchases,
   });
   const currentSummary = summaries[0];
+  const taxCenterData = currentSummary
+    ? await getTaxCenterData({
+        month: currentSummary.month,
+        year: currentSummary.year,
+      }).catch(() => null)
+    : null;
 
   return (
     <ModuleFrame>
@@ -398,6 +405,54 @@ export default async function AccountingPeriodsPage({
           value={getPeriodStatusLabel(currentSummary?.period?.status)}
         />
       </section>
+
+      {currentSummary && taxCenterData ? (
+        <PremiumCard className="border-cyan-300/14 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.1),transparent_34%),rgba(255,255,255,0.035)] p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <span className="om7-chip om7-chip-cyan">Centro Tributario</span>
+              <h2 className="mt-3 text-xl font-semibold text-white">
+                IVA neto del periodo
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-slate-400">
+                Consolidacion tributaria de {getPeriodLabel(currentSummary.year, currentSummary.month)}.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[520px]">
+              <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-3">
+                <p className="text-xs text-slate-500">IVA debito</p>
+                <p className="mt-1 text-sm font-semibold text-white">
+                  {formatCurrencyAmount(taxCenterData.salesTaxDebit, currency)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-3">
+                <p className="text-xs text-slate-500">IVA credito</p>
+                <p className="mt-1 text-sm font-semibold text-white">
+                  {formatCurrencyAmount(taxCenterData.purchaseTaxCredit, currency)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-3">
+                <p className="text-xs text-slate-500">Alertas</p>
+                <p className="mt-1 text-sm font-semibold text-white">
+                  {taxCenterData.alerts.length}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-3 sm:col-span-3">
+                <p className="text-xs text-slate-500">E7 Health Score</p>
+                <p className="mt-1 text-sm font-semibold text-white">
+                  {taxCenterData.e7Mind.score}/100 · {taxCenterData.e7Mind.statusLabel}
+                </p>
+              </div>
+            </div>
+            <Link
+              className="om7-btn-primary px-4 py-2.5"
+              href={`/tributario?year=${currentSummary.year}&month=${currentSummary.month}`}
+            >
+              Abrir tributario
+            </Link>
+          </div>
+        </PremiumCard>
+      ) : null}
 
       <PremiumCard className="overflow-hidden">
         <div className="border-b border-white/[0.07] p-5">

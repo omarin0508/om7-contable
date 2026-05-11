@@ -18,6 +18,7 @@ export const config = {
     "/empresas/:path*",
     "/configuracion/:path*",
     "/onboarding/:path*",
+    "/tributario/:path*",
     "/login",
     "/registro",
   ],

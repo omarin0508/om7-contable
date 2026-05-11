@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { createDefaultAccountsAction } from "@/app/(platform)/contabilidad/actions";
 import {
   BackLink,
   MetricCard,
@@ -11,7 +10,6 @@ import { JournalEntryCard } from "@/components/accounting/journal-entry-card";
 import { PremiumCard } from "@/components/ui/premium-card";
 import {
   getJournalTotals,
-  listAccountingAccounts,
   listJournalEntriesForActiveCompany,
 } from "@/lib/accounting-entries";
 import {
@@ -23,6 +21,12 @@ import {
 import { normalizeCurrencyCode } from "@/lib/currency";
 import { getInvoicesForActiveCompany } from "@/lib/invoices";
 import { listPurchases } from "@/lib/purchases";
+
+type AccountingPageProps = {
+  searchParams?: Promise<{
+    error?: string;
+  }>;
+};
 
 function getEntryStatusLabel(status: string | null | undefined) {
   if (status === "posted") {
@@ -40,40 +44,24 @@ function getEntryStatusLabel(status: string | null | undefined) {
   return "Sugerido";
 }
 
-type AccountingPageProps = {
-  searchParams?: Promise<{
-    error?: string;
-  }>;
-};
-
 export default async function AccountingPage({
   searchParams,
 }: AccountingPageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const actionError = resolvedSearchParams.error ?? null;
-  const [
-    entriesResult,
-    accountsResult,
-    periodsResult,
-    purchasesResult,
-    invoicesResult,
-  ] = await Promise.all([
-    listJournalEntriesForActiveCompany().catch(() => ({
-      company: null,
-      entries: [],
-      organization: null,
-    })),
-    listAccountingAccounts().catch(() => ({
-      accounts: [],
-      company: null,
-      organization: null,
-    })),
-    listAccountingPeriods().catch(() => ({
-      periods: [] as AccountingPeriod[],
-    })),
-    listPurchases(),
-    getInvoicesForActiveCompany(),
-  ]);
+  const [entriesResult, periodsResult, purchasesResult, invoicesResult] =
+    await Promise.all([
+      listJournalEntriesForActiveCompany().catch(() => ({
+        company: null,
+        entries: [],
+        organization: null,
+      })),
+      listAccountingPeriods().catch(() => ({
+        periods: [] as AccountingPeriod[],
+      })),
+      listPurchases(),
+      getInvoicesForActiveCompany(),
+    ]);
   const activeContext = purchasesResult.activeContext;
   const activeCompany = activeContext.activeCompany;
   const organization = activeContext.organization;
@@ -82,19 +70,29 @@ export default async function AccountingPage({
   );
   const entries = entriesResult.entries;
   const periods = periodsResult.periods;
-  const suggestedCount = entries.filter((entry) => entry.status === "suggested").length;
-  const observedCount = entries.filter((entry) => entry.status === "observed").length;
+  const suggestedCount = entries.filter(
+    (entry) => entry.status === "suggested",
+  ).length;
+  const observedCount = entries.filter(
+    (entry) => entry.status === "observed",
+  ).length;
   const postedCount = entries.filter((entry) => entry.status === "posted").length;
   const pendingCount = entries.filter((entry) => entry.status !== "posted").length;
   const sourceTitles = new Map<string, string>([
-    ...purchasesResult.purchases.map((purchase) => [
-      `purchase-${purchase.id}`,
-      purchase.counterparty?.name ?? purchase.supplier_name ?? "Compra",
-    ] as const),
-    ...invoicesResult.invoices.map((invoice) => [
-      `invoice-${invoice.id}`,
-      invoice.counterparty?.name ?? invoice.proveedor ?? "Factura",
-    ] as const),
+    ...purchasesResult.purchases.map(
+      (purchase) =>
+        [
+          `purchase-${purchase.id}`,
+          purchase.counterparty?.name ?? purchase.supplier_name ?? "Compra",
+        ] as const,
+    ),
+    ...invoicesResult.invoices.map(
+      (invoice) =>
+        [
+          `invoice-${invoice.id}`,
+          invoice.counterparty?.name ?? invoice.proveedor ?? "Factura",
+        ] as const,
+    ),
   ]);
 
   return (
@@ -105,12 +103,12 @@ export default async function AccountingPage({
         action={
           <div className="flex flex-wrap gap-2">
             <BackLink />
-            <form action={createDefaultAccountsAction}>
-              <input name="redirectTo" type="hidden" value="/contabilidad" />
-              <button className="om7-btn-primary px-4 py-2.5" type="submit">
-                Preparar cuentas base
-              </button>
-            </form>
+            <Link
+              className="om7-btn-primary px-4 py-2.5"
+              href="/contabilidad/catalogo"
+            >
+              Catalogo de cuentas
+            </Link>
           </div>
         }
       />
@@ -166,7 +164,7 @@ export default async function AccountingPage({
         />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+      <section>
         <PremiumCard className="overflow-hidden">
           <div className="border-b border-white/[0.07] p-5">
             <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
@@ -210,8 +208,9 @@ export default async function AccountingPage({
                             </span>
                           </div>
                           <p className="mt-3 text-sm font-semibold text-white">
-                            {sourceTitles.get(`${entry.source_type}-${entry.source_id}`) ??
-                              "Registro origen"}
+                            {sourceTitles.get(
+                              `${entry.source_type}-${entry.source_id}`,
+                            ) ?? "Registro origen"}
                           </p>
                           <p className="mt-1 text-xs text-slate-500">
                             {getPeriodLabel(entry.period_year, entry.period_month)}
@@ -228,7 +227,9 @@ export default async function AccountingPage({
                         lockedReason="Periodo cerrado. El asiento queda solo lectura."
                         redirectTo="/contabilidad"
                         sourceId={entry.source_id}
-                        sourceType={entry.source_type === "invoice" ? "invoice" : "purchase"}
+                        sourceType={
+                          entry.source_type === "invoice" ? "invoice" : "purchase"
+                        }
                       />
                     </div>
                   );
@@ -242,52 +243,12 @@ export default async function AccountingPage({
                     Aprueba una compra o factura y genera el asiento sugerido
                     desde su card.
                   </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </PremiumCard>
-
-        <PremiumCard className="overflow-hidden">
-          <div className="border-b border-white/[0.07] p-5">
-            <p className="text-base font-semibold text-white">
-              Catalogo minimo de cuentas
-            </p>
-            <p className="mt-1 text-sm leading-6 text-slate-500">
-              Base simple para que OM7 sugiera asientos sin configuracion pesada.
-            </p>
-          </div>
-          <div className="max-h-[72vh] overflow-y-auto overscroll-contain p-5">
-            <div className="grid gap-3">
-              {accountsResult.accounts.length > 0 ? (
-                accountsResult.accounts.map((account) => (
-                  <div
-                    className="rounded-2xl border border-white/[0.08] bg-black/15 p-4"
-                    key={account.id}
+                  <Link
+                    className="mt-5 inline-flex rounded-xl border border-cyan-200/20 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
+                    href="/contabilidad/catalogo"
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-white">
-                          {account.code} · {account.name}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {account.type} · saldo {account.normal_balance}
-                        </p>
-                      </div>
-                      {account.is_system ? (
-                        <span className="om7-chip om7-chip-cyan">Sistema</span>
-                      ) : null}
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="rounded-3xl border border-dashed border-white/[0.12] bg-white/[0.025] p-8 text-center">
-                  <p className="text-sm font-semibold text-white">
-                    No hay cuentas base.
-                  </p>
-                  <p className="mt-2 text-sm text-slate-500">
-                    Usa Preparar cuentas base para crear el catalogo minimo.
-                  </p>
+                    Revisar catalogo de cuentas
+                  </Link>
                 </div>
               )}
             </div>

@@ -355,7 +355,19 @@ export default async function DocumentWorkspacePage({
       <ModuleHeader
         title="Documento"
         description="Revise el archivo, apruebe los datos y conviertalo en compra o factura."
-        action={<BackLink href="/documentos" label="Volver a documentos" />}
+        action={
+          <div className="flex flex-wrap gap-2">
+            {extraction ? (
+              <Link
+                className="om7-btn-secondary px-4 py-2.5"
+                href={`/documentos/${document.id}/distribucion`}
+              >
+                Abrir E7 Mind
+              </Link>
+            ) : null}
+            <BackLink href="/documentos" label="Volver a documentos" />
+          </div>
+        }
       />
 
       {actionError ? (

@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { PremiumCard } from "@/components/ui/premium-card";
+import {
+  DashboardHero,
+  KPIStatCard,
+  StatusBadge as OM7StatusBadge,
+  WorkspaceLayout,
+} from "@/components/om7/operational-design-system";
 
 type ModuleHeaderProps = {
   eyebrow?: string;
@@ -26,20 +31,12 @@ export function ModuleHeader({
   action,
 }: ModuleHeaderProps) {
   return (
-    <section className="om7-card flex flex-col gap-5 rounded-3xl p-6 sm:p-7 lg:flex-row lg:items-end lg:justify-between">
-      <div className="max-w-3xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-200/80">
-          {eyebrow}
-        </p>
-        <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-          {title}
-        </h2>
-        <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">
-          {description}
-        </p>
-      </div>
-      {action}
-    </section>
+    <DashboardHero
+      action={action}
+      description={description}
+      eyebrow={eyebrow}
+      title={title}
+    />
   );
 }
 
@@ -58,15 +55,7 @@ export function BackLink({
 }
 
 export function MetricCard({ label, value, detail }: MetricCardProps) {
-  return (
-    <PremiumCard className="p-5">
-      <p className="text-sm text-slate-400">{label}</p>
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-white">
-        {value}
-      </p>
-      <p className="om7-muted mt-4 text-xs">{detail}</p>
-    </PremiumCard>
-  );
+  return <KPIStatCard detail={detail} label={label} value={value} />;
 }
 
 export function StatusBadge({ children }: StatusBadgeProps) {
@@ -86,9 +75,21 @@ export function StatusBadge({ children }: StatusBadgeProps) {
             ? ""
             : "om7-chip-emerald";
 
-  return <span className={`om7-chip ${tone}`}>{children}</span>;
+  if (tone === "om7-chip-rose") {
+    return <OM7StatusBadge tone="rose">{children}</OM7StatusBadge>;
+  }
+
+  if (tone === "om7-chip-amber") {
+    return <OM7StatusBadge tone="amber">{children}</OM7StatusBadge>;
+  }
+
+  if (tone === "om7-chip-cyan") {
+    return <OM7StatusBadge tone="cyan">{children}</OM7StatusBadge>;
+  }
+
+  return <OM7StatusBadge tone="emerald">{children}</OM7StatusBadge>;
 }
 
 export function ModuleFrame({ children }: { children: ReactNode }) {
-  return <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">{children}</div>;
+  return <WorkspaceLayout>{children}</WorkspaceLayout>;
 }

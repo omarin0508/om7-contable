@@ -68,6 +68,7 @@ export type CreateInvoiceInput = {
   suggestedCostCenterId?: string;
   sourceDocumentId?: string;
   sourceExtractionId?: string;
+  conversionMetadata?: Record<string, unknown>;
 };
 
 export type UpdateInvoiceReviewStatusInput = {
@@ -198,6 +199,7 @@ export async function createInvoiceForActiveCompany(input: CreateInvoiceInput) {
             created_from: "document_extraction",
             source_document_id: input.sourceDocumentId,
             source_extraction_id: input.sourceExtractionId ?? null,
+            ...(input.conversionMetadata ?? {}),
           }
         : null,
     })
@@ -236,11 +238,12 @@ export async function updateInvoiceReviewStatus(
     .eq("organization_id", activeContext.organization.id)
     .eq("company_id", activeContext.activeCompany.id)
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (error || !data) {
     throw new Error(
-      error?.message ?? "No se pudo actualizar la revision de la factura.",
+      error?.message ??
+        "No se pudo actualizar la factura. Si la ves en pantalla, falta aplicar la policy de actualizacion del schema 023 en Supabase.",
     );
   }
 

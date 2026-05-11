@@ -15,6 +15,13 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function logActionError(action: string, error: unknown) {
+  console.error("[OM7 action error]", {
+    action,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 function redirectWithError(path: string, message: string) {
   const [basePath, hash] = path.split("#");
   const separator = basePath.includes("?") ? "&" : "?";
@@ -30,6 +37,7 @@ export async function createDefaultAccountsAction(formData: FormData) {
   try {
     await createDefaultAccountsForCompany();
   } catch (error) {
+    logActionError("createDefaultAccountsAction", error);
     target = redirectWithError(
       redirectTo,
       getErrorMessage(error, "No se pudieron preparar las cuentas base."),
@@ -37,6 +45,7 @@ export async function createDefaultAccountsAction(formData: FormData) {
   }
 
   revalidatePath("/contabilidad");
+  revalidatePath("/contabilidad/catalogo");
   redirect(target);
 }
 
@@ -55,6 +64,7 @@ export async function suggestJournalEntryAction(formData: FormData) {
       throw new Error("Origen contable invalido.");
     }
   } catch (error) {
+    logActionError("suggestJournalEntryAction", error);
     target = redirectWithError(
       redirectTo,
       getErrorMessage(error, "No se pudo generar el asiento sugerido."),
@@ -85,6 +95,7 @@ export async function updateJournalEntryStatusAction(formData: FormData) {
       throw new Error("Estado contable invalido.");
     }
   } catch (error) {
+    logActionError("updateJournalEntryStatusAction", error);
     target = redirectWithError(
       redirectTo,
       getErrorMessage(error, "No se pudo actualizar el asiento."),

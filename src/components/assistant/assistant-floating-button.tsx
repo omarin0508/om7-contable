@@ -14,6 +14,23 @@ function ActionLink({
   onClick: () => void;
   tone?: "primary" | "secondary";
 }) {
+  if (href === "__close") {
+    return (
+      <button
+        className={[
+          "inline-flex min-h-10 items-center justify-center rounded-xl px-3 text-xs font-semibold transition",
+          tone === "primary"
+            ? "border border-cyan-300/25 bg-cyan-300/14 text-cyan-50 hover:bg-cyan-300/20"
+            : "border border-white/[0.08] bg-white/[0.045] text-slate-200 hover:bg-white/[0.075]",
+        ].join(" ")}
+        onClick={onClick}
+        type="button"
+      >
+        {label}
+      </button>
+    );
+  }
+
   return (
     <Link
       className={[
@@ -34,7 +51,10 @@ function AssistantPanel() {
   const { close, guidance, snapshot } = useAssistant();
 
   return (
-    <aside className="fixed inset-x-3 bottom-20 z-[70] max-h-[76vh] overflow-hidden rounded-3xl border border-white/[0.12] bg-[#05070d]/95 shadow-2xl shadow-black/60 backdrop-blur-2xl sm:inset-x-auto sm:right-5 sm:w-[390px] lg:bottom-6">
+    <aside
+      className="fixed inset-x-3 bottom-20 z-[9999] max-h-[76vh] overflow-hidden rounded-3xl border border-cyan-200/15 bg-[#05070d]/96 shadow-2xl shadow-cyan-950/40 backdrop-blur-2xl sm:inset-x-auto sm:right-5 sm:w-[390px] lg:bottom-6"
+      data-testid="om7-assistant-panel"
+    >
       <div className="border-b border-white/[0.08] bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.18),transparent_34%),rgba(255,255,255,0.035)] p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -45,7 +65,7 @@ function AssistantPanel() {
               {guidance.title}
             </h2>
             <p className="mt-1 text-xs leading-5 text-slate-300">
-              {snapshot.companyName ?? "Sin cliente activo"} ·{" "}
+              {snapshot.companyName ?? "Sin cliente activo"} -{" "}
               {snapshot.period.label}
             </p>
           </div>
@@ -175,14 +195,15 @@ export function AssistantFloatingButton() {
       <button
         aria-expanded={isOpen}
         aria-label="Abrir copiloto operativo OM7"
-        className="fixed bottom-20 right-4 z-[70] flex items-center gap-2 rounded-2xl border border-white/[0.14] bg-[#05070d]/82 px-3 py-2.5 text-sm font-semibold text-white shadow-2xl shadow-black/45 backdrop-blur-2xl transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-white/[0.08] lg:bottom-6 lg:right-6"
+        className="fixed bottom-20 right-4 z-[9999] flex items-center gap-2 rounded-2xl border border-cyan-200/20 bg-[#05070d]/90 px-3 py-2.5 text-sm font-semibold text-white shadow-2xl shadow-cyan-950/40 backdrop-blur-2xl transition hover:-translate-y-0.5 hover:border-cyan-200/40 hover:bg-white/[0.08] hover:shadow-cyan-500/15 lg:bottom-6 lg:right-6"
+        data-testid="om7-assistant-button"
         onClick={toggle}
         type="button"
       >
         <span className="grid h-8 w-8 place-items-center rounded-xl border border-cyan-300/25 bg-cyan-300/12 text-[11px] text-cyan-100">
           OM7
         </span>
-        <span className="hidden sm:block">Copiloto</span>
+        <span className="hidden sm:block">Ayuda OM7</span>
         <span
           className={[
             "h-2 w-2 rounded-full",

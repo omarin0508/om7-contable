@@ -8,6 +8,13 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function logActionError(action: string, error: unknown) {
+  console.error("[OM7 action error]", {
+    action,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 function redirectWithError(path: string, message: string) {
   const separator = path.includes("?") ? "&" : "?";
 
@@ -26,6 +33,7 @@ export async function markDocumentReviewedAction(formData: FormData) {
 
     await updateDocumentReviewStatus(documentId, "reviewed", notes);
   } catch (error) {
+    logActionError("markDocumentReviewedAction", error);
     target = redirectWithError(
       "/bandeja",
       getErrorMessage(error, "No se pudo marcar el documento como revisado."),
@@ -48,6 +56,7 @@ export async function markDocumentRejectedAction(formData: FormData) {
 
     await updateDocumentReviewStatus(documentId, "rejected", notes);
   } catch (error) {
+    logActionError("markDocumentRejectedAction", error);
     target = redirectWithError(
       "/bandeja",
       getErrorMessage(error, "No se pudo observar el documento."),

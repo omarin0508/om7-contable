@@ -22,6 +22,13 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function logActionError(action: string, error: unknown) {
+  console.error("[OM7 action error]", {
+    action,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 function redirectWithError(path: string, message: string) {
   const separator = path.includes("?") ? "&" : "?";
 
@@ -36,6 +43,7 @@ export async function markPeriodInReviewAction(formData: FormData) {
     const period = await createOrGetAccountingPeriod(companyId, year, month);
     await markAccountingPeriodInReview(period.id, notes);
   } catch (error) {
+    logActionError("markPeriodInReviewAction", error);
     target = redirectWithError(
       "/periodos",
       getErrorMessage(error, "No se pudo marcar el periodo en revision."),
@@ -54,6 +62,7 @@ export async function closePeriodAction(formData: FormData) {
     const period = await createOrGetAccountingPeriod(companyId, year, month);
     await closeAccountingPeriod(period.id, notes);
   } catch (error) {
+    logActionError("closePeriodAction", error);
     target = redirectWithError(
       "/periodos",
       getErrorMessage(error, "No se pudo cerrar el periodo."),
@@ -72,6 +81,7 @@ export async function reopenPeriodAction(formData: FormData) {
     const period = await createOrGetAccountingPeriod(companyId, year, month);
     await reopenAccountingPeriod(period.id, notes);
   } catch (error) {
+    logActionError("reopenPeriodAction", error);
     target = redirectWithError(
       "/periodos",
       getErrorMessage(error, "No se pudo reabrir el periodo."),

@@ -176,9 +176,9 @@ export function buildAssistantGuidance(
     snapshot.purchases.pendingReview + snapshot.invoices.pendingReview;
   const observedRecords = snapshot.purchases.observed + snapshot.invoices.observed;
   const baseActions: AssistantAction[] = [
-    { href: "/bandeja", label: "Ir a bandeja", tone: "primary" },
+    { href: "__close", label: "Seguir aqui", tone: "primary" },
+    { href: "/bandeja", label: "Ir a bandeja" },
     { href: "/observados", label: "Ver observados" },
-    { href: "/periodos", label: "Control mensual" },
   ];
   let context =
     "Estas viendo el sistema operativo financiero. OM7 resume el trabajo diario, documentos, registros y cierre mensual.";
@@ -196,8 +196,9 @@ export function buildAssistantGuidance(
         ? "Si los datos ya estan revisados, el siguiente paso es convertir el documento evitando duplicados."
         : "Confirma proveedor, cliente, totales y clasificacion antes de convertir.";
     actions = [
+      { href: "__close", label: "Seguir revisando", tone: "primary" },
       { href: "/documentos", label: "Volver a documentos" },
-      { href: "/bandeja", label: "Abrir bandeja", tone: "primary" },
+      { href: "/bandeja", label: "Abrir bandeja" },
     ];
   } else if (pathname.startsWith("/documentos")) {
     context =
@@ -207,9 +208,9 @@ export function buildAssistantGuidance(
         ? "Abri el documento mas urgente y completa revision o conversion."
         : "No hay documentos criticos; podes revisar compras, facturas o periodo.";
     actions = [
-      { href: "/bandeja", label: "Ver cola diaria", tone: "primary" },
+      { href: "__close", label: "Seguir en documentos", tone: "primary" },
+      { href: "/bandeja", label: "Ver cola diaria" },
       { href: "/compras", label: "Compras" },
-      { href: "/facturas", label: "Facturas" },
     ];
   } else if (pathname.startsWith("/compras")) {
     context =
@@ -222,8 +223,8 @@ export function buildAssistantGuidance(
           : "Si ya estan aprobadas, revisa pagos y asientos sugeridos.";
     actions = [
       { href: "/compras?filter=accounting_pending", label: "Compras pendientes", tone: "primary" },
-      { href: "/movimientos", label: "Pagos" },
-      { href: "/contabilidad", label: "Asientos" },
+      { href: "/compras?filter=accounting_approved", label: "Aprobadas" },
+      { href: "/movimientos/pagar", label: "Cuentas por pagar" },
     ];
   } else if (pathname.startsWith("/facturas")) {
     context =
@@ -232,12 +233,58 @@ export function buildAssistantGuidance(
       snapshot.invoices.observed > 0
         ? "Atende las facturas observadas antes de cerrar el mes."
         : snapshot.invoices.pendingReview > 0
-          ? "Aproba o revisa las facturas pendientes."
+          ? "Marca como revisadas las facturas pendientes; luego aprobalas para habilitar cobro, asiento y cierre."
           : "Revisa cobros y genera los asientos de las facturas aprobadas.";
     actions = [
       { href: "/facturas?filter=accounting_pending", label: "Facturas pendientes", tone: "primary" },
-      { href: "/movimientos", label: "Cobros" },
-      { href: "/contabilidad", label: "Asientos" },
+      { href: "/facturas?filter=accounting_approved", label: "Aprobadas" },
+      { href: "/movimientos/cobrar", label: "Cuentas por cobrar" },
+    ];
+  } else if (pathname.startsWith("/movimientos/cobrar")) {
+    context =
+      "Estas en cuentas por cobrar. OM7 prioriza que revises saldos, vencidos y cobros sin salir de este workspace.";
+    nextStep =
+      "Primero trabaja aqui: confirma pendientes, registra cobros desde facturas y vuelve a este workspace para continuar.";
+    actions = [
+      { href: "__close", label: "Seguir aqui", tone: "primary" },
+      { href: "/movimientos/cobrar?filter=overdue", label: "Ver vencidas" },
+      {
+        href: "/facturas?returnTo=%2Fmovimientos%2Fcobrar&returnLabel=Volver%20a%20cuentas%20por%20cobrar",
+        label: "Registrar cobro",
+      },
+    ];
+  } else if (pathname.startsWith("/movimientos/pagar")) {
+    context =
+      "Estas en cuentas por pagar. OM7 prioriza que revises obligaciones y pagos sin perder el rastro del workspace.";
+    nextStep =
+      "Primero trabaja aqui: revisa pendientes o vencidas, registra pagos desde compras y vuelve a cuentas por pagar.";
+    actions = [
+      { href: "__close", label: "Seguir aqui", tone: "primary" },
+      { href: "/movimientos/pagar?filter=overdue", label: "Ver vencidas" },
+      {
+        href: "/compras?returnTo=%2Fmovimientos%2Fpagar&returnLabel=Volver%20a%20cuentas%20por%20pagar",
+        label: "Registrar pago",
+      },
+    ];
+  } else if (pathname.startsWith("/movimientos/recientes")) {
+    context =
+      "Estas en movimientos recientes. Esta vista sirve para revisar actividad sin abandonar el modulo de movimientos.";
+    nextStep =
+      "Filtra aqui por cobros o pagos; si necesitas accionar, entra al registro y conserva el retorno al workspace.";
+    actions = [
+      { href: "__close", label: "Seguir aqui", tone: "primary" },
+      { href: "/movimientos/recientes?type=collections", label: "Cobros" },
+      { href: "/movimientos/recientes?type=payments", label: "Pagos" },
+    ];
+  } else if (pathname.startsWith("/movimientos")) {
+    context =
+      "Estas en el dashboard de movimientos. Esta portada resume y te lleva a cada workspace sin mezclar listas.";
+    nextStep =
+      "Elegí el workspace principal y mantené el rastro: cobrar, pagar, recientes o control mensual.";
+    actions = [
+      { href: "__close", label: "Seguir aqui", tone: "primary" },
+      { href: "/movimientos/cobrar", label: "Cuentas por cobrar" },
+      { href: "/movimientos/pagar", label: "Cuentas por pagar" },
     ];
   } else if (pathname.startsWith("/periodos")) {
     context =
@@ -247,9 +294,9 @@ export function buildAssistantGuidance(
         ? "Resolve pendientes y observados antes de intentar cerrar el periodo."
         : "El mes se ve listo para cierre operativo.";
     actions = [
-      { href: "/observados", label: "Ver bloqueos", tone: "primary" },
+      { href: "__close", label: "Seguir en periodos", tone: "primary" },
+      { href: "/observados", label: "Ver bloqueos" },
       { href: "/reportes", label: "Reportes" },
-      { href: "/contabilidad", label: "Contabilidad" },
     ];
   } else if (pathname.startsWith("/contabilidad")) {
     context =
@@ -259,8 +306,8 @@ export function buildAssistantGuidance(
         ? "Revisa y contabiliza los asientos pendientes que cuadren."
         : "No hay asientos pendientes; revisa reportes o cierre mensual.";
     actions = [
-      { href: "/contabilidad", label: "Asientos", tone: "primary" },
-      { href: "/periodos", label: "Periodo" },
+      { href: "__close", label: "Seguir aqui", tone: "primary" },
+      { href: "/contabilidad/catalogo", label: "Catalogo" },
       { href: "/reportes?view=contabilidad", label: "Reporte contable" },
     ];
   } else if (pathname.startsWith("/dashboard")) {

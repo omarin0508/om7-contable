@@ -144,6 +144,13 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function logActionError(action: string, error: unknown) {
+  console.error("[OM7 action error]", {
+    action,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 function redirectWithError(path: string, message: string) {
   const [basePath, hash] = path.split("#");
   const separator = basePath.includes("?") ? "&" : "?";
@@ -315,21 +322,31 @@ export async function uploadDocumentAction(formData: FormData) {
   const relatedType = String(formData.get("relatedType") ?? "general");
   const relatedId = String(formData.get("relatedId") ?? "").trim();
   const documentType = String(formData.get("documentType") ?? "otro").trim();
+  let target = redirectTo;
 
-  await uploadDocument({
-    file: getFile(formData),
-    relatedType:
-      relatedType === "invoice" || relatedType === "purchase"
-        ? relatedType
-        : "general",
-    relatedId: relatedId || undefined,
-    documentType: documentType || "otro",
-  });
+  try {
+    await uploadDocument({
+      file: getFile(formData),
+      relatedType:
+        relatedType === "invoice" || relatedType === "purchase"
+          ? relatedType
+          : "general",
+      relatedId: relatedId || undefined,
+      documentType: documentType || "otro",
+    });
+    target = redirectWithNotice(redirectTo, "Documento cargado correctamente.");
+  } catch (error) {
+    logActionError("uploadDocumentAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo cargar el documento."),
+    );
+  }
 
   revalidatePath("/documentos");
   revalidatePath("/facturas");
   revalidatePath("/compras");
-  redirect(redirectTo);
+  redirect(target);
 }
 
 export async function processDocumentAction(formData: FormData) {
@@ -337,47 +354,67 @@ export async function processDocumentAction(formData: FormData) {
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
   const rawText = String(formData.get("rawText") ?? "").trim();
   const extractedDataInput = String(formData.get("extractedData") ?? "").trim();
+  let target = redirectTo;
 
-  if (!documentId) {
-    throw new Error("Documento requerido.");
-  }
-
-  let extractedData = getDefaultExtractedData();
-
-  if (extractedDataInput) {
-    try {
-      extractedData = {
-        ...extractedData,
-        ...JSON.parse(extractedDataInput),
-      };
-    } catch {
-      throw new Error("El JSON extraido no es valido.");
+  try {
+    if (!documentId) {
+      throw new Error("Documento requerido.");
     }
-  }
 
-  await createManualExtraction(
-    documentId,
-    rawText || "Extraccion manual simulada pendiente de OCR real.",
-    extractedData,
-  );
+    let extractedData = getDefaultExtractedData();
+
+    if (extractedDataInput) {
+      try {
+        extractedData = {
+          ...extractedData,
+          ...JSON.parse(extractedDataInput),
+        };
+      } catch {
+        throw new Error("El JSON extraido no es valido.");
+      }
+    }
+
+    await createManualExtraction(
+      documentId,
+      rawText || "Extraccion manual simulada pendiente de OCR real.",
+      extractedData,
+    );
+    target = redirectWithNotice(redirectTo, "Extraccion creada correctamente.");
+  } catch (error) {
+    logActionError("processDocumentAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo crear la extraccion."),
+    );
+  }
 
   revalidatePath("/documentos");
-  redirect(redirectTo);
+  redirect(target);
 }
 
 export async function processDocumentWithVisionAction(formData: FormData) {
   const documentId = String(formData.get("documentId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = redirectTo;
 
-  if (!documentId) {
-    throw new Error("Documento requerido.");
+  try {
+    if (!documentId) {
+      throw new Error("Documento requerido.");
+    }
+
+    await processDocumentWithVision(documentId);
+    target = redirectWithNotice(redirectTo, "Documento procesado correctamente.");
+  } catch (error) {
+    logActionError("processDocumentWithVisionAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo procesar el documento."),
+    );
   }
-
-  await processDocumentWithVision(documentId);
 
   revalidatePath("/documentos");
   revalidatePath("/bandeja");
-  redirect(redirectTo);
+  redirect(target);
 }
 
 export async function updateDocumentMetadataAction(formData: FormData) {
@@ -387,98 +424,149 @@ export async function updateDocumentMetadataAction(formData: FormData) {
   const documentType = String(formData.get("documentType") ?? "otro").trim();
   const notes = String(formData.get("notes") ?? "").trim();
   const tags = parseTags(formData.get("tags"));
+  let target = redirectTo;
 
-  if (!documentId) {
-    throw new Error("Documento requerido.");
-  }
+  try {
+    if (!documentId) {
+      throw new Error("Documento requerido.");
+    }
 
-  const { currentUser, document, supabase } = await getManageableDocument(documentId);
-  const metadata =
-    document.metadata && typeof document.metadata === "object"
-      ? (document.metadata as Record<string, unknown>)
-      : {};
-  const { error } = await supabase
-    .from("documents")
-    .update({
-      display_name: displayName || null,
-      document_type: documentType || "otro",
-      notes: notes || null,
-      metadata: {
-        ...metadata,
-        tags,
-      },
-      updated_by: currentUser.userId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", document.id)
-    .eq("organization_id", document.organization_id)
-    .eq("company_id", document.company_id);
+    const { currentUser, document, supabase } = await getManageableDocument(documentId);
+    const metadata =
+      document.metadata && typeof document.metadata === "object"
+        ? (document.metadata as Record<string, unknown>)
+        : {};
+    const { error } = await supabase
+      .from("documents")
+      .update({
+        display_name: displayName || null,
+        document_type: documentType || "otro",
+        notes: notes || null,
+        metadata: {
+          ...metadata,
+          tags,
+        },
+        updated_by: currentUser.userId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", document.id)
+      .eq("organization_id", document.organization_id)
+      .eq("company_id", document.company_id);
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    target = redirectWithNotice(redirectTo, "Informacion del documento guardada.");
+  } catch (error) {
+    logActionError("updateDocumentMetadataAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo guardar el documento."),
+    );
   }
 
   revalidatePath("/documentos");
   revalidatePath(`/documentos/${documentId}`);
-  redirect(redirectTo);
+  redirect(target);
 }
 
 export async function archiveDocumentAction(formData: FormData) {
   const documentId = String(formData.get("documentId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = redirectTo;
 
-  await updateDocumentLifecycle(documentId, {
-    archived_at: new Date().toISOString(),
-    inactive_at: null,
-    deleted_at: null,
-  });
+  try {
+    await updateDocumentLifecycle(documentId, {
+      archived_at: new Date().toISOString(),
+      inactive_at: null,
+      deleted_at: null,
+    });
+  } catch (error) {
+    logActionError("archiveDocumentAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo archivar el documento."),
+    );
+  }
+
   revalidatePath("/documentos");
   revalidatePath(`/documentos/${documentId}`);
-  redirect(redirectTo);
+  redirect(target);
 }
 
 export async function inactivateDocumentAction(formData: FormData) {
   const documentId = String(formData.get("documentId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = redirectTo;
 
-  await updateDocumentLifecycle(documentId, {
-    inactive_at: new Date().toISOString(),
-    deleted_at: null,
-  });
+  try {
+    await updateDocumentLifecycle(documentId, {
+      inactive_at: new Date().toISOString(),
+      deleted_at: null,
+    });
+  } catch (error) {
+    logActionError("inactivateDocumentAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo inactivar el documento."),
+    );
+  }
+
   revalidatePath("/documentos");
   revalidatePath(`/documentos/${documentId}`);
-  redirect(redirectTo);
+  redirect(target);
 }
 
 export async function restoreDocumentAction(formData: FormData) {
   const documentId = String(formData.get("documentId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = redirectTo;
 
-  await updateDocumentLifecycle(documentId, {
-    archived_at: null,
-    inactive_at: null,
-    deleted_at: null,
-  });
+  try {
+    await updateDocumentLifecycle(documentId, {
+      archived_at: null,
+      inactive_at: null,
+      deleted_at: null,
+    });
+  } catch (error) {
+    logActionError("restoreDocumentAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo restaurar el documento."),
+    );
+  }
+
   revalidatePath("/documentos");
   revalidatePath(`/documentos/${documentId}`);
-  redirect(redirectTo);
+  redirect(target);
 }
 
 export async function softDeleteDocumentAction(formData: FormData) {
   const documentId = String(formData.get("documentId") ?? "").trim();
   const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
   const confirmation = String(formData.get("confirmDelete") ?? "");
+  let target = redirectTo;
 
-  if (confirmation !== "confirmado") {
-    throw new Error("Confirma la eliminacion logica del documento.");
+  try {
+    if (confirmation !== "confirmado") {
+      throw new Error("Confirma la eliminacion logica del documento.");
+    }
+
+    await updateDocumentLifecycle(documentId, {
+      deleted_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    logActionError("softDeleteDocumentAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo eliminar el documento."),
+    );
   }
 
-  await updateDocumentLifecycle(documentId, {
-    deleted_at: new Date().toISOString(),
-  });
   revalidatePath("/documentos");
   revalidatePath(`/documentos/${documentId}`);
-  redirect(redirectTo);
+  redirect(target);
 }
 
 export async function updateExtractionDataAction(formData: FormData) {
@@ -494,41 +582,54 @@ export async function updateExtractionDataAction(formData: FormData) {
   const date = String(formData.get("date") ?? "").trim();
   const currency = normalizeCurrencyCode(formData.get("currency"));
   const notes = String(formData.get("notes") ?? "").trim();
+  let target = `${redirectTo}#extraccion-${extractionId}`;
 
-  if (!extractionId) {
-    throw new Error("Extraccion requerida.");
+  try {
+    if (!extractionId) {
+      throw new Error("Extraccion requerida.");
+    }
+
+    const updatedExtraction = await updateDocumentExtractionData(extractionId, {
+      supplier_name: supplierName,
+      emisor_nombre: supplierName,
+      supplier_tax_id: supplierTaxId,
+      emisor_cedula: supplierTaxId,
+      customer_name: customerName,
+      receptor_nombre: customerName,
+      customer_tax_id: customerTaxId,
+      receptor_cedula: customerTaxId,
+      document_kind: documentKind,
+      clave,
+      document_number: documentNumber,
+      numero_consecutivo: documentNumber,
+      date,
+      fecha_emision: date,
+      currency,
+      moneda: currency,
+      subtotal: parseNumberValue(formData.get("subtotal")),
+      tax: parseNumberValue(formData.get("tax")),
+      impuesto: parseNumberValue(formData.get("tax")),
+      total: parseNumberValue(formData.get("total")),
+      notes,
+      line_items: parseLineItems(formData),
+    });
+
+    await classifyAndStoreDocumentExtraction(updatedExtraction.id);
+    target = redirectWithNotice(
+      `${redirectTo}#extraccion-${extractionId}`,
+      "Extraccion revisada y guardada correctamente.",
+    );
+  } catch (error) {
+    logActionError("updateExtractionDataAction", error);
+    target = redirectWithError(
+      `${redirectTo}#extraccion-${extractionId}`,
+      getErrorMessage(error, "No se pudo guardar la revision de la extraccion."),
+    );
   }
-
-  const updatedExtraction = await updateDocumentExtractionData(extractionId, {
-    supplier_name: supplierName,
-    emisor_nombre: supplierName,
-    supplier_tax_id: supplierTaxId,
-    emisor_cedula: supplierTaxId,
-    customer_name: customerName,
-    receptor_nombre: customerName,
-    customer_tax_id: customerTaxId,
-    receptor_cedula: customerTaxId,
-    document_kind: documentKind,
-    clave,
-    document_number: documentNumber,
-    numero_consecutivo: documentNumber,
-    date,
-    fecha_emision: date,
-    currency,
-    moneda: currency,
-    subtotal: parseNumberValue(formData.get("subtotal")),
-    tax: parseNumberValue(formData.get("tax")),
-    impuesto: parseNumberValue(formData.get("tax")),
-    total: parseNumberValue(formData.get("total")),
-    notes,
-    line_items: parseLineItems(formData),
-  });
-
-  await classifyAndStoreDocumentExtraction(updatedExtraction.id);
 
   revalidatePath("/documentos");
   revalidatePath("/bandeja");
-  redirect(`${redirectTo}#extraccion-${extractionId}`);
+  redirect(target);
 }
 
 export async function classifyDocumentExtractionAction(formData: FormData) {
@@ -548,6 +649,7 @@ export async function classifyDocumentExtractionAction(formData: FormData) {
       "Clasificacion generada correctamente.",
     );
   } catch (error) {
+    logActionError("classifyDocumentExtractionAction", error);
     target = redirectWithError(
       `${redirectTo}#clasificacion`,
       getErrorMessage(error, "No se pudo generar la clasificacion."),
@@ -576,6 +678,7 @@ export async function acceptDocumentClassificationAction(formData: FormData) {
       "Sugerencia OM7 aceptada correctamente.",
     );
   } catch (error) {
+    logActionError("acceptDocumentClassificationAction", error);
     target = redirectWithError(
       `${redirectTo}#clasificacion`,
       getErrorMessage(error, "No se pudo aceptar la clasificacion."),
@@ -604,6 +707,7 @@ export async function rejectDocumentClassificationAction(formData: FormData) {
       "Sugerencia OM7 rechazada.",
     );
   } catch (error) {
+    logActionError("rejectDocumentClassificationAction", error);
     target = redirectWithError(
       `${redirectTo}#clasificacion`,
       getErrorMessage(error, "No se pudo rechazar la clasificacion."),
@@ -643,6 +747,7 @@ export async function editDocumentClassificationAction(formData: FormData) {
       "Clasificacion editada correctamente.",
     );
   } catch (error) {
+    logActionError("editDocumentClassificationAction", error);
     target = redirectWithError(
       `${redirectTo}#clasificacion`,
       getErrorMessage(error, "No se pudo editar la clasificacion."),
@@ -681,6 +786,7 @@ export async function createCounterpartyRuleFromClassificationAction(
       "Regla guardada para esta contraparte.",
     );
   } catch (error) {
+    logActionError("createCounterpartyRuleFromClassificationAction", error);
     target = redirectWithError(
       `${redirectTo}#clasificacion`,
       getErrorMessage(error, "No se pudo guardar la regla de contraparte."),
@@ -710,6 +816,7 @@ export async function detectDocumentCounterpartyAction(formData: FormData) {
       "Contraparte detectada correctamente.",
     );
   } catch (error) {
+    logActionError("detectDocumentCounterpartyAction", error);
     target = redirectWithError(
       `${redirectTo}#contraparte`,
       getErrorMessage(error, "No se pudo detectar la contraparte."),
@@ -738,6 +845,7 @@ export async function acceptCounterpartyMatchAction(formData: FormData) {
       "Contraparte asociada correctamente.",
     );
   } catch (error) {
+    logActionError("acceptCounterpartyMatchAction", error);
     target = redirectWithError(
       `${redirectTo}#contraparte`,
       getErrorMessage(error, "No se pudo asociar la contraparte."),
@@ -768,6 +876,7 @@ export async function createCounterpartyFromMatchAction(formData: FormData) {
       "Contraparte creada y asociada correctamente.",
     );
   } catch (error) {
+    logActionError("createCounterpartyFromMatchAction", error);
     target = redirectWithError(
       `${redirectTo}#contraparte`,
       getErrorMessage(error, "No se pudo crear o asociar la contraparte."),
@@ -804,6 +913,7 @@ export async function editCounterpartyMatchAction(formData: FormData) {
       "Contraparte ajustada correctamente.",
     );
   } catch (error) {
+    logActionError("editCounterpartyMatchAction", error);
     target = redirectWithError(
       `${redirectTo}#contraparte`,
       getErrorMessage(error, "No se pudo ajustar la contraparte."),
@@ -882,6 +992,7 @@ export async function createPurchaseFromXmlAction(formData: FormData) {
     revalidatePath("/bandeja");
     redirectTo = "/compras";
   } catch (error) {
+    logActionError("createPurchaseFromXmlAction", error);
     redirectTo = redirectWithError(
       redirectTo,
       getErrorMessage(error, "No se pudo crear la compra desde el documento."),
@@ -952,6 +1063,7 @@ export async function createInvoiceFromXmlAction(formData: FormData) {
     revalidatePath("/bandeja");
     redirectTo = "/facturas";
   } catch (error) {
+    logActionError("createInvoiceFromXmlAction", error);
     redirectTo = redirectWithError(
       redirectTo,
       getErrorMessage(error, "No se pudo crear la factura desde el documento."),

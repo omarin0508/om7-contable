@@ -136,3 +136,33 @@ export function getConversionMetadataValue(
 
   return String(value);
 }
+
+export function getConversionMetadataObject(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+
+  return metadata as Record<string, unknown>;
+}
+
+export function getConversionMetadataString(metadata: unknown, key: string) {
+  const metadataObject = getConversionMetadataObject(metadata);
+  const value = metadataObject?.[key];
+
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+export function hasE7MindTrace(metadata: unknown) {
+  const metadataObject = getConversionMetadataObject(metadata);
+
+  if (!metadataObject) {
+    return false;
+  }
+
+  return (
+    metadataObject.created_from === "e7_mind_distribution" ||
+    Boolean(metadataObject.e7_mind) ||
+    Boolean(metadataObject.distribution_id) ||
+    Boolean(metadataObject.distribution_line_ids)
+  );
+}

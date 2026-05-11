@@ -10,6 +10,7 @@ export const navigationItems: NavItem[] = [
   { group: "Operacion", label: "Proveedores/Clientes", href: "/contrapartes", icon: "companies" },
   { group: "Operacion", label: "Clientes/Empresas", href: "/empresas", icon: "companies" },
   { group: "Control mensual", label: "Periodos", href: "/periodos", icon: "reports" },
+  { group: "Control mensual", label: "Tributario", href: "/tributario", icon: "reports" },
   { group: "Control mensual", label: "Reportes", href: "/reportes", icon: "reports" },
   { group: "Control mensual", label: "Contabilidad", href: "/contabilidad", icon: "reports" },
   { group: "Control mensual", label: "Movimientos", href: "/movimientos", icon: "expenses" },

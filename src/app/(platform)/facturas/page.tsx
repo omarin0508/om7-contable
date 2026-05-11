@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import {
-  createInvoiceAction,
   registerInvoiceCollectionAction,
   updateInvoiceReviewStatusAction,
 } from "@/app/(platform)/facturas/actions";
@@ -39,7 +38,11 @@ import {
   type JournalEntry,
 } from "@/lib/accounting-entries";
 import { formatCurrencyAmount } from "@/lib/currency";
-import { getConversionMetadataValue } from "@/lib/document-ui";
+import {
+  getConversionMetadataString,
+  getConversionMetadataValue,
+  hasE7MindTrace,
+} from "@/lib/document-ui";
 import { getInvoicesForActiveCompany, type Invoice } from "@/lib/invoices";
 import {
   getCollectionStatusKey,
@@ -57,6 +60,8 @@ type InvoicesPageProps = {
     error?: string;
     filter?: string;
     q?: string;
+    returnLabel?: string;
+    returnTo?: string;
   }>;
 };
 
@@ -135,6 +140,13 @@ function getInvoicePeriodLabel(invoice: Invoice) {
   }
 
   return getPeriodLabel(date.getFullYear(), date.getMonth() + 1);
+}
+
+function getInvoiceTraceDocumentId(invoice: Invoice) {
+  return (
+    invoice.source_document_id ??
+    getConversionMetadataString(invoice.conversion_metadata, "source_document_id")
+  );
 }
 
 function getSearchText(invoice: Invoice) {
@@ -262,6 +274,7 @@ function InvoiceCollectionForm({
             <input
               className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-emerald-300/35 focus:ring-4 focus:ring-emerald-300/10"
               defaultValue={remaining.toFixed(2)}
+              max={remaining.toFixed(2)}
               min="0"
               name="amount"
               step="0.01"
@@ -319,6 +332,8 @@ function InvoiceCard({
     invoice.source_document?.display_name ??
     invoice.source_document?.original_filename ??
     "Documento procesado";
+  const traceDocumentId = getInvoiceTraceDocumentId(invoice);
+  const e7Synced = hasE7MindTrace(invoice.conversion_metadata);
   const lockedByPeriod = isRecordLockedByPeriod(period);
   const periodLabel = getInvoicePeriodLabel(invoice);
   const collectedAmount = collectionSummary?.amount ?? 0;
@@ -329,10 +344,11 @@ function InvoiceCard({
     (invoice.review_status ?? "pending") === "observed"
       ? "Marcar corregido"
       : "Marcar revisada";
+  const isPosted = journalEntry?.status === "posted";
 
   return (
     <article className="rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_right,rgba(52,211,153,0.08),transparent_34%),rgba(255,255,255,0.035)] p-5 shadow-2xl shadow-black/15 transition hover:border-emerald-300/20 hover:bg-white/[0.05]">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="grid max-w-6xl gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,280px)] lg:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             {invoice.source_document_id ? (
@@ -340,6 +356,11 @@ function InvoiceCard({
             ) : (
               <span className="om7-chip text-slate-400">Manual</span>
             )}
+            {e7Synced ? (
+              <span className="om7-chip om7-chip-emerald">
+                Sincronizado con E7 Mind
+              </span>
+            ) : null}
             {invoice.counterparty_id ? (
               <span className="om7-chip om7-chip-emerald">Contraparte</span>
             ) : (
@@ -353,6 +374,9 @@ function InvoiceCard({
               <span className={getPeriodStatusBadgeClass(period?.status)}>
                 Periodo cerrado
               </span>
+            ) : null}
+            {isPosted ? (
+              <span className="om7-chip om7-chip-emerald">Contabilizada</span>
             ) : null}
             <span className={getMovementStatusBadgeClass(collectionStatus)}>
               {collectionLabel}
@@ -372,7 +396,7 @@ function InvoiceCard({
           </p>
         </div>
 
-        <div className="text-left lg:text-right">
+        <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-4 text-left lg:text-right">
           <p className="text-xs uppercase tracking-[0.18em] text-slate-600">
             Total
           </p>
@@ -429,18 +453,25 @@ function InvoiceCard({
         />
       </div>
 
-      <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/75">
+      <details className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">
+        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/75">
           Trazabilidad OM7
-        </p>
-        <p className="mt-2 text-sm text-slate-300">
-          Origen: {invoice.source_document_id ? sourceName : "Registro manual"}
-        </p>
-        <p className="mt-1 text-sm text-slate-500">
-          Regla aplicada:{" "}
-          {ruleApplied}
-        </p>
-      </div>
+        </summary>
+        <div className="mt-3">
+          <p className="text-sm text-slate-300">
+            Origen: {traceDocumentId ? sourceName : "Registro manual"}
+          </p>
+          <p className="mt-1 text-sm text-slate-500">
+            Regla aplicada: {ruleApplied}
+          </p>
+          {e7Synced ? (
+            <p className="mt-2 text-sm text-emerald-100/80">
+              Distribucion aprobada y vinculada al registro. Puedes reabrir E7
+              Mind para validar y sincronizar de nuevo sin duplicar.
+            </p>
+          ) : null}
+        </div>
+      </details>
 
       <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -525,12 +556,20 @@ function InvoiceCard({
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        {invoice.source_document_id ? (
+        {traceDocumentId ? (
           <Link
             className="om7-btn-secondary px-4 py-2.5"
-            href={`/documentos/${invoice.source_document_id}`}
+            href={`/documentos/${traceDocumentId}`}
           >
             Ver documento
+          </Link>
+        ) : null}
+        {e7Synced && traceDocumentId ? (
+          <Link
+            className="om7-btn-primary px-4 py-2.5"
+            href={`/documentos/${traceDocumentId}/distribucion`}
+          >
+            Abrir E7 Mind
           </Link>
         ) : null}
         {invoice.counterparty_id ? (
@@ -567,9 +606,17 @@ export default async function InvoicesPage({
   const activeFilter = resolvedSearchParams.filter ?? "all";
   const actionError = resolvedSearchParams.error ?? null;
   const searchTerm = resolvedSearchParams.q ?? "";
+  const returnTo = resolvedSearchParams.returnTo?.startsWith("/")
+    ? resolvedSearchParams.returnTo
+    : "/dashboard";
+  const returnLabel = resolvedSearchParams.returnLabel ?? "Volver al dashboard";
+  const returnQuery =
+    returnTo !== "/dashboard"
+      ? `&returnTo=${encodeURIComponent(returnTo)}&returnLabel=${encodeURIComponent(returnLabel)}`
+      : "";
   const redirectTo = `/facturas?filter=${activeFilter}${
     searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""
-  }`;
+  }${returnQuery}`;
   const [
     { activeContext, invoices },
     periodsResult,
@@ -617,11 +664,11 @@ export default async function InvoicesPage({
         title="Facturas"
         description="Control operativo de ingresos, clientes y documentos convertidos."
         action={
-          <div className="flex flex-wrap gap-2">
-            <BackLink />
-            <a className="om7-btn-primary px-4 py-2.5" href="#nueva-factura">
+            <div className="flex flex-wrap gap-2">
+              <BackLink href={returnTo} label={returnLabel} />
+            <Link className="om7-btn-primary px-4 py-2.5" href="/facturas/nueva">
               Nueva factura
-            </a>
+            </Link>
           </div>
         }
       />
@@ -678,7 +725,7 @@ export default async function InvoicesPage({
         />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+      <section>
         <PremiumCard className="overflow-hidden">
           <div className="border-b border-white/[0.07] p-5">
             <div className="flex flex-col gap-4">
@@ -688,8 +735,7 @@ export default async function InvoicesPage({
                     Bandeja de facturas
                   </p>
                   <p className="mt-1 text-sm text-slate-500">
-                    Documento recibido, datos revisados, factura creada y
-                    trazabilidad lista.
+                    Revisión, cobro y trazabilidad en una sola bandeja.
                   </p>
                 </div>
                 <span className="text-sm text-slate-500">
@@ -721,7 +767,7 @@ export default async function InvoicesPage({
                     ].join(" ")}
                     href={`/facturas?filter=${filter}${
                       searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""
-                    }`}
+                    }${returnQuery}`}
                     key={filter}
                   >
                     {label}
@@ -759,183 +805,6 @@ export default async function InvoicesPage({
             </div>
           </div>
         </PremiumCard>
-
-        <div id="nueva-factura">
-          <PremiumCard className="p-5">
-            <p className="text-sm font-semibold text-white">
-              Nueva factura manual
-            </p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              {activeCompany
-                ? `Se guardara en ${activeCompany.name}.`
-                : "Selecciona una empresa activa antes de registrar."}
-            </p>
-
-            <form action={createInvoiceAction} className="mt-5 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-300">
-                    Tipo
-                  </span>
-                  <select
-                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
-                    defaultValue="factura"
-                    disabled={!activeCompany}
-                    name="tipoDocumento"
-                  >
-                    <option className="bg-slate-950" value="factura">
-                      Factura
-                    </option>
-                    <option className="bg-slate-950" value="tiquete">
-                      Tiquete
-                    </option>
-                    <option className="bg-slate-950" value="nota_credito">
-                      Nota credito
-                    </option>
-                  </select>
-                </label>
-
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-300">
-                    Estado
-                  </span>
-                  <select
-                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
-                    defaultValue="borrador"
-                    disabled={!activeCompany}
-                    name="estado"
-                  >
-                    <option className="bg-slate-950" value="borrador">
-                      Borrador
-                    </option>
-                    <option className="bg-slate-950" value="revision">
-                      Revision
-                    </option>
-                    <option className="bg-slate-950" value="validada">
-                      Validada
-                    </option>
-                  </select>
-                </label>
-              </div>
-
-              <label className="block">
-                <span className="text-sm font-medium text-slate-300">
-                  Cliente / contraparte
-                </span>
-                <input
-                  className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                  disabled={!activeCompany}
-                  name="proveedor"
-                  placeholder="Cliente S.A."
-                  required
-                />
-              </label>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-300">
-                    Numero
-                  </span>
-                  <input
-                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                    disabled={!activeCompany}
-                    name="numeroDocumento"
-                    placeholder="00100001010000000001"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-300">
-                    Fecha
-                  </span>
-                  <input
-                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                    disabled={!activeCompany}
-                    name="fecha"
-                    type="date"
-                  />
-                </label>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-300">
-                    Moneda
-                  </span>
-                  <input
-                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                    disabled={!activeCompany}
-                    name="moneda"
-                    placeholder={currency}
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-300">
-                    Subtotal
-                  </span>
-                  <input
-                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                    disabled={!activeCompany}
-                    min="0"
-                    name="subtotal"
-                    placeholder="0.00"
-                    step="0.01"
-                    type="number"
-                  />
-                </label>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-300">
-                    Impuesto
-                  </span>
-                  <input
-                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                    disabled={!activeCompany}
-                    min="0"
-                    name="impuesto"
-                    placeholder="0.00"
-                    step="0.01"
-                    type="number"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-300">
-                    Total
-                  </span>
-                  <input
-                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                    disabled={!activeCompany}
-                    min="0"
-                    name="total"
-                    placeholder="0.00"
-                    step="0.01"
-                    type="number"
-                  />
-                </label>
-              </div>
-
-              <label className="block">
-                <span className="text-sm font-medium text-slate-300">Notas</span>
-                <textarea
-                  className="mt-2 min-h-24 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                  disabled={!activeCompany}
-                  name="notas"
-                  placeholder="Observaciones internas"
-                />
-              </label>
-
-              <button
-                className="om7-btn-primary h-12 w-full px-4 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!activeCompany}
-                type="submit"
-              >
-                Guardar factura
-              </button>
-            </form>
-          </PremiumCard>
-        </div>
       </section>
     </ModuleFrame>
   );

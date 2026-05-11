@@ -420,6 +420,12 @@ export async function suggestJournalEntryForPurchase(purchaseId: string) {
     throw new Error("Apruebe la compra antes de sugerir el asiento.");
   }
 
+  const existingEntry = await getJournalEntryForSource("purchase", purchase.id);
+
+  if (existingEntry?.status === "posted") {
+    throw new Error("El asiento de esta compra ya esta contabilizado.");
+  }
+
   const period = getPeriodFromDate(purchase.purchase_date ?? purchase.created_at);
   await assertPeriodIsOpen(purchase.company_id, period.year, period.month);
   const accounts = await getAccountsForSuggestion(purchase.company_id);
@@ -540,6 +546,12 @@ export async function suggestJournalEntryForInvoice(invoiceId: string) {
 
   if (normalizeReviewStatus(invoice.review_status) !== "approved") {
     throw new Error("Apruebe la factura antes de sugerir el asiento.");
+  }
+
+  const existingEntry = await getJournalEntryForSource("invoice", invoice.id);
+
+  if (existingEntry?.status === "posted") {
+    throw new Error("El asiento de esta factura ya esta contabilizado.");
   }
 
   const period = getPeriodFromDate(invoice.fecha ?? invoice.created_at);
@@ -665,6 +677,21 @@ export async function updateJournalEntryStatus(
   }
 
   await assertPeriodIsOpen(company.id, existing.period_year, existing.period_month);
+
+  if (existing.status === "posted") {
+    throw new Error("Este asiento ya esta contabilizado y queda en solo lectura.");
+  }
+
+  if (status === "posted") {
+    const linesByEntry = await fetchEntryLines([entryId]);
+    const totals = getJournalTotals({
+      lines: linesByEntry.get(entryId) ?? [],
+    });
+
+    if (!totals.isBalanced) {
+      throw new Error("El asiento debe cuadrar antes de contabilizar.");
+    }
+  }
 
   const payload = {
     approved_at:
