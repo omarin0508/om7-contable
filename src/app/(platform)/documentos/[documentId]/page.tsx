@@ -8,14 +8,23 @@ import {
   softDeleteDocumentAction,
   updateDocumentMetadataAction,
 } from "@/app/(platform)/documentos/actions";
+import { CounterpartyDetectionCard } from "@/components/documents/counterparty-detection-card";
+import { DocumentClassificationCard } from "@/components/documents/document-classification-card";
 import { DocumentExtractionWorkspace } from "@/components/documents/document-extraction-workspace";
 import {
+  BackLink,
   MetricCard,
   ModuleFrame,
   ModuleHeader,
   StatusBadge,
 } from "@/components/modules/shared";
 import { PremiumCard } from "@/components/ui/premium-card";
+import { getCounterpartyMatchByExtraction } from "@/lib/counterparties";
+import { getDocumentHumanStatus } from "@/lib/document-ui";
+import {
+  getActiveCounterpartyRule,
+  getDocumentClassificationByExtraction,
+} from "@/lib/document-classification";
 import { getDocumentViewerData } from "@/lib/storage";
 
 type DocumentWorkspacePageProps = {
@@ -98,7 +107,7 @@ function DocumentInfoSection({
               Informacion del documento
             </p>
             <p className="mt-1 text-sm leading-6 text-slate-500">
-              Edita metadata operativa sin modificar el archivo original.
+              Edita datos operativos sin modificar el archivo original.
             </p>
           </div>
           <span className="om7-chip om7-chip-cyan">Editable</span>
@@ -241,27 +250,70 @@ function getWorkflowState(
   document: Awaited<ReturnType<typeof getDocumentViewerData>>["document"],
   extraction: Awaited<ReturnType<typeof getDocumentViewerData>>["extraction"],
 ) {
-  if (document.related_type === "purchase") {
-    return "Compra creada";
+  return getDocumentHumanStatus({ ...document, extraction }).label;
+}
+
+function DocumentConvertedBanner({
+  classification,
+  counterpartyMatch,
+  document,
+}: {
+  classification: Awaited<ReturnType<typeof getDocumentClassificationByExtraction>>;
+  counterpartyMatch: Awaited<ReturnType<typeof getCounterpartyMatchByExtraction>>;
+  document: Awaited<ReturnType<typeof getDocumentViewerData>>["document"];
+}) {
+  const convertedType =
+    document.converted_type ??
+    (document.related_type === "purchase" || document.related_type === "invoice"
+      ? document.related_type
+      : null);
+
+  if (!convertedType) {
+    return null;
   }
 
-  if (document.related_type === "invoice") {
-    return "Factura creada";
-  }
+  const recordLabel = convertedType === "purchase" ? "compra" : "factura";
+  const href = convertedType === "purchase" ? "/compras" : "/facturas";
 
-  if (document.processing_status === "error" || extraction?.extraction_status === "error") {
-    return "Error";
-  }
-
-  if (extraction?.extraction_status === "reviewed") {
-    return "Revisado";
-  }
-
-  if (extraction?.extraction_status === "processed") {
-    return "Procesado";
-  }
-
-  return "Subido";
+  return (
+    <PremiumCard className="border-emerald-300/20 bg-emerald-300/10 p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-base font-semibold text-emerald-50">
+            Documento convertido
+          </p>
+          <p className="mt-2 text-sm leading-6 text-emerald-100/75">
+            Este documento ya fue convertido en una {recordLabel}
+            {document.converted_at ? ` el ${formatDate(document.converted_at)}` : ""}.
+            La accion de crear registros queda bloqueada para evitar duplicados.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {counterpartyMatch?.counterparty_id ? (
+              <span className="om7-chip border-emerald-300/25 bg-emerald-300/10 text-emerald-100">
+                Contraparte asociada: {counterpartyMatch.name || "Detectada"}
+              </span>
+            ) : null}
+            {classification ? (
+              <span className="om7-chip om7-chip-cyan">
+                Sugerencia OM7:{" "}
+                {classification.suggested_category ??
+                  classification.suggested_account ??
+                  classification.flow_type}
+              </span>
+            ) : null}
+            {classification?.rule_applied ? (
+              <span className="om7-chip text-slate-300">
+                Regla: {classification.rule_applied}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <Link className="om7-btn-secondary px-4 py-2.5" href={href}>
+          Ver {recordLabel}
+        </Link>
+      </div>
+    </PremiumCard>
+  );
 }
 
 export default async function DocumentWorkspacePage({
@@ -275,22 +327,27 @@ export default async function DocumentWorkspacePage({
   }
 
   const { document, extraction, extractionHistory } = viewer;
+  const classification = extraction
+    ? await getDocumentClassificationByExtraction(extraction.id)
+    : null;
+  const counterpartyMatch = extraction
+    ? await getCounterpartyMatchByExtraction(extraction.id)
+    : null;
+  const activeCounterpartyRule = counterpartyMatch?.counterparty_id
+    ? await getActiveCounterpartyRule(
+        counterpartyMatch.counterparty_id,
+        classification?.flow_type,
+      )
+    : null;
   const state = getWorkflowState(document, extraction);
   const canProcessWithAi = isAiProcessableDocument(document);
 
   return (
     <ModuleFrame>
       <ModuleHeader
-        title="Workspace documento"
-        description="Centro de revision enfocado para procesar, aprobar y convertir un documento."
-        action={
-          <Link
-            className="om7-btn-ghost px-4 py-2.5"
-            href="/documentos"
-          >
-            Volver a documentos
-          </Link>
-        }
+        title="Documento"
+        description="Revise el archivo, apruebe los datos y conviertalo en compra o factura."
+        action={<BackLink href="/documentos" label="Volver a documentos" />}
       />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -316,23 +373,49 @@ export default async function DocumentWorkspacePage({
         />
       </section>
 
+      <DocumentConvertedBanner
+        classification={classification}
+        counterpartyMatch={counterpartyMatch}
+        document={document}
+      />
+
       <DocumentInfoSection document={document} />
 
       {extraction ? (
-        <PremiumCard className="overflow-hidden">
-          <DocumentExtractionWorkspace
-            createdAtLabel={formatDate(document.created_at)}
-            documentId={document.id}
-            documentName={document.original_filename ?? "Documento"}
-            documentType={document.document_type}
-            extraction={extraction}
-            history={extractionHistory}
-            mimeType={document.mime_type}
+        <>
+          <DocumentClassificationCard
+            activeCounterpartyRule={activeCounterpartyRule}
+            classification={classification}
+            counterpartyMatch={counterpartyMatch}
+            extractionId={extraction.id}
             redirectTo={`/documentos/${document.id}`}
-            relatedType={document.related_type}
-            signedUrl={viewer.signedUrl}
           />
-        </PremiumCard>
+
+          <CounterpartyDetectionCard
+            extractionId={extraction.id}
+            match={counterpartyMatch}
+            redirectTo={`/documentos/${document.id}`}
+          />
+
+          <PremiumCard className="overflow-hidden">
+            <DocumentExtractionWorkspace
+              createdAtLabel={formatDate(document.created_at)}
+              documentId={document.id}
+              documentName={document.original_filename ?? "Documento"}
+              documentType={document.document_type}
+              extraction={extraction}
+              history={extractionHistory}
+              mimeType={document.mime_type}
+              redirectTo={`/documentos/${document.id}`}
+              relatedType={document.related_type}
+              convertedAt={document.converted_at}
+              convertedRecordId={document.converted_record_id}
+              convertedType={document.converted_type}
+              classification={classification}
+              signedUrl={viewer.signedUrl}
+            />
+          </PremiumCard>
+        </>
       ) : (
         <PremiumCard className="p-5">
           <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">

@@ -10,6 +10,7 @@ import {
 } from "@/components/documents/extraction-summary";
 import { StatusBadge } from "@/components/modules/shared";
 import { normalizeCurrencyCode } from "@/lib/currency";
+import type { DocumentClassificationRecord } from "@/lib/document-classification";
 import type { DocumentExtraction } from "@/lib/document-processing";
 
 type DocumentExtractionWorkspaceProps = {
@@ -23,6 +24,10 @@ type DocumentExtractionWorkspaceProps = {
   duplicateCount?: number;
   mimeType?: string | null;
   relatedType?: string | null;
+  convertedAt?: string | null;
+  convertedRecordId?: string | null;
+  convertedType?: "purchase" | "invoice" | null;
+  classification?: DocumentClassificationRecord | null;
   signedUrl?: string | null;
 };
 
@@ -97,14 +102,15 @@ function getConfidenceLabel(confidence: number | null) {
     return "Media";
   }
 
-  return "Revision recomendada";
+  return "Revisar antes de convertir";
 }
 
 function getCurrentStepIndex(
   extraction: DocumentExtraction,
   relatedType?: string | null,
+  convertedType?: string | null,
 ) {
-  if (relatedType === "purchase" || relatedType === "invoice") {
+  if (convertedType || relatedType === "purchase" || relatedType === "invoice") {
     return 3;
   }
 
@@ -119,12 +125,16 @@ function getCurrentStepIndex(
   return 0;
 }
 
-function getStateLabel(extraction: DocumentExtraction, relatedType?: string | null) {
-  if (relatedType === "purchase") {
+function getStateLabel(
+  extraction: DocumentExtraction,
+  relatedType?: string | null,
+  convertedType?: string | null,
+) {
+  if (convertedType === "purchase" || relatedType === "purchase") {
     return "Compra creada";
   }
 
-  if (relatedType === "invoice") {
+  if (convertedType === "invoice" || relatedType === "invoice") {
     return "Factura creada";
   }
 
@@ -133,7 +143,7 @@ function getStateLabel(extraction: DocumentExtraction, relatedType?: string | nu
   }
 
   if (extraction.extraction_status === "processed") {
-    return "Pendiente revision";
+    return "Listo para revisar";
   }
 
   if (extraction.extraction_status === "error") {
@@ -146,8 +156,9 @@ function getStateLabel(extraction: DocumentExtraction, relatedType?: string | nu
 function getNextActionCopy(
   extraction: DocumentExtraction,
   relatedType?: string | null,
+  convertedType?: string | null,
 ) {
-  if (relatedType === "purchase") {
+  if (convertedType === "purchase" || relatedType === "purchase") {
     return {
       detail: "Este documento ya fue convertido en una compra.",
       title: "Compra creada",
@@ -155,7 +166,7 @@ function getNextActionCopy(
     };
   }
 
-  if (relatedType === "invoice") {
+  if (convertedType === "invoice" || relatedType === "invoice") {
     return {
       detail: "Este documento ya fue convertido en una factura.",
       title: "Factura creada",
@@ -267,20 +278,38 @@ export function DocumentExtractionWorkspace({
   duplicateCount = 0,
   mimeType,
   relatedType,
+  convertedAt,
+  convertedRecordId,
+  convertedType,
+  classification,
   signedUrl,
 }: DocumentExtractionWorkspaceProps) {
   const data = toData(extraction.extracted_data);
   const isReviewed = extraction.extraction_status === "reviewed";
   const pendingReview = !isReviewed;
-  const currentStep = getCurrentStepIndex(extraction, relatedType);
-  const stateLabel = getStateLabel(extraction, relatedType);
-  const nextAction = getNextActionCopy(extraction, relatedType);
+  const isConverted =
+    Boolean(convertedType && convertedRecordId) ||
+    relatedType === "purchase" ||
+    relatedType === "invoice";
+  const convertedLabel =
+    convertedType === "invoice" || relatedType === "invoice"
+      ? "factura"
+      : "compra";
+  const currentStep = getCurrentStepIndex(extraction, relatedType, convertedType);
+  const stateLabel = getStateLabel(extraction, relatedType, convertedType);
+  const nextAction = getNextActionCopy(extraction, relatedType, convertedType);
   const nextActionClass = {
     amber: "border-amber-300/20 bg-amber-300/10 text-amber-100",
     cyan: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100",
     emerald: "border-emerald-300/20 bg-emerald-300/10 text-emerald-100",
     rose: "border-rose-300/20 bg-rose-300/10 text-rose-100",
   }[nextAction.tone];
+  const classificationCanApply =
+    classification?.status === "accepted" ||
+    classification?.status === "edited" ||
+    classification?.status === "suggested";
+  const classificationIsReviewed =
+    classification?.status === "accepted" || classification?.status === "edited";
 
   return (
     <article className="px-5 py-5" id={`extraccion-${extraction.id}`}>
@@ -288,7 +317,7 @@ export function DocumentExtractionWorkspace({
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">
-              Workspace documental
+              Documento en revision
             </p>
             <p className="mt-2 break-words text-lg font-semibold text-white">
               {documentName}
@@ -372,7 +401,20 @@ export function DocumentExtractionWorkspace({
 
             <div className="rounded-3xl border border-white/[0.08] bg-black/20 p-4">
               <p className="text-sm font-semibold text-white">Acción principal</p>
-              {pendingReview ? (
+              {isConverted ? (
+                <div className="mt-4 space-y-3">
+                  <p className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs leading-5 text-emerald-100">
+                    Este documento ya fue convertido en una {convertedLabel}
+                    {convertedAt ? ` el ${formatProcessedAt(convertedAt)}` : ""}.
+                  </p>
+                  <Link
+                    className="om7-btn-secondary h-14 px-4 text-sm"
+                    href={convertedLabel === "compra" ? "/compras" : "/facturas"}
+                  >
+                    Ver {convertedLabel}
+                  </Link>
+                </div>
+              ) : pendingReview ? (
                 <details className="mt-4 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.04]">
                   <summary className="om7-btn-primary cursor-pointer px-4 py-4">
                     Revisar y aprobar datos
@@ -385,33 +427,55 @@ export function DocumentExtractionWorkspace({
                     />
                   </div>
                 </details>
-              ) : relatedType === "purchase" || relatedType === "invoice" ? (
-                <Link
-                  className="om7-btn-secondary mt-4 h-14 px-4 text-sm"
-                  href={relatedType === "purchase" ? "/compras" : "/facturas"}
-                >
-                  Ver {relatedType === "purchase" ? "compra" : "factura"}
-                </Link>
               ) : (
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  <form action={createPurchaseFromXmlAction}>
-                    <input name="extractionId" type="hidden" value={extraction.id} />
-                    <button
-                      className="om7-btn-secondary h-14 w-full px-4 text-sm"
-                      type="submit"
-                    >
-                      Crear compra
-                    </button>
-                  </form>
-                  <form action={createInvoiceFromXmlAction}>
-                    <input name="extractionId" type="hidden" value={extraction.id} />
-                    <button
-                      className="om7-btn-secondary h-14 w-full px-4 text-sm"
-                      type="submit"
-                    >
-                      Crear factura
-                    </button>
-                  </form>
+                <div className="mt-4 space-y-3">
+                  {classificationCanApply ? (
+                    <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-3 text-xs leading-5 text-emerald-100">
+                      <p className="font-semibold">
+                        {classificationIsReviewed
+                          ? "Se aplicara la sugerencia aceptada"
+                          : "OM7 usara esta sugerencia como apoyo"}
+                      </p>
+                      <p className="mt-1 text-emerald-100/75">
+                        {classification.suggested_category ?? "Sin categoria"} /{" "}
+                        {classification.suggested_account ?? "Sin cuenta"} ·{" "}
+                        Confianza {getConfidenceLabel(classification.confidence_score)}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-3 text-xs leading-5 text-amber-100">
+                      No existe clasificacion aceptada. El registro se creara
+                      sin sugerencias.
+                    </p>
+                  )}
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <form action={createPurchaseFromXmlAction}>
+                      <input
+                        name="extractionId"
+                        type="hidden"
+                        value={extraction.id}
+                      />
+                      <button
+                        className="om7-btn-secondary h-14 w-full px-4 text-sm"
+                        type="submit"
+                      >
+                        Crear compra
+                      </button>
+                    </form>
+                    <form action={createInvoiceFromXmlAction}>
+                      <input
+                        name="extractionId"
+                        type="hidden"
+                        value={extraction.id}
+                      />
+                      <button
+                        className="om7-btn-secondary h-14 w-full px-4 text-sm"
+                        type="submit"
+                      >
+                        Crear factura
+                      </button>
+                    </form>
+                  </div>
                 </div>
               )}
             </div>

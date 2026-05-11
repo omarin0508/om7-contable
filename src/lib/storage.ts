@@ -42,6 +42,11 @@ export type DocumentRecord = {
   deleted_at?: string | null;
   updated_at?: string | null;
   updated_by?: string | null;
+  converted_at?: string | null;
+  converted_type?: "purchase" | "invoice" | null;
+  converted_record_id?: string | null;
+  converted_by?: string | null;
+  conversion_notes?: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string | null;
 };

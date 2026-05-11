@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { normalizeCurrencyCode } from "@/lib/currency";
-import { createPurchase } from "@/lib/purchases";
+import { registerPurchasePayment } from "@/lib/payments";
+import { createPurchase, updatePurchaseReviewStatus } from "@/lib/purchases";
 
 function parseAmount(value: FormDataEntryValue | null) {
   const parsed = Number(String(value ?? "").replace(",", "."));
@@ -28,4 +29,36 @@ export async function createPurchaseAction(formData: FormData) {
 
   revalidatePath("/compras");
   redirect("/compras");
+}
+
+export async function updatePurchaseReviewStatusAction(formData: FormData) {
+  const redirectTo = String(formData.get("redirectTo") ?? "/compras");
+
+  await updatePurchaseReviewStatus({
+    notes: String(formData.get("reviewNotes") ?? "").trim(),
+    purchaseId: String(formData.get("purchaseId") ?? ""),
+    status: String(formData.get("reviewStatus") ?? "pending"),
+  });
+
+  revalidatePath("/compras");
+  redirect(redirectTo);
+}
+
+export async function registerPurchasePaymentAction(formData: FormData) {
+  const redirectTo = String(formData.get("redirectTo") ?? "/compras");
+
+  await registerPurchasePayment({
+    amount: parseAmount(formData.get("amount")),
+    notes: String(formData.get("notes") ?? "").trim(),
+    paymentDate:
+      String(formData.get("paymentDate") ?? "").trim() ||
+      new Date().toISOString().slice(0, 10),
+    paymentMethodId: String(formData.get("paymentMethodId") ?? ""),
+    purchaseId: String(formData.get("purchaseId") ?? ""),
+  });
+
+  revalidatePath("/compras");
+  revalidatePath("/movimientos");
+  revalidatePath("/dashboard");
+  redirect(redirectTo);
 }

@@ -28,7 +28,7 @@ export function Topbar({
       <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-            {organizationName ?? "Executive Command Center"}
+            {organizationName ? `Despacho: ${organizationName}` : "Despacho"}
           </p>
           <h1 className="truncate text-base font-semibold text-white sm:text-lg">
             {activeCompanyName ?? "Dashboard financiero"}
@@ -38,7 +38,7 @@ export function Topbar({
         <div className="hidden flex-1 justify-center md:flex">
           <div className="flex h-10 w-full max-w-md items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 text-sm text-slate-500 shadow-sm">
             <Icon name="search" className="h-4 w-4" />
-            <span>Buscar empresas, facturas o movimientos</span>
+            <span>Buscar documentos, clientes o registros</span>
           </div>
         </div>
 

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { PremiumCard } from "@/components/ui/premium-card";
 
 type ModuleHeaderProps = {
@@ -39,6 +40,20 @@ export function ModuleHeader({
       </div>
       {action}
     </section>
+  );
+}
+
+export function BackLink({
+  href = "/dashboard",
+  label = "Volver al dashboard",
+}: {
+  href?: string;
+  label?: string;
+}) {
+  return (
+    <Link className="om7-btn-ghost px-4 py-2.5" href={href}>
+      {label}
+    </Link>
   );
 }
 

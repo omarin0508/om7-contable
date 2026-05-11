@@ -1,62 +1,47 @@
 import Link from "next/link";
 import {
-  markDocumentRejectedAction,
-  markDocumentReviewedAction,
-} from "@/app/(platform)/bandeja/actions";
-import {
-  createInvoiceFromXmlAction,
-  createPurchaseFromXmlAction,
-  processDocumentWithVisionAction,
-} from "@/app/(platform)/documentos/actions";
-import { DocumentExtractionWorkspace } from "@/components/documents/document-extraction-workspace";
-import { ExtractionReviewForm } from "@/components/documents/extraction-review-form";
-import { ExtractionSummary } from "@/components/documents/extraction-summary";
-import {
+  BackLink,
   MetricCard,
   ModuleFrame,
   ModuleHeader,
   StatusBadge,
 } from "@/components/modules/shared";
 import { PremiumCard } from "@/components/ui/premium-card";
-import { normalizeCurrencyCode } from "@/lib/currency";
-import { listClientUploadReviewDocuments } from "@/lib/document-review";
+import {
+  getReviewStatusBadgeClass,
+  getReviewStatusLabel,
+} from "@/lib/accounting-review-ui";
+import {
+  formatConfidence as formatDocumentConfidence,
+  getDocumentHumanStatus,
+} from "@/lib/document-ui";
+import {
+  listClientUploadReviewDocuments,
+  type ReviewDocument,
+} from "@/lib/document-review";
 
 type BandejaPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-const statusLabels: Record<string, string> = {
-  pending: "Pendiente",
-  uploaded: "Recibido",
-  processing: "Procesando",
-  processed: "Procesado",
-  error: "Error",
-  reviewed: "Revisado",
-  rejected: "Rechazado",
+type LaneKey = "received" | "processed" | "review" | "converted" | "error";
+
+const filterLabels: Record<string, string> = {
+  all: "Todos",
+  pending: "Pendientes",
+  processed: "Procesados",
+  review: "Listos para revisar",
+  converted: "Convertidos",
+  error: "Con error",
 };
 
-function isXmlDocument(document: { mime_type: string | null; original_filename: string | null }) {
-  return (
-    document.mime_type?.includes("xml") ||
-    document.original_filename?.toLowerCase().endsWith(".xml") ||
-    false
-  );
-}
-
-function isAiProcessableDocument(document: {
-  mime_type: string | null;
-  original_filename: string | null;
-}) {
-  const mimeType = document.mime_type ?? "";
-  const filename = document.original_filename?.toLowerCase() ?? "";
-
-  return (
-    !isXmlDocument(document) &&
-    (mimeType === "application/pdf" ||
-      mimeType.startsWith("image/") ||
-      filename.endsWith(".pdf"))
-  );
-}
+const laneLabels: Record<LaneKey, string> = {
+  converted: "Convertido",
+  error: "Requiere atencion",
+  processed: "Procesado",
+  received: "Recibido",
+  review: "Listo para revisar",
+};
 
 function getParam(
   params: Record<string, string | string[] | undefined>,
@@ -66,23 +51,34 @@ function getParam(
   return Array.isArray(value) ? value[0] : value;
 }
 
-function formatBytes(value: number | null) {
-  const bytes = Number(value ?? 0);
-
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  const kilobytes = bytes / 1024;
-
-  if (kilobytes < 1024) {
-    return `${kilobytes.toFixed(1)} KB`;
-  }
-
-  return `${(kilobytes / 1024).toFixed(1)} MB`;
+function isXmlDocument(document: {
+  mime_type: string | null;
+  original_filename: string | null;
+}) {
+  return (
+    document.mime_type?.includes("xml") ||
+    document.original_filename?.toLowerCase().endsWith(".xml") ||
+    false
+  );
 }
 
-function formatDate(value: string | null) {
+function getDocumentKind(document: ReviewDocument) {
+  if (isXmlDocument(document)) {
+    return "XML";
+  }
+
+  if (document.mime_type === "application/pdf") {
+    return "PDF";
+  }
+
+  if (document.mime_type?.startsWith("image/")) {
+    return "Imagen";
+  }
+
+  return "Documento";
+}
+
+function formatDate(value: string | null | undefined) {
   if (!value) {
     return "Sin fecha";
   }
@@ -94,125 +90,245 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
-type InboxDocument = Awaited<
-  ReturnType<typeof listClientUploadReviewDocuments>
->["documents"][number];
-
-function getValue(value: unknown, fallback = "No disponible") {
-  if (value === null || value === undefined || value === "") {
-    return fallback;
+function getDocumentLane(document: ReviewDocument): LaneKey {
+  if (document.converted_type || document.converted_at) {
+    return "converted";
   }
 
-  return String(value);
+  if (
+    document.processing_status === "error" ||
+    document.review_status === "rejected" ||
+    document.extraction?.extraction_status === "error"
+  ) {
+    return "error";
+  }
+
+  if (document.extraction?.extraction_status === "reviewed") {
+    return "review";
+  }
+
+  if (document.extraction?.extraction_status === "processed") {
+    return "processed";
+  }
+
+  return "received";
 }
 
-function getMoney(value: unknown, currency: unknown) {
-  const amount = Number(value ?? 0);
-  const currencyCode = normalizeCurrencyCode(currency);
-
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return "No disponible";
-  }
-
-  return `${currencyCode} ${amount.toLocaleString("es-CR", {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-  })}`;
+function getHumanState(document: ReviewDocument) {
+  return getDocumentHumanStatus(document).label;
 }
 
-function getDocumentState(document: InboxDocument) {
-  const extraction = document.extraction;
+function matchesFilter(document: ReviewDocument, filter: string) {
+  const lane = getDocumentLane(document);
 
-  if (document.related_type === "purchase") {
-    return "Compra creada";
+  if (filter === "pending") {
+    return lane === "received";
   }
 
-  if (document.related_type === "invoice") {
-    return "Factura creada";
+  if (filter === "processed") {
+    return lane === "processed";
   }
 
-  if (document.processing_status === "error" || extraction?.extraction_status === "error") {
-    return "Error";
+  if (filter === "review") {
+    return lane === "review";
   }
 
-  if (extraction?.extraction_status === "reviewed") {
-    return "Revisado";
+  if (filter === "converted") {
+    return lane === "converted";
   }
 
-  if (extraction?.extraction_status === "processed") {
-    return "Procesado";
+  if (filter === "error") {
+    return lane === "error";
   }
 
-  if ((document.review_status ?? "pending") === "pending") {
-    return document.processing_status === "uploaded"
-      ? "Subido"
-      : "Pendiente de revision";
-  }
-
-  return statusLabels[document.processing_status] ?? document.processing_status;
+  return true;
 }
 
-function getExtractionFacts(document: InboxDocument) {
-  const data = document.extraction?.extracted_data;
-  const currency = data?.moneda ?? data?.currency;
+function getClassificationLabel(document: ReviewDocument) {
+  const classification = document.classification;
 
-  return {
-    supplier: getValue(data?.emisor_nombre ?? data?.supplier_name),
-    documentDate: getValue(data?.fecha_emision ?? data?.date, "Sin fecha"),
-    total: getMoney(data?.total, currency),
-    provider: document.extraction?.extraction_provider ?? "Sin extraccion",
-  };
-}
+  if (!classification) {
+    return "Sin clasificacion";
+  }
 
-export default async function ReviewInboxPage({ searchParams }: BandejaPageProps) {
-  const params = (await searchParams) ?? {};
-  const filters = {
-    documentType: getParam(params, "documentType") ?? "all",
-    processingStatus: getParam(params, "processingStatus") ?? "all",
-    date: getParam(params, "date") ?? "",
-  };
-  const { activeContext, documents } =
-    await listClientUploadReviewDocuments(filters);
-  const activeCompany = activeContext.activeCompany;
-  const receivedCount = documents.length;
-  const xmlProcessedCount = documents.filter(
-    (document) =>
-      document.processing_status === "processed" &&
-      document.extraction?.extraction_provider === "xml-parser-cr",
-  ).length;
-  const aiProcessedCount = documents.filter(
-    (document) =>
-      document.processing_status === "processed" &&
-      document.extraction?.extraction_provider === "openai-vision",
-  ).length;
-  const pendingCount = documents.filter(
-    (document) =>
-      (document.review_status ?? "pending") === "pending" ||
-      document.processing_status === "uploaded" ||
-      document.processing_status === "pending",
-  ).length;
-  const errorCount = documents.filter(
-    (document) =>
-      document.processing_status === "error" ||
-      (document.review_status ?? "pending") === "rejected",
-  ).length;
-  const documentsWithExtractions = documents.filter(
-    (document) => document.extraction,
+  return (
+    classification.suggested_category ||
+    classification.suggested_account ||
+    classification.flow_type
   );
+}
+
+function getCounterpartyLabel(document: ReviewDocument) {
+  return document.counterpartyMatch?.name || "Sin contraparte";
+}
+
+function getRegisterHref(document: ReviewDocument) {
+  if (document.converted_type === "purchase") {
+    return "/compras";
+  }
+
+  if (document.converted_type === "invoice") {
+    return "/facturas";
+  }
+
+  return null;
+}
+
+function getConversionReviewLabel(document: ReviewDocument) {
+  if (!document.converted_type) {
+    return null;
+  }
+
+  const conversionLabel =
+    document.converted_type === "purchase"
+      ? "Convertido a compra"
+      : "Convertido a factura";
+
+  return `${conversionLabel} · ${getReviewStatusLabel(
+    document.convertedRecord?.review_status,
+  )}`;
+}
+
+function getShortReviewNote(document: ReviewDocument) {
+  const note = document.convertedRecord?.review_notes?.trim();
+
+  if (!note) {
+    return null;
+  }
+
+  return note.length > 96 ? `${note.slice(0, 96)}...` : note;
+}
+
+function WorkflowCard({ document }: { document: ReviewDocument }) {
+  const extraction = document.extraction;
+  const registerHref = getRegisterHref(document);
+  const confidence =
+    document.classification?.confidence_score ?? extraction?.confidence ?? null;
+  const conversionReviewLabel = getConversionReviewLabel(document);
+  const reviewNote = getShortReviewNote(document);
+
+  return (
+    <article className="rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.07),transparent_34%),rgba(255,255,255,0.035)] p-4 shadow-2xl shadow-black/10 transition hover:border-cyan-300/20 hover:bg-white/[0.05]">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge>{getHumanState(document)}</StatusBadge>
+          <span className="om7-chip text-slate-400">
+            {getDocumentKind(document)}
+          </span>
+          {extraction?.extraction_provider ? (
+            <span className="om7-chip om7-chip-cyan">
+              {extraction.extraction_provider}
+            </span>
+          ) : null}
+          {document.converted_type ? (
+            <span
+              className={getReviewStatusBadgeClass(
+                document.convertedRecord?.review_status,
+              )}
+            >
+              {getReviewStatusLabel(document.convertedRecord?.review_status)}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="min-w-0">
+          <p className="line-clamp-2 text-sm font-semibold leading-5 text-white">
+            {document.display_name || document.original_filename || "Documento"}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {document.document_type} · cargado {formatDate(document.created_at)}
+          </p>
+          {conversionReviewLabel ? (
+            <p className="mt-2 text-xs font-semibold text-cyan-100">
+              {conversionReviewLabel}
+            </p>
+          ) : null}
+          {reviewNote ? (
+            <p className="mt-1 line-clamp-2 text-xs leading-5 text-amber-100/80">
+              Observacion: {reviewNote}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+          <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-3">
+            <p className="text-xs text-slate-500">Contraparte</p>
+            <p className="mt-1 truncate text-sm font-semibold text-slate-100">
+              {getCounterpartyLabel(document)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-3">
+            <p className="text-xs text-slate-500">Sugerencia OM7</p>
+            <p className="mt-1 truncate text-sm font-semibold text-slate-100">
+              {getClassificationLabel(document)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-3">
+            <p className="text-xs text-slate-500">Confianza</p>
+            <p className="mt-1 text-sm font-semibold text-cyan-50">
+              {formatDocumentConfidence(confidence)}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Link
+            className="om7-btn-primary px-4 py-2.5"
+            href={`/documentos/${document.id}`}
+          >
+            Abrir workspace
+          </Link>
+          {registerHref ? (
+            <Link className="om7-btn-ghost px-4 py-2.5" href={registerHref}>
+              Ver {document.converted_type === "purchase" ? "compra" : "factura"}
+            </Link>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+export default async function ReviewInboxPage({
+  searchParams,
+}: BandejaPageProps) {
+  const params = (await searchParams) ?? {};
+  const activeFilter = getParam(params, "filter") ?? "all";
+  const { activeContext, documents } = await listClientUploadReviewDocuments();
+  const activeCompany = activeContext.activeCompany;
+  const visibleDocuments = documents.filter((document) =>
+    matchesFilter(document, activeFilter),
+  );
+  const pendingCount = documents.filter(
+    (document) => getDocumentLane(document) === "received",
+  ).length;
+  const processedCount = documents.filter(
+    (document) => getDocumentLane(document) === "processed",
+  ).length;
+  const reviewCount = documents.filter(
+    (document) => getDocumentLane(document) === "review",
+  ).length;
+  const convertedDocuments = documents.filter(
+    (document) => getDocumentLane(document) === "converted",
+  );
+  const today = new Date().toISOString().slice(0, 10);
+  const convertedTodayCount = convertedDocuments.filter((document) =>
+    document.converted_at?.startsWith(today),
+  ).length;
+  const lanes: LaneKey[] = [
+    "received",
+    "processed",
+    "review",
+    "converted",
+    "error",
+  ];
 
   return (
     <ModuleFrame>
       <ModuleHeader
-        title="Bandeja"
-        description="Revise documentos recibidos desde el portal cliente o cargas internas antes de convertirlos en registros."
-        action={
-          <Link
-            className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/[0.08]"
-            href="/documentos"
-          >
-            Volver a documentos
-          </Link>
-        }
+        title="Bandeja operativa"
+        description="La cola diaria para revisar documentos de clientes y convertirlos en registros contables."
+        action={<BackLink />}
       />
 
       {!activeCompany ? (
@@ -236,508 +352,100 @@ export default async function ReviewInboxPage({ searchParams }: BandejaPageProps
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           detail={activeCompany?.name ?? "Sin empresa activa"}
-          label="Recibidos"
-          value={String(receivedCount)}
-        />
-        <MetricCard
-          detail={`IA procesados: ${aiProcessedCount}`}
-          label="XML procesados"
-          value={String(xmlProcessedCount)}
-        />
-        <MetricCard
-          detail="Carga o revision pendiente"
-          label="Pendientes"
+          label="Documentos pendientes"
           value={String(pendingCount)}
         />
         <MetricCard
-          detail="Procesamiento o revision"
-          label="Errores"
-          value={String(errorCount)}
+          detail="Extraidos por XML/IA"
+          label="Procesados"
+          value={String(processedCount)}
+        />
+        <MetricCard
+          detail="Listos para convertir"
+          label="Listos para revisar"
+          value={String(reviewCount)}
+        />
+        <MetricCard
+          detail={`Hoy ${convertedTodayCount} · total ${convertedDocuments.length}`}
+          label="Convertidos"
+          value={String(convertedDocuments.length)}
         />
       </section>
 
       <PremiumCard className="p-5">
-        <form className="grid gap-4 md:grid-cols-4" action="/bandeja">
-          <label className="block">
-            <span className="text-sm font-medium text-slate-300">
-              Tipo documento
-            </span>
-            <select
-              className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
-              defaultValue={filters.documentType}
-              name="documentType"
-            >
-              <option className="bg-slate-950" value="all">
-                Todos
-              </option>
-              <option className="bg-slate-950" value="factura">
-                Factura
-              </option>
-              <option className="bg-slate-950" value="compra">
-                Compra
-              </option>
-              <option className="bg-slate-950" value="otro">
-                Otro
-              </option>
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium text-slate-300">
-              Procesamiento
-            </span>
-            <select
-              className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
-              defaultValue={filters.processingStatus}
-              name="processingStatus"
-            >
-              <option className="bg-slate-950" value="all">
-                Todos
-              </option>
-              <option className="bg-slate-950" value="uploaded">
-                Recibido
-              </option>
-              <option className="bg-slate-950" value="processed">
-                Procesado
-              </option>
-              <option className="bg-slate-950" value="error">
-                Error
-              </option>
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium text-slate-300">Fecha</span>
-            <input
-              className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
-              defaultValue={filters.date}
-              name="date"
-              type="date"
-            />
-          </label>
-
-          <div className="flex items-end gap-2">
-            <button
-              className="h-11 flex-1 rounded-xl bg-cyan-100 px-4 text-sm font-semibold text-slate-950 transition hover:bg-white"
-              type="submit"
-            >
-              Filtrar
-            </button>
-            <Link
-              className="grid h-11 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 text-sm font-medium text-slate-300 transition hover:bg-white/[0.08]"
-              href="/bandeja"
-            >
-              Limpiar
-            </Link>
-          </div>
-        </form>
-      </PremiumCard>
-
-      <PremiumCard className="p-5">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm font-medium text-white">
-              Documentos por revisar
+            <p className="text-base font-semibold text-white">
+              Trabajo diario
             </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Centro operativo para procesar, revisar y convertir documentos.
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Cliente sube documento, OM7 procesa, el contador revisa y el
+              registro queda trazado.
             </p>
           </div>
-          <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-xs text-slate-400">
-            {documents.length} documentos
+          <span className="text-sm text-slate-500">
+            {visibleDocuments.length} de {documents.length} visibles
           </span>
         </div>
 
-        <div className="mt-5 grid gap-4 xl:grid-cols-2">
-          {documents.length > 0 ? (
-            documents.map((document) => {
-              const extraction = document.extraction;
-              const isReviewed = extraction?.extraction_status === "reviewed";
-              const state = getDocumentState(document);
-              const facts = getExtractionFacts(document);
-              const canProcess =
-                isAiProcessableDocument(document) &&
-                (!extraction || extraction.extraction_status === "error");
-
-              return (
-                <article
-                  className="rounded-2xl border border-white/[0.08] bg-black/15 p-4"
-                  key={document.id}
-                >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <StatusBadge>{state}</StatusBadge>
-                        <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-slate-400">
-                          {facts.provider}
-                        </span>
-                      </div>
-                      <p className="mt-3 break-words text-sm font-semibold text-white">
-                        {document.original_filename ?? "Documento"}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {activeCompany?.name ?? "Empresa activa"} ·{" "}
-                        {document.document_type} · {formatBytes(document.size_bytes)}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 lg:justify-end">
-                      {canProcess ? (
-                        <form action={processDocumentWithVisionAction}>
-                          <input name="redirectTo" type="hidden" value="/bandeja" />
-                          <input name="documentId" type="hidden" value={document.id} />
-                          <button
-                            className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
-                            type="submit"
-                          >
-                            {extraction?.extraction_status === "error"
-                              ? "Reintentar"
-                              : "Procesar"}
-                          </button>
-                        </form>
-                      ) : extraction && !isReviewed ? (
-                        <Link
-                          className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
-                          href={`#extraccion-${extraction.id}`}
-                        >
-                          Revisar datos
-                        </Link>
-                      ) : null}
-
-                      {isReviewed && extraction ? (
-                        <>
-                          <form action={createPurchaseFromXmlAction}>
-                            <input
-                              name="extractionId"
-                              type="hidden"
-                              value={extraction.id}
-                            />
-                            <button
-                              className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-300/15"
-                              type="submit"
-                            >
-                              Crear compra
-                            </button>
-                          </form>
-                          <form action={createInvoiceFromXmlAction}>
-                            <input
-                              name="extractionId"
-                              type="hidden"
-                              value={extraction.id}
-                            />
-                            <button
-                              className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
-                              type="submit"
-                            >
-                              Crear factura
-                            </button>
-                          </form>
-                        </>
-                      ) : null}
-
-                      {state === "Compra creada" ? (
-                        <Link
-                          className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
-                          href="/compras"
-                        >
-                          Ver registro
-                        </Link>
-                      ) : null}
-                      {state === "Factura creada" ? (
-                        <Link
-                          className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
-                          href="/facturas"
-                        >
-                          Ver registro
-                        </Link>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
-                      <p className="text-xs text-slate-500">Proveedor</p>
-                      <p className="mt-1 break-words text-sm font-medium text-slate-100">
-                        {facts.supplier}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
-                      <p className="text-xs text-slate-500">Fecha documento</p>
-                      <p className="mt-1 text-sm font-medium text-slate-100">
-                        {facts.documentDate}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
-                      <p className="text-xs text-slate-500">Total</p>
-                      <p className="mt-1 text-sm font-semibold text-cyan-50">
-                        {facts.total}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {isXmlDocument(document) ? (
-                      <Link
-                        className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
-                        href={`/visor-documento/${document.id}`}
-                      >
-                        Ver documento
-                      </Link>
-                    ) : document.signedUrl ? (
-                      <a
-                        className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
-                        href={document.signedUrl}
-                        rel="noreferrer"
-                        target="_blank"
-                      >
-                        Ver documento
-                      </a>
-                    ) : null}
-                    {extraction ? (
-                      <Link
-                        className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-medium text-emerald-100 transition hover:bg-emerald-300/15"
-                        href={`#extraccion-${extraction.id}`}
-                      >
-                        Ver extraccion
-                      </Link>
-                    ) : null}
-                    <form action={markDocumentReviewedAction}>
-                      <input name="documentId" type="hidden" value={document.id} />
-                      <button
-                        className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
-                        type="submit"
-                      >
-                        Marcar revisado
-                      </button>
-                    </form>
-                    <form action={markDocumentRejectedAction}>
-                      <input name="documentId" type="hidden" value={document.id} />
-                      <button
-                        className="rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs font-medium text-rose-100 transition hover:bg-rose-300/15"
-                        type="submit"
-                      >
-                        Rechazar
-                      </button>
-                    </form>
-                  </div>
-                </article>
-              );
-            })
-          ) : (
-            <p className="rounded-2xl border border-dashed border-white/[0.1] bg-white/[0.025] px-5 py-10 text-center text-sm text-slate-500 xl:col-span-2">
-              No hay documentos de cliente para revisar con estos filtros.
-            </p>
-          )}
+        <div className="mt-5 flex flex-wrap gap-2">
+          {Object.entries(filterLabels).map(([filter, label]) => (
+            <Link
+              className={[
+                "rounded-full border px-3 py-2 text-xs font-semibold transition",
+                activeFilter === filter
+                  ? "border-cyan-300/30 bg-cyan-300/12 text-cyan-100"
+                  : "border-white/[0.08] bg-white/[0.04] text-slate-400 hover:text-white",
+              ].join(" ")}
+              href={`/bandeja?filter=${filter}`}
+              key={filter}
+            >
+              {label}
+            </Link>
+          ))}
+          {activeCompany ? (
+            <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-semibold text-emerald-100">
+              Empresa: {activeCompany.name}
+            </span>
+          ) : null}
         </div>
       </PremiumCard>
 
-      <PremiumCard className="overflow-hidden">
-        <div className="border-b border-white/[0.07] px-5 py-4">
-          <p className="text-sm font-medium text-white">
-            Documento procesado
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Vista humana de la extraccion principal antes de crear compras o
-            facturas.
-          </p>
-        </div>
-        <div className="divide-y divide-white/[0.06]">
-          {documentsWithExtractions.length > 0 ? (
-            documentsWithExtractions.map((document) =>
-              document.extraction ? (
-                <DocumentExtractionWorkspace
-                  createdAtLabel={formatDate(document.created_at)}
-                  documentId={document.id}
-                  documentName={document.original_filename ?? "Documento"}
-                  documentType={document.document_type}
-                  extraction={document.extraction}
-                  history={document.extractionHistory}
-                  mimeType={document.mime_type}
-                  relatedType={document.related_type}
-                  key={document.id}
-                  redirectTo="/bandeja"
-                  signedUrl={document.signedUrl}
-                />
-              ) : null,
-            )
-          ) : (
-            <p className="px-5 py-10 text-center text-sm text-slate-500">
-              No hay extracciones disponibles para los documentos filtrados.
-            </p>
-          )}
-        </div>
-      </PremiumCard>
+      <section className="grid gap-4 xl:grid-cols-5">
+        {lanes.map((lane) => {
+          const laneDocuments = visibleDocuments.filter(
+            (document) => getDocumentLane(document) === lane,
+          );
 
-      <details className="rounded-2xl border border-white/[0.08] bg-black/15">
-        <summary className="cursor-pointer px-5 py-4 text-sm font-medium text-slate-200">
-          Historial de extracciones
-        </summary>
-      <PremiumCard className="overflow-hidden">
-        <div className="border-b border-white/[0.07] px-5 py-4">
-          <p className="text-sm font-medium text-white">
-            Extracciones detectadas
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Vista operativa de los datos leidos antes de crear compras o
-            facturas.
-          </p>
-        </div>
+          return (
+            <section
+              className="rounded-3xl border border-white/[0.08] bg-white/[0.025] p-3"
+              key={lane}
+            >
+              <div className="mb-3 flex items-center justify-between px-1">
+                <p className="text-sm font-semibold text-white">
+                  {laneLabels[lane]}
+                </p>
+                <span className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-1 text-xs text-slate-400">
+                  {laneDocuments.length}
+                </span>
+              </div>
 
-        <div className="divide-y divide-white/[0.06]">
-          {documentsWithExtractions.length > 0 ? (
-            documentsWithExtractions.map((document) => {
-              const extraction = document.extraction;
-
-              if (!extraction) {
-                return null;
-              }
-              const isReviewed = extraction.extraction_status === "reviewed";
-
-              return (
-                <article className="px-5 py-5" key={document.id}>
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-white">
-                        {document.original_filename ?? "Documento"}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {document.document_type} · {formatDate(document.created_at)}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {isXmlDocument(document) ? (
-                        <Link
-                          className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
-                          href={`/visor-documento/${document.id}`}
-                        >
-                          Ver documento
-                        </Link>
-                      ) : document.signedUrl ? (
-                        <a
-                          className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
-                          href={document.signedUrl}
-                          rel="noreferrer"
-                          target="_blank"
-                        >
-                          Ver documento
-                        </a>
-                      ) : null}
-                      {isAiProcessableDocument(document) &&
-                      extraction.extraction_provider !== "openai-vision" ? (
-                        <form action={processDocumentWithVisionAction}>
-                          <input
-                            name="redirectTo"
-                            type="hidden"
-                            value="/bandeja"
-                          />
-                          <input
-                            name="documentId"
-                            type="hidden"
-                            value={document.id}
-                          />
-                          <button
-                            className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
-                            type="submit"
-                          >
-                            Procesar con IA
-                          </button>
-                        </form>
-                      ) : null}
-                      <form action={createPurchaseFromXmlAction}>
-                        <input
-                          name="extractionId"
-                          type="hidden"
-                          value={extraction.id}
-                        />
-                        <button
-                          className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-medium text-emerald-100 transition hover:bg-emerald-300/15 disabled:cursor-not-allowed disabled:opacity-45"
-                          disabled={!isReviewed}
-                          type="submit"
-                        >
-                          Crear compra
-                        </button>
-                      </form>
-                      <form action={createInvoiceFromXmlAction}>
-                        <input
-                          name="extractionId"
-                          type="hidden"
-                          value={extraction.id}
-                        />
-                        <button
-                          className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15 disabled:cursor-not-allowed disabled:opacity-45"
-                          disabled={!isReviewed}
-                          type="submit"
-                        >
-                          Crear factura
-                        </button>
-                      </form>
-                      <form action={markDocumentReviewedAction}>
-                        <input
-                          name="documentId"
-                          type="hidden"
-                          value={document.id}
-                        />
-                        <button
-                          className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08]"
-                          type="submit"
-                        >
-                          Marcar revisado
-                        </button>
-                      </form>
-                      <form action={markDocumentRejectedAction}>
-                        <input
-                          name="documentId"
-                          type="hidden"
-                          value={document.id}
-                        />
-                        <button
-                          className="rounded-xl border border-rose-300/20 bg-rose-300/10 px-3 py-2 text-xs font-medium text-rose-100 transition hover:bg-rose-300/15"
-                          type="submit"
-                        >
-                          Marcar rechazado
-                        </button>
-                      </form>
-                    </div>
+              <div className="max-h-[68vh] space-y-3 overflow-y-auto overscroll-contain pr-1">
+                {laneDocuments.length > 0 ? (
+                  laneDocuments.map((document) => (
+                    <WorkflowCard document={document} key={document.id} />
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-white/[0.1] bg-black/10 p-4 text-center text-xs leading-5 text-slate-500">
+                    Sin documentos en este estado.
                   </div>
-
-                  <div className="mt-4">
-                    <ExtractionSummary extractedData={extraction.extracted_data} />
-                  </div>
-
-                  {!isReviewed ? (
-                    <p className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs leading-5 text-amber-100">
-                      Revisa y guarda los datos detectados antes de crear una
-                      compra o factura.
-                    </p>
-                  ) : null}
-
-                  <details
-                    className="mt-4 rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.025] p-4"
-                    id={`extraccion-${extraction.id}`}
-                    open={!isReviewed}
-                  >
-                    <summary className="cursor-pointer text-sm font-medium text-cyan-100">
-                      Revisar datos / Editar datos detectados
-                    </summary>
-                    <div className="mt-4">
-                      <ExtractionReviewForm
-                        extractedData={extraction.extracted_data}
-                        extractionId={extraction.id}
-                        redirectTo="/bandeja"
-                      />
-                    </div>
-                  </details>
-                </article>
-              );
-            })
-          ) : (
-            <p className="px-5 py-10 text-center text-sm text-slate-500">
-              No hay extracciones disponibles para los documentos filtrados.
-            </p>
-          )}
-        </div>
-      </PremiumCard>
-      </details>
+                )}
+              </div>
+            </section>
+          );
+        })}
+      </section>
     </ModuleFrame>
   );
 }

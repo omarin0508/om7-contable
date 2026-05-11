@@ -101,7 +101,7 @@ export default async function CompaniesPage() {
             className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-2.5 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/15"
             href="#nueva-empresa"
           >
-            Nueva empresa
+            Nuevo cliente/empresa
           </a>
         }
       />
@@ -213,7 +213,7 @@ export default async function CompaniesPage() {
         <div id="nueva-empresa">
           <div className="flex flex-col gap-5">
           <PremiumCard className="p-5">
-            <p className="text-sm font-medium text-white">Nueva empresa</p>
+            <p className="text-sm font-medium text-white">Nuevo cliente/empresa</p>
             <p className="mt-1 text-xs leading-5 text-slate-500">
               Crea una empresa o cliente dentro de la organizacion activa.
             </p>

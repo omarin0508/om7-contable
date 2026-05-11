@@ -1,21 +1,61 @@
 import Link from "next/link";
-import { createPurchaseAction } from "@/app/(platform)/compras/actions";
-import { uploadDocumentAction } from "@/app/(platform)/documentos/actions";
+import type { ReactNode } from "react";
 import {
+  createPurchaseAction,
+  registerPurchasePaymentAction,
+  updatePurchaseReviewStatusAction,
+} from "@/app/(platform)/compras/actions";
+import {
+  BackLink,
   MetricCard,
   ModuleFrame,
   ModuleHeader,
-  StatusBadge,
 } from "@/components/modules/shared";
+import { JournalEntryCard } from "@/components/accounting/journal-entry-card";
 import { PremiumCard } from "@/components/ui/premium-card";
+import {
+  getReviewStatusBadgeClass,
+  getReviewStatusLabel,
+} from "@/lib/accounting-review-ui";
+import {
+  canApproveRecord,
+  canObserveRecord,
+  canReopenReview,
+  canReviewRecord,
+  getRecordBusinessStateDescription,
+  getRecordBusinessStateLabel,
+  isRecordLockedByPeriod,
+} from "@/lib/accounting-business-rules";
+import {
+  getPeriodLabel,
+  getPeriodStatusBadgeClass,
+  getPeriodStatusLabel,
+  listAccountingPeriods,
+  type AccountingPeriod,
+} from "@/lib/accounting-periods";
+import {
+  listJournalEntriesForSources,
+  type JournalEntry,
+} from "@/lib/accounting-entries";
 import { formatCurrencyAmount, normalizeCurrencyCode } from "@/lib/currency";
-import { listPurchases } from "@/lib/purchases";
+import { getConversionMetadataValue } from "@/lib/document-ui";
+import {
+  getMovementStatusBadgeClass,
+  getPaymentStatusKey,
+  getPaymentStatusLabel,
+  getRemainingAmount,
+  getPurchasePaymentSummary,
+  listPaymentMethods,
+  type PaymentMethod,
+  type PaymentSummary,
+} from "@/lib/payments";
+import { listPurchases, type Purchase } from "@/lib/purchases";
 
-const statusLabels: Record<string, string> = {
-  registrada: "Registrada",
-  pendiente: "Pendiente",
-  pagada: "Pagada",
-  revision: "Revision",
+type PurchasesPageProps = {
+  searchParams?: Promise<{
+    filter?: string;
+    q?: string;
+  }>;
 };
 
 const categoryOptions = [
@@ -27,40 +67,581 @@ const categoryOptions = [
   "Otros",
 ];
 
-function formatMoney(value: number | null, currency: string | null) {
+const filterLabels: Record<string, string> = {
+  all: "Todas",
+  document: "Desde documento",
+  counterparty: "Con contraparte",
+  missing_counterparty: "Sin contraparte",
+  high_confidence: "Alta confianza",
+  review: "Necesita atencion",
+  accounting_pending: "Pendientes",
+  accounting_reviewed: "Revisadas",
+  accounting_approved: "Aprobadas",
+  accounting_observed: "Observadas",
+};
+
+function formatMoney(value: number | null | undefined, currency: string | null) {
   return formatCurrencyAmount(value, currency);
 }
 
-export default async function PurchasesPage() {
-  const { activeContext, purchases } = await listPurchases();
+function formatConfidence(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return `${Math.round(Number(value) * 100)}%`;
+}
+
+function hasHighConfidence(purchase: Purchase) {
+  return Number(purchase.classification_confidence ?? 0) >= 0.9;
+}
+
+function needsReview(purchase: Purchase) {
+  return (
+    purchase.status === "revision" ||
+    !purchase.counterparty_id ||
+    (purchase.source_document_id && !hasHighConfidence(purchase))
+  );
+}
+
+function hasAccountingStatus(purchase: Purchase, status: string) {
+  return (purchase.review_status ?? "pending") === status;
+}
+
+function getPurchasePeriodDate(purchase: Purchase) {
+  const rawDate = purchase.purchase_date ?? purchase.created_at;
+  const date = rawDate ? new Date(rawDate) : null;
+
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+function getPurchasePeriod(
+  purchase: Purchase,
+  periods: AccountingPeriod[],
+) {
+  const date = getPurchasePeriodDate(purchase);
+
+  if (!date) {
+    return null;
+  }
+
+  return (
+    periods.find(
+      (period) =>
+        period.period_year === date.getFullYear() &&
+        period.period_month === date.getMonth() + 1,
+    ) ?? null
+  );
+}
+
+function getPurchasePeriodLabel(purchase: Purchase) {
+  const date = getPurchasePeriodDate(purchase);
+
+  if (!date) {
+    return "Sin periodo";
+  }
+
+  return getPeriodLabel(date.getFullYear(), date.getMonth() + 1);
+}
+
+function getSearchText(purchase: Purchase) {
+  return [
+    purchase.counterparty?.name,
+    purchase.supplier_name,
+    purchase.description,
+    purchase.category,
+    purchase.suggested_account,
+    purchase.document_number,
+    purchase.source_document?.display_name,
+    purchase.source_document?.original_filename,
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function filterPurchases(
+  purchases: Purchase[],
+  filter: string,
+  searchTerm: string,
+) {
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+
+  return purchases.filter((purchase) => {
+    const matchesSearch =
+      !normalizedSearch || getSearchText(purchase).includes(normalizedSearch);
+    const matchesFilter =
+      filter === "document"
+        ? Boolean(purchase.source_document_id)
+        : filter === "counterparty"
+          ? Boolean(purchase.counterparty_id)
+          : filter === "missing_counterparty"
+            ? !purchase.counterparty_id
+            : filter === "high_confidence"
+              ? hasHighConfidence(purchase)
+              : filter === "review"
+                ? needsReview(purchase)
+                : filter === "accounting_pending"
+                  ? hasAccountingStatus(purchase, "pending")
+                  : filter === "accounting_reviewed"
+                    ? hasAccountingStatus(purchase, "reviewed")
+                    : filter === "accounting_approved"
+                      ? hasAccountingStatus(purchase, "approved")
+                      : filter === "accounting_observed"
+                        ? hasAccountingStatus(purchase, "observed")
+                : true;
+
+    return matchesSearch && matchesFilter;
+  });
+}
+
+function ReviewStatusForm({
+  purchaseId,
+  redirectTo,
+  status,
+  children,
+  className,
+}: {
+  purchaseId: string;
+  redirectTo: string;
+  status: string;
+  children: ReactNode;
+  className: string;
+}) {
+  return (
+    <form action={updatePurchaseReviewStatusAction}>
+      <input name="purchaseId" type="hidden" value={purchaseId} />
+      <input name="reviewStatus" type="hidden" value={status} />
+      <input name="redirectTo" type="hidden" value={redirectTo} />
+      <button className={className} type="submit">
+        {children}
+      </button>
+    </form>
+  );
+}
+
+function PurchasePaymentForm({
+  locked,
+  methods,
+  paid,
+  purchase,
+  redirectTo,
+}: {
+  locked: boolean;
+  methods: PaymentMethod[];
+  paid: number;
+  purchase: Purchase;
+  redirectTo: string;
+}) {
+  const remaining = getRemainingAmount(purchase.total, paid);
+
+  if (remaining <= 0) {
+    return null;
+  }
+
+  if (locked) {
+    return (
+      <p className="mt-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3 text-sm text-slate-400">
+        El periodo esta cerrado. Este pago queda en solo lectura.
+      </p>
+    );
+  }
+
+  return (
+    <details className="mt-3 rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.035] p-3">
+      <summary className="cursor-pointer text-xs font-semibold text-cyan-100">
+        Registrar pago
+      </summary>
+      <form action={registerPurchasePaymentAction} className="mt-3 grid gap-3">
+        <input name="purchaseId" type="hidden" value={purchase.id} />
+        <input name="redirectTo" type="hidden" value={redirectTo} />
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="block">
+            <span className="text-xs text-slate-300">Metodo</span>
+            <select
+              className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
+              name="paymentMethodId"
+              required
+            >
+              {methods.map((method) => (
+                <option className="bg-slate-950" key={method.id} value={method.id}>
+                  {method.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs text-slate-300">Monto</span>
+            <input
+              className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
+              defaultValue={remaining.toFixed(2)}
+              min="0"
+              name="amount"
+              step="0.01"
+              type="number"
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs text-slate-300">Fecha</span>
+            <input
+              className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
+              defaultValue={new Date().toISOString().slice(0, 10)}
+              name="paymentDate"
+              type="date"
+            />
+          </label>
+        </div>
+        <input
+          className="h-10 rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
+          name="notes"
+          placeholder="Nota opcional"
+        />
+        <button className="om7-btn-primary px-3 py-2 text-xs" type="submit">
+          Guardar pago
+        </button>
+      </form>
+    </details>
+  );
+}
+
+function PurchaseCard({
+  journalEntry,
+  paymentMethods,
+  paymentSummary,
+  period,
+  purchase,
+  redirectTo,
+}: {
+  journalEntry: JournalEntry | null;
+  paymentMethods: PaymentMethod[];
+  paymentSummary: PaymentSummary | null;
+  period: AccountingPeriod | null;
+  purchase: Purchase;
+  redirectTo: string;
+}) {
+  const confidence = formatConfidence(purchase.classification_confidence);
+  const ruleApplied =
+    purchase.classification_rule_applied ??
+    getConversionMetadataValue(
+      purchase.conversion_metadata,
+      "classification_rule_applied",
+      "Sin regla registrada",
+    );
+  const title =
+    purchase.counterparty?.name ?? purchase.supplier_name ?? "Sin proveedor";
+  const sourceName =
+    purchase.source_document?.display_name ??
+    purchase.source_document?.original_filename ??
+    "Documento procesado";
+  const lockedByPeriod = isRecordLockedByPeriod(period);
+  const periodLabel = getPurchasePeriodLabel(purchase);
+  const paidAmount = paymentSummary?.amount ?? 0;
+  const paymentStatus = getPaymentStatusKey(purchase.total, paidAmount);
+  const paymentLabel = getPaymentStatusLabel(purchase.total, paidAmount);
+  const remainingAmount = getRemainingAmount(purchase.total, paidAmount);
+  const reviewActionLabel =
+    (purchase.review_status ?? "pending") === "observed"
+      ? "Marcar corregido"
+      : "Marcar revisada";
+
+  return (
+    <article className="rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.08),transparent_34%),rgba(255,255,255,0.035)] p-5 shadow-2xl shadow-black/15 transition hover:border-cyan-300/20 hover:bg-white/[0.05]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {purchase.source_document_id ? (
+              <span className="om7-chip om7-chip-cyan">Desde documento</span>
+            ) : (
+              <span className="om7-chip text-slate-400">Manual</span>
+            )}
+            {purchase.counterparty_id ? (
+              <span className="om7-chip om7-chip-emerald">Contraparte</span>
+            ) : (
+              <span className="om7-chip om7-chip-amber">Sin contraparte</span>
+            )}
+            {needsReview(purchase) ? (
+              <span className="om7-chip om7-chip-amber">Necesita atencion</span>
+            ) : null}
+            <span className={getReviewStatusBadgeClass(purchase.review_status)}>
+              {getReviewStatusLabel(purchase.review_status)}
+            </span>
+            {lockedByPeriod ? (
+              <span className={getPeriodStatusBadgeClass(period?.status)}>
+                Periodo cerrado
+              </span>
+            ) : null}
+            <span className={getMovementStatusBadgeClass(paymentStatus)}>
+              {paymentLabel}
+            </span>
+          </div>
+
+          <h3 className="mt-4 truncate text-lg font-semibold text-white">
+            {title}
+          </h3>
+          <p className="mt-1 text-sm text-slate-500">
+            {purchase.document_number ?? "Sin numero"} ·{" "}
+            {purchase.purchase_date ?? "Sin fecha"}
+          </p>
+          <p className="mt-1 text-xs text-slate-600">
+            Periodo: {periodLabel}
+            {period ? ` · ${getPeriodStatusLabel(period.status)}` : ""}
+          </p>
+        </div>
+
+        <div className="text-left lg:text-right">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-600">
+            Monto
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-white">
+            {formatMoney(purchase.total, purchase.currency)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-3">
+          <p className="text-xs text-slate-500">Categoria sugerida</p>
+          <p className="mt-1 truncate text-sm font-semibold text-slate-100">
+            {purchase.category ?? "Sin categoria"}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-3">
+          <p className="text-xs text-slate-500">Cuenta sugerida</p>
+          <p className="mt-1 truncate text-sm font-semibold text-slate-100">
+            {purchase.suggested_account ?? "Sin cuenta"}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-3">
+          <p className="text-xs text-slate-500">Sugerencia OM7</p>
+          <p className="mt-1 truncate text-sm font-semibold text-slate-100">
+            {confidence ? `Confianza ${confidence}` : "Sin confianza"}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/75">
+              Pago
+            </p>
+            <p className="mt-2 text-sm font-semibold text-slate-100">
+              {paymentLabel} · pagado {formatMoney(paidAmount, purchase.currency)}
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Saldo pendiente: {formatMoney(remainingAmount, purchase.currency)}
+            </p>
+          </div>
+          <span className="rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-xs text-slate-300">
+            {paymentSummary?.items[0]?.payment_method?.name ?? "Sin movimiento"}
+          </span>
+        </div>
+        <PurchasePaymentForm
+          locked={lockedByPeriod}
+          methods={paymentMethods}
+          paid={paidAmount}
+          purchase={purchase}
+          redirectTo={redirectTo}
+        />
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/75">
+          Trazabilidad OM7
+        </p>
+        <p className="mt-2 text-sm text-slate-300">
+          Origen: {purchase.source_document_id ? sourceName : "Registro manual"}
+        </p>
+        <p className="mt-1 text-sm text-slate-500">
+          Regla aplicada:{" "}
+          {ruleApplied}
+        </p>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Revision del registro
+            </p>
+            <p className="mt-2 text-sm font-semibold text-slate-100">
+              {getRecordBusinessStateLabel(purchase, period)}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              {getRecordBusinessStateDescription(purchase, period)}
+            </p>
+            {purchase.review_notes ? (
+              <p className="mt-2 text-sm leading-6 text-amber-100/80">
+                Nota: {purchase.review_notes}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2 lg:justify-end">
+            {canReopenReview(purchase, period) ? (
+              <ReviewStatusForm
+                className="om7-btn-secondary px-3 py-2 text-xs"
+                purchaseId={purchase.id}
+                redirectTo={redirectTo}
+                status="pending"
+              >
+                Reabrir revision
+              </ReviewStatusForm>
+            ) : null}
+            {canReviewRecord(purchase, period) ? (
+              <ReviewStatusForm
+                className="om7-btn-secondary px-3 py-2 text-xs"
+                purchaseId={purchase.id}
+                redirectTo={redirectTo}
+                status="reviewed"
+              >
+                {reviewActionLabel}
+              </ReviewStatusForm>
+            ) : null}
+            {canApproveRecord(purchase, period) ? (
+              <ReviewStatusForm
+                className="om7-btn-primary px-3 py-2 text-xs"
+                purchaseId={purchase.id}
+                redirectTo={redirectTo}
+                status="approved"
+              >
+                Aprobar
+              </ReviewStatusForm>
+            ) : null}
+          </div>
+        </div>
+
+        {lockedByPeriod ? (
+          <p className="mt-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3 text-sm text-slate-400">
+            Las acciones de revision quedan deshabilitadas porque el periodo
+            esta cerrado.
+          </p>
+        ) : null}
+
+        {canObserveRecord(purchase, period) ? (
+        <details className="mt-3 rounded-2xl border border-amber-300/10 bg-amber-300/[0.04] p-3">
+          <summary className="cursor-pointer text-xs font-semibold text-amber-100">
+            Observar con nota
+          </summary>
+          <form action={updatePurchaseReviewStatusAction} className="mt-3 space-y-3">
+            <input name="purchaseId" type="hidden" value={purchase.id} />
+            <input name="reviewStatus" type="hidden" value="observed" />
+            <input name="redirectTo" type="hidden" value={redirectTo} />
+            <textarea
+              className="min-h-20 w-full rounded-xl border border-amber-200/15 bg-black/25 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-600 focus:border-amber-200/40 focus:ring-4 focus:ring-amber-200/10"
+              name="reviewNotes"
+              placeholder="Motivo de la observacion..."
+              required
+            />
+            <button className="om7-btn-secondary px-3 py-2 text-xs" type="submit">
+              Guardar observacion
+            </button>
+          </form>
+        </details>
+        ) : null}
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {purchase.source_document_id ? (
+          <Link
+            className="om7-btn-secondary px-4 py-2.5"
+            href={`/documentos/${purchase.source_document_id}`}
+          >
+            Ver documento
+          </Link>
+        ) : null}
+        {purchase.counterparty_id ? (
+          <Link
+            className="om7-btn-ghost px-4 py-2.5"
+            href={`/contrapartes/${purchase.counterparty_id}`}
+          >
+            Ver contraparte
+          </Link>
+        ) : null}
+      </div>
+
+      {(purchase.review_status ?? "pending") === "approved" ? (
+        <div className="mt-5">
+          <JournalEntryCard
+            currency={purchase.currency}
+            entry={journalEntry}
+            locked={lockedByPeriod}
+            lockedReason="Periodo cerrado. El asiento queda solo lectura."
+            redirectTo={redirectTo}
+            sourceId={purchase.id}
+            sourceType="purchase"
+          />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+export default async function PurchasesPage({
+  searchParams,
+}: PurchasesPageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const activeFilter = resolvedSearchParams.filter ?? "all";
+  const searchTerm = resolvedSearchParams.q ?? "";
+  const redirectTo = `/compras?filter=${activeFilter}${
+    searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""
+  }`;
+  const [
+    { activeContext, purchases },
+    periodsResult,
+    paymentMethodsResult,
+  ] = await Promise.all([
+    listPurchases(),
+    listAccountingPeriods().catch(() => ({
+      periods: [] as AccountingPeriod[],
+    })),
+    listPaymentMethods().catch(() => ({
+      methods: [] as PaymentMethod[],
+    })),
+  ]);
+  const periods = periodsResult.periods;
+  const paymentMethods = paymentMethodsResult.methods;
+  const purchasePaymentMap = await getPurchasePaymentSummary(
+    purchases.map((purchase) => purchase.id),
+  ).catch(() => new Map<string, PaymentSummary>());
+  const purchaseEntryMap = await listJournalEntriesForSources(
+    "purchase",
+    purchases.map((purchase) => purchase.id),
+  ).catch(() => new Map<string, JournalEntry>());
   const activeCompany = activeContext.activeCompany;
   const organization = activeContext.organization;
   const currency = normalizeCurrencyCode(
     activeCompany?.base_currency ?? organization?.base_currency ?? "CRC",
   );
+  const filteredPurchases = filterPurchases(
+    purchases,
+    activeFilter,
+    searchTerm,
+  );
   const totalPurchases = purchases.reduce(
     (sum, purchase) => sum + Number(purchase.total ?? 0),
     0,
   );
-  const totalTax = purchases.reduce(
-    (sum, purchase) => sum + Number(purchase.tax ?? 0),
-    0,
-  );
-  const averagePurchase =
-    purchases.length > 0 ? totalPurchases / purchases.length : 0;
+  const fromDocumentCount = purchases.filter(
+    (purchase) => purchase.source_document_id,
+  ).length;
+  const missingTraceCount = purchases.filter(
+    (purchase) => !purchase.counterparty_id || !purchase.source_document_id,
+  ).length;
+  const pendingReviewCount = purchases.filter((purchase) =>
+    hasAccountingStatus(purchase, "pending"),
+  ).length;
 
   return (
     <ModuleFrame>
       <ModuleHeader
-        title="Compras y Gastos"
-        description="Administre compras y gastos registrados, creados manualmente o generados desde documentos XML procesados."
+        title="Compras"
+        description="Control operativo de gastos, proveedores y documentos convertidos."
         action={
-          <a
-            className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-2.5 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/15"
-            href="#nueva-compra"
-          >
-            Nueva compra
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <BackLink />
+            <a className="om7-btn-primary px-4 py-2.5" href="#nueva-compra">
+              Nueva compra
+            </a>
+          </div>
         }
       />
 
@@ -86,121 +667,110 @@ export default async function PurchasesPage() {
         <MetricCard
           detail={activeCompany?.name ?? "Sin empresa activa"}
           label="Total compras"
-          value={formatMoney(totalPurchases, currency)}
-        />
-        <MetricCard
-          detail={organization?.name ?? "Organizacion"}
-          label="Cantidad de compras"
           value={String(purchases.length)}
         />
         <MetricCard
-          detail="Impuesto registrado"
-          label="Impuestos"
-          value={formatMoney(totalTax, currency)}
+          detail={currency}
+          label="Monto total"
+          value={formatMoney(totalPurchases, currency)}
         />
         <MetricCard
-          detail={currency}
-          label="Promedio"
-          value={formatMoney(averagePurchase, currency)}
+          detail="Tienen documento origen"
+          label="Desde documento"
+          value={String(fromDocumentCount)}
+        />
+        <MetricCard
+          detail={`Por completar ${missingTraceCount}`}
+          label="Por revisar"
+          value={String(pendingReviewCount)}
         />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+      <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
         <PremiumCard className="overflow-hidden">
-          <div className="border-b border-white/[0.07] px-5 py-4">
-            <p className="text-sm font-medium text-white">Compras recientes</p>
-            <p className="mt-1 text-xs text-slate-500">
-              {activeCompany
-                ? `Datos reales de ${activeCompany.name}.`
-                : "Selecciona una empresa activa para listar compras."}
-            </p>
+          <div className="border-b border-white/[0.07] p-5">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="text-base font-semibold text-white">
+                    Bandeja de compras
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Documento recibido, datos revisados, compra creada y
+                    trazabilidad lista.
+                  </p>
+                </div>
+                <span className="text-sm text-slate-500">
+                  {filteredPurchases.length} de {purchases.length} visibles
+                </span>
+              </div>
+
+              <form className="grid gap-2 lg:grid-cols-[1fr_auto]" method="get">
+                <input
+                  className="h-12 min-w-0 rounded-2xl border border-white/[0.1] bg-white/[0.06] px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/45 focus:ring-4 focus:ring-cyan-300/10"
+                  defaultValue={searchTerm}
+                  name="q"
+                  placeholder="Buscar por proveedor, descripcion, categoria o documento..."
+                />
+                <input name="filter" type="hidden" value={activeFilter} />
+                <button className="om7-btn-secondary h-12 px-5" type="submit">
+                  Buscar
+                </button>
+              </form>
+
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(filterLabels).map(([filter, label]) => (
+                  <Link
+                    className={[
+                      "rounded-full border px-3 py-2 text-xs font-semibold transition",
+                      activeFilter === filter
+                        ? "border-cyan-300/30 bg-cyan-300/12 text-cyan-100"
+                        : "border-white/[0.08] bg-white/[0.04] text-slate-400 hover:text-white",
+                    ].join(" ")}
+                    href={`/compras?filter=${filter}${
+                      searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""
+                    }`}
+                    key={filter}
+                  >
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1120px] text-left text-sm">
-              <thead className="text-xs uppercase tracking-[0.16em] text-slate-600">
-                <tr>
-                  <th className="px-5 py-3 font-medium">Proveedor</th>
-                  <th className="px-5 py-3 font-medium">Documento</th>
-                  <th className="px-5 py-3 font-medium">Fecha</th>
-                  <th className="px-5 py-3 font-medium">Categoria</th>
-                  <th className="px-5 py-3 font-medium">Metodo</th>
-                  <th className="px-5 py-3 font-medium">Total</th>
-                  <th className="px-5 py-3 font-medium">Estado</th>
-                  <th className="px-5 py-3 font-medium">Documento</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.06]">
-                {purchases.length > 0 ? (
-                  purchases.map((purchase) => (
-                    <tr key={purchase.id}>
-                      <td className="px-5 py-4 font-medium text-white">
-                        {purchase.supplier_name ?? "Sin proveedor"}
-                      </td>
-                      <td className="px-5 py-4 text-slate-400">
-                        {purchase.document_number ?? "Sin numero"}
-                      </td>
-                      <td className="px-5 py-4 text-slate-400">
-                        {purchase.purchase_date ?? "Sin fecha"}
-                      </td>
-                      <td className="px-5 py-4 text-slate-400">
-                        {purchase.category ?? "Sin categoria"}
-                      </td>
-                      <td className="px-5 py-4 text-slate-400">
-                        {purchase.payment_method ?? "No definido"}
-                      </td>
-                      <td className="px-5 py-4 font-medium text-slate-100">
-                        {formatMoney(purchase.total, purchase.currency)}
-                      </td>
-                      <td className="px-5 py-4">
-                        <StatusBadge>
-                          {statusLabels[purchase.status] ?? purchase.status}
-                        </StatusBadge>
-                      </td>
-                      <td className="px-5 py-4">
-                        <form
-                          action={uploadDocumentAction}
-                          className="flex items-center gap-2"
-                        >
-                          <input name="redirectTo" type="hidden" value="/compras" />
-                          <input name="relatedType" type="hidden" value="purchase" />
-                          <input name="relatedId" type="hidden" value={purchase.id} />
-                          <input name="documentType" type="hidden" value="compra" />
-                          <input
-                            accept="application/pdf,image/*,.xml,application/xml,text/xml"
-                            className="w-40 rounded-lg border border-white/[0.08] bg-black/20 px-2 py-1.5 text-xs text-slate-400 file:mr-2 file:rounded-md file:border-0 file:bg-white/[0.08] file:px-2 file:py-1 file:text-xs file:text-slate-200"
-                            name="file"
-                            required
-                            type="file"
-                          />
-                          <button
-                            className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-2.5 py-1.5 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
-                            type="submit"
-                          >
-                            Adjuntar
-                          </button>
-                        </form>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td
-                      className="px-5 py-10 text-center text-sm text-slate-500"
-                      colSpan={8}
-                    >
-                      No hay compras registradas para la empresa activa.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          <div className="max-h-[72vh] overflow-y-auto overscroll-contain p-5">
+            <div className="grid gap-4">
+            {filteredPurchases.length > 0 ? (
+              filteredPurchases.map((purchase) => (
+                <PurchaseCard
+                  journalEntry={purchaseEntryMap.get(purchase.id) ?? null}
+                  key={purchase.id}
+                  paymentMethods={paymentMethods}
+                  paymentSummary={purchasePaymentMap.get(purchase.id) ?? null}
+                  period={getPurchasePeriod(purchase, periods)}
+                  purchase={purchase}
+                  redirectTo={redirectTo}
+                />
+              ))
+            ) : (
+              <div className="rounded-3xl border border-dashed border-white/[0.12] bg-white/[0.025] p-10 text-center">
+                <p className="text-base font-semibold text-white">
+                  Sin compras para esta vista
+                </p>
+                <p className="mt-2 text-sm text-slate-500">
+                  Ajusta los filtros o crea una compra desde un documento
+                  revisado.
+                </p>
+              </div>
+            )}
+            </div>
           </div>
         </PremiumCard>
 
         <div id="nueva-compra">
           <PremiumCard className="p-5">
-            <p className="text-sm font-medium text-white">Nueva compra manual</p>
+            <p className="text-sm font-semibold text-white">Nueva compra manual</p>
             <p className="mt-1 text-xs leading-5 text-slate-500">
               {activeCompany
                 ? `Se guardara en ${activeCompany.name}.`
@@ -213,7 +783,7 @@ export default async function PurchasesPage() {
                   Proveedor
                 </span>
                 <input
-                  className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+                  className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
                   disabled={!activeCompany}
                   name="supplierName"
                   placeholder="Proveedor S.A."
@@ -226,7 +796,7 @@ export default async function PurchasesPage() {
                     Documento
                   </span>
                   <input
-                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
                     disabled={!activeCompany}
                     name="documentNumber"
                     placeholder="OC-1001"
@@ -336,50 +906,26 @@ export default async function PurchasesPage() {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-3">
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-300">
-                    Subtotal
-                  </span>
-                  <input
-                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                    disabled={!activeCompany}
-                    min="0"
-                    name="subtotal"
-                    placeholder="0.00"
-                    step="0.01"
-                    type="number"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-300">
-                    Impuesto
-                  </span>
-                  <input
-                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                    disabled={!activeCompany}
-                    min="0"
-                    name="tax"
-                    placeholder="0.00"
-                    step="0.01"
-                    type="number"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-300">
-                    Total
-                  </span>
-                  <input
-                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
-                    disabled={!activeCompany}
-                    min="0"
-                    name="total"
-                    placeholder="0.00"
-                    step="0.01"
-                    type="number"
-                  />
-                </label>
+                {["subtotal", "tax", "total"].map((name) => (
+                  <label className="block" key={name}>
+                    <span className="text-sm font-medium text-slate-300">
+                      {name === "tax"
+                        ? "Impuesto"
+                        : name === "total"
+                          ? "Total"
+                          : "Subtotal"}
+                    </span>
+                    <input
+                      className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+                      disabled={!activeCompany}
+                      min="0"
+                      name={name}
+                      placeholder="0.00"
+                      step="0.01"
+                      type="number"
+                    />
+                  </label>
+                ))}
               </div>
 
               <label className="block">
@@ -393,7 +939,7 @@ export default async function PurchasesPage() {
               </label>
 
               <button
-                className="flex h-12 w-full items-center justify-center rounded-xl bg-cyan-100 px-4 text-sm font-semibold text-slate-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="om7-btn-primary h-12 w-full px-4 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!activeCompany}
                 type="submit"
               >

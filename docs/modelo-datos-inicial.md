@@ -608,6 +608,118 @@ La validacion contable inicial muestra advertencias si falta fecha, total o prov
 
 El JSON completo queda disponible solo como vista tecnica para diagnostico. La vista principal para usuarios operativos es el resumen editable y las acciones de conversion.
 
+## Cierre de ciclo documental
+
+Cuando una extraccion revisada se convierte en compra o factura, el documento queda marcado como convertido en `documents`:
+
+- `converted_at`: fecha de conversion.
+- `converted_type`: `purchase` o `invoice`.
+- `converted_record_id`: registro creado.
+- `converted_by`: usuario interno que ejecuto la conversion.
+- `conversion_notes`: nota operativa de la conversion.
+
+La conversion mantiene el documento original, la extraccion usada y el registro creado. El origen del documento (`related_type`, por ejemplo `client_upload`) no se cambia, para no perder trazabilidad del canal de entrada.
+
+Si un documento ya tiene datos `converted_*`, la UI muestra `Compra creada` o `Factura creada`, cambia la accion principal a `Ver compra` o `Ver factura`, y las acciones de crear registros quedan bloqueadas para evitar duplicados.
+
+`schema-018-record-traceability.sql` agrega trazabilidad directa desde registros operativos hacia el documento origen:
+
+- `purchases.source_document_id`
+- `purchases.source_extraction_id`
+- `purchases.conversion_metadata`
+- `invoices.source_document_id`
+- `invoices.source_extraction_id`
+- `invoices.conversion_metadata`
+
+Con esto `/compras` y `/facturas` pueden mostrar el badge `Desde documento`, la contraparte asociada, la clasificacion aplicada, la regla usada, confianza y enlaces rapidos a `/documentos/[id]` y `/contrapartes/[id]`.
+
+## Motor de clasificacion OM7
+
+La clasificacion documental v1 se ejecuta con reglas de codigo antes de usar IA. El modulo `classifyDocumentByRules(extraction, company)` revisa un catalogo base `OM7_CLASSIFICATION_CATALOG` con reglas por detalle y por emisor/proveedor:
+
+- Si la cedula del emisor coincide con la empresa: sugiere venta/cliente.
+- Si la cedula del receptor coincide con la empresa: sugiere compra/proveedor.
+- Palabras clave en lineas y detalle para sugerir categoria y cuenta:
+  combustibles, electricidad, telecomunicaciones, alquileres y servicios profesionales.
+- Emisores/proveedores frecuentes como CNFL, ICE, Kolbi, Claro, Liberty, servicentros o gasolineras para sugerir cuenta/categoria aun cuando el detalle sea pobre.
+
+El resultado se guarda en `document_classifications` con:
+
+- `flow_type`
+- `counterparty_type`
+- `suggested_account`
+- `suggested_category`
+- `suggested_cost_center_id`
+- `confidence_score`
+- `rule_applied`
+- `explanation`
+- `needs_review`
+- `status`: `suggested`, `accepted`, `rejected`, `edited`
+
+En el workspace del documento se muestra `Clasificacion sugerida`. El usuario interno puede generarla, aceptarla, rechazarla o editarla. Al crear una compra, OM7 usa la categoria aceptada/editada como categoria del registro. Para facturas, la clasificacion queda por ahora en notas/trazabilidad porque la tabla de facturas aun no tiene cuenta contable ni categoria.
+
+`schema-014-classification-record-links.sql` agrega campos opcionales a `purchases` e `invoices` para guardar la clasificacion usada:
+
+- `classification_id`
+- `classification_rule_applied`
+- `classification_confidence`
+- `suggested_account`
+- `suggested_cost_center_id`
+
+Al convertir un documento, OM7 busca clasificacion con prioridad `edited`, `accepted`, `suggested`. Si existe, se guarda la referencia y se precarga la categoria de compra. Si no existe, el registro se crea sin sugerencias y la UI avisa al usuario.
+
+## Contrapartes documentales
+
+`schema-015-counterparties.sql` agrega un catalogo inicial de contrapartes y una tabla de deteccion por documento:
+
+- `counterparties`: proveedores/clientes normalizados por organizacion.
+- `document_counterparty_matches`: resultado de deteccion para una extraccion documental.
+
+OM7 detecta la contraparte con reglas de codigo:
+
+1. Cedula/tax_id exacto.
+2. Nombre exacto normalizado.
+3. Similitud basica por tokens del nombre.
+4. Sin coincidencia: sugiere crear una nueva contraparte.
+
+La deteccion usa la clasificacion documental cuando existe:
+
+- `purchase` o `expense`: contraparte tipo `supplier`.
+- `sale` o `income`: contraparte tipo `customer`.
+
+Si no hay clasificacion, OM7 infiere por cedula de empresa contra emisor/receptor del documento. El workspace muestra `Contraparte detectada` con estado encontrado, posible coincidencia o nuevo. El usuario interno puede usar una contraparte existente, crear una nueva o ajustar nombre/tipo/cedula manualmente.
+
+Al crear compra o factura, si hay contraparte aceptada/creada/editada, se guarda `counterparty_id` en el registro y se mantiene el nombre textual como fallback.
+
+El modulo `/contrapartes` permite administrar proveedores y clientes manualmente. Desde ahi el equipo interno puede crear, editar, activar o inactivar contrapartes con nombre, tipo, cedula/tax_id, email, telefono y notas. La ruta `/contrapartes/[id]` muestra la ficha de la contraparte con documentos asociados, compras/facturas vinculadas y reglas aprendidas activas.
+
+`schema-017-counterparty-management.sql` agrega el campo `notes` a `counterparties` y un indice operativo para filtrar por organizacion, estado y tipo. Las contrapartes creadas manualmente usan la misma normalizacion de nombre y cedula que el detector documental, por lo que quedan disponibles para futuras coincidencias desde XML/OCR/IA.
+
+## Reglas aprendidas por contraparte
+
+`schema-016-counterparty-rules.sql` agrega `counterparty_rules` como memoria programada por proveedor o cliente. Cuando el usuario acepta o edita una clasificacion y la extraccion ya tiene una contraparte asociada, OM7 puede guardar esa decision como regla activa para futuras facturas de la misma contraparte.
+
+Campos principales:
+
+- `counterparty_id`: proveedor/cliente al que aplica la regla.
+- `flow_type`: `purchase`, `sale`, `expense` o `income`.
+- `suggested_category`
+- `suggested_account`
+- `suggested_cost_center_id`
+- `priority`
+- `created_from_document_id`
+- `created_from_classification_id`
+
+El motor mantiene prioridad de reglas:
+
+1. Detectar contraparte por cedula, nombre normalizado o similitud.
+2. Si existe una regla activa para esa contraparte, aplicar la de mayor prioridad.
+3. Si no existe, usar el catalogo base por cedulas, detalle y palabras clave.
+
+Cuando se aplica una regla aprendida, la clasificacion queda con `rule_applied = counterparty_rule`, confianza alta y explicacion operativa: "Se aplico una regla aprendida para esta contraparte." La UI muestra el badge `Regla de proveedor aplicada` para que el contador entienda que OM7 ya recordo la decision anterior.
+
+No se usa IA en esta fase. La memoria es deterministica y auditable.
+
 ## Permisos usuario cliente
 
 El rol `client` vive en `company_users.role` y representa acceso limitado al portal documental.

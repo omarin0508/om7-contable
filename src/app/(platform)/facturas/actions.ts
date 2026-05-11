@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { normalizeCurrencyCode } from "@/lib/currency";
-import { createInvoiceForActiveCompany } from "@/lib/invoices";
+import {
+  createInvoiceForActiveCompany,
+  updateInvoiceReviewStatus,
+} from "@/lib/invoices";
+import { registerInvoiceCollection } from "@/lib/payments";
 
 function parseAmount(value: FormDataEntryValue | null) {
   const parsed = Number(String(value ?? "").replace(",", "."));
@@ -32,4 +36,36 @@ export async function createInvoiceAction(formData: FormData) {
 
   revalidatePath("/facturas");
   redirect("/facturas");
+}
+
+export async function updateInvoiceReviewStatusAction(formData: FormData) {
+  const redirectTo = String(formData.get("redirectTo") ?? "/facturas");
+
+  await updateInvoiceReviewStatus({
+    invoiceId: String(formData.get("invoiceId") ?? ""),
+    notes: String(formData.get("reviewNotes") ?? "").trim(),
+    status: String(formData.get("reviewStatus") ?? "pending"),
+  });
+
+  revalidatePath("/facturas");
+  redirect(redirectTo);
+}
+
+export async function registerInvoiceCollectionAction(formData: FormData) {
+  const redirectTo = String(formData.get("redirectTo") ?? "/facturas");
+
+  await registerInvoiceCollection({
+    amount: parseAmount(formData.get("amount")),
+    collectionDate:
+      String(formData.get("collectionDate") ?? "").trim() ||
+      new Date().toISOString().slice(0, 10),
+    invoiceId: String(formData.get("invoiceId") ?? ""),
+    notes: String(formData.get("notes") ?? "").trim(),
+    paymentMethodId: String(formData.get("paymentMethodId") ?? ""),
+  });
+
+  revalidatePath("/facturas");
+  revalidatePath("/movimientos");
+  revalidatePath("/dashboard");
+  redirect(redirectTo);
 }

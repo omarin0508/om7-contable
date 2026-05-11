@@ -153,4 +153,30 @@ a {
     background: rgba(253, 164, 175, 0.1);
     color: rgb(255 228 230);
   }
+
+  .om7-scrollbar {
+    scrollbar-color: transparent transparent;
+    scrollbar-width: thin;
+  }
+
+  .om7-scrollbar:hover {
+    scrollbar-color: rgba(103, 232, 249, 0.22) transparent;
+  }
+
+  .om7-scrollbar::-webkit-scrollbar {
+    width: 0.35rem;
+  }
+
+  .om7-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .om7-scrollbar::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 999px;
+  }
+
+  .om7-scrollbar:hover::-webkit-scrollbar-thumb {
+    background: rgba(103, 232, 249, 0.2);
+  }
 }

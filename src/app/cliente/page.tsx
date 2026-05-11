@@ -50,11 +50,11 @@ function isAiProcessableDocument(document: ClientPortalDocument) {
 function getDocumentState(document: ClientPortalDocument) {
   const extraction = document.extraction;
 
-  if (document.related_type === "purchase") {
+  if (document.converted_type === "purchase" || document.related_type === "purchase") {
     return "Compra creada";
   }
 
-  if (document.related_type === "invoice") {
+  if (document.converted_type === "invoice" || document.related_type === "invoice") {
     return "Factura creada";
   }
 
@@ -232,7 +232,7 @@ export default async function ClientPortalPage({
                 {activeCompany?.name ?? "Sin empresa asignada"}
               </p>
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                Los archivos quedan protegidos y asociados a su empresa para
+                Los archivos quedan protegidos y asociados a su cuenta para
                 revision del equipo contable.
               </p>
             </div>
@@ -248,7 +248,7 @@ export default async function ClientPortalPage({
             >
               <label className="block">
                 <span className="text-sm font-medium text-slate-300">
-                  Empresa asignada
+                  Cliente / empresa asignada
                 </span>
                 <select
                   className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
@@ -336,7 +336,7 @@ export default async function ClientPortalPage({
             </p>
           </PremiumCard>
           <PremiumCard className="p-4">
-            <p className="text-xs text-slate-500">Pendientes revision</p>
+            <p className="text-xs text-slate-500">En revision</p>
             <p className="mt-2 text-2xl font-semibold text-white">
               {pendingCount}
             </p>
@@ -361,10 +361,25 @@ export default async function ClientPortalPage({
               </p>
             </div>
 
+            <div className="mt-5 grid gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.035] p-4 text-sm leading-6 text-slate-300 sm:grid-cols-3">
+              <p>
+                <span className="font-semibold text-white">1. Suba</span> XML,
+                PDF o foto de factura.
+              </p>
+              <p>
+                <span className="font-semibold text-white">2. OM7 procesa</span>{" "}
+                el documento de forma segura.
+              </p>
+              <p>
+                <span className="font-semibold text-white">3. Su contador</span>{" "}
+                revisa y le avisa si falta algo.
+              </p>
+            </div>
+
             <form action={uploadClientDocumentAction} className="mt-6 space-y-5">
               <label className="block">
                 <span className="text-sm font-medium text-slate-300">
-                  Empresa
+                  Cliente / empresa
                 </span>
                 {companies.length > 1 ? (
                   <select
@@ -483,7 +498,8 @@ export default async function ClientPortalPage({
                 </p>
               </div>
 
-              <div className="mt-5 grid gap-3">
+              <div className="mt-5 max-h-[70vh] overflow-y-auto overscroll-contain pr-1">
+                <div className="grid gap-3">
                 {clientUploads.length > 0 ? (
                   clientUploads.map((document) => (
                     <article
@@ -574,8 +590,24 @@ export default async function ClientPortalPage({
                                   Acciones internas
                                 </p>
                                 <div className="mt-4 flex flex-wrap gap-2">
-                                  {document.extraction.extraction_status ===
-                                  "reviewed" ? (
+                                  {document.converted_type ? (
+                                    <Link
+                                      className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-medium text-emerald-100 transition hover:bg-emerald-300/15"
+                                      href={
+                                        document.converted_type === "purchase"
+                                          ? "/compras"
+                                          : "/facturas"
+                                      }
+                                    >
+                                      Ver{" "}
+                                      {document.converted_type === "purchase"
+                                        ? "compra"
+                                        : "factura"}
+                                    </Link>
+                                  ) : null}
+                                  {!document.converted_type &&
+                                  document.extraction.extraction_status ===
+                                    "reviewed" ? (
                                     <>
                                       <form action={createPurchaseFromXmlAction}>
                                         <input
@@ -604,14 +636,14 @@ export default async function ClientPortalPage({
                                         </button>
                                       </form>
                                     </>
-                                  ) : (
+                                  ) : !document.converted_type ? (
                                     <Link
                                       className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/15"
                                       href={`/documentos#extraccion-${document.extraction.id}`}
                                     >
                                       Revisar datos
                                     </Link>
-                                  )}
+                                  ) : null}
                                   {isAiProcessableDocument(document) &&
                                   document.extraction.extraction_status ===
                                     "error" ? (
@@ -644,9 +676,10 @@ export default async function ClientPortalPage({
                   ))
                 ) : (
                   <p className="rounded-2xl border border-dashed border-white/[0.1] bg-white/[0.025] px-5 py-10 text-center text-sm text-slate-500">
-                    Aun no hay documentos enviados desde este portal.
+                    Aun no hay documentos enviados.
                   </p>
                 )}
+                </div>
               </div>
             </PremiumCard>
           </div>

@@ -32,21 +32,6 @@ function isXmlDocument(document: {
   );
 }
 
-function isAiProcessableDocument(document: {
-  mime_type: string | null;
-  original_filename: string | null;
-}) {
-  const mimeType = document.mime_type ?? "";
-  const filename = document.original_filename?.toLowerCase() ?? "";
-
-  return (
-    !isXmlDocument(document) &&
-    (mimeType === "application/pdf" ||
-      mimeType.startsWith("image/") ||
-      filename.endsWith(".pdf"))
-  );
-}
-
 function formatBytes(value: number | null) {
   const bytes = Number(value ?? 0);
 
@@ -128,11 +113,11 @@ function getConfidenceLabel(confidence: number | null | undefined) {
 function getDocumentState(document: InboxDocument) {
   const extraction = document.extraction;
 
-  if (document.related_type === "purchase") {
+  if (document.converted_type === "purchase" || document.related_type === "purchase") {
     return "Compra creada";
   }
 
-  if (document.related_type === "invoice") {
+  if (document.converted_type === "invoice" || document.related_type === "invoice") {
     return "Factura creada";
   }
 
@@ -191,6 +176,27 @@ function getLifecycleLabel(document: InboxDocument) {
   return "Activo";
 }
 
+function getPrimaryAction(document: InboxDocument) {
+  if (document.converted_type === "purchase" || document.related_type === "purchase") {
+    return {
+      href: "/compras",
+      label: "Ver compra",
+    };
+  }
+
+  if (document.converted_type === "invoice" || document.related_type === "invoice") {
+    return {
+      href: "/facturas",
+      label: "Ver factura",
+    };
+  }
+
+  return {
+    href: `/documentos/${document.id}`,
+    label: "Abrir documento",
+  };
+}
+
 export function DocumentInboxList({
   activeCompanyName,
   documents,
@@ -213,13 +219,15 @@ export function DocumentInboxList({
         </span>
       </div>
 
-      <div className="mt-5 grid gap-3">
+      <div className="mt-5 max-h-[72vh] overflow-y-auto overscroll-contain pr-1">
+        <div className="grid gap-3">
         {documents.length > 0 ? (
           documents.map((document) => {
             const data = getData(document);
             const state = getDocumentState(document);
             const provider = document.extraction?.extraction_provider ?? "none";
             const lifecycleLabel = getLifecycleLabel(document);
+            const primaryAction = getPrimaryAction(document);
 
             return (
               <article
@@ -276,9 +284,9 @@ export function DocumentInboxList({
                   <div className="flex min-w-0 items-center justify-end gap-2">
                     <Link
                       className="om7-btn-primary h-10 min-w-0 flex-1 px-3 text-xs sm:flex-none lg:min-w-28"
-                      href={`/documentos/${document.id}`}
+                      href={primaryAction.href}
                     >
-                      Abrir documento
+                      {primaryAction.label}
                     </Link>
                   </div>
                 </div>
@@ -290,6 +298,7 @@ export function DocumentInboxList({
             No hay documentos para los filtros seleccionados.
           </p>
         )}
+        </div>
       </div>
     </>
   );

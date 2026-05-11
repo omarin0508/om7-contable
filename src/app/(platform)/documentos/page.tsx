@@ -3,7 +3,7 @@ import { uploadDocumentAction } from "@/app/(platform)/documentos/actions";
 import { DocumentInboxList } from "@/components/documents/document-inbox-list";
 import { ModuleFrame } from "@/components/modules/shared";
 import { PremiumCard } from "@/components/ui/premium-card";
-import { normalizeCurrencyCode } from "@/lib/currency";
+import { getDocumentHumanStatus } from "@/lib/document-ui";
 import { listDocumentsByCompany } from "@/lib/storage";
 
 type DocumentsPageProps = {
@@ -12,21 +12,14 @@ type DocumentsPageProps = {
 
 type DocumentItem = Awaited<ReturnType<typeof listDocumentsByCompany>>["documents"][number];
 
-const providerLabels: Record<string, string> = {
-  "xml-parser-cr": "XML CR",
-  "openai-vision": "IA Vision",
-  manual: "Manual",
-  none: "Sin extracción",
-};
-
 const quickFilters = [
   { href: "/documentos?lifecycle=active", label: "Activos" },
-  { href: "/documentos?status=Procesado&lifecycle=active", label: "Pendientes" },
+  { href: "/documentos?status=Requiere revisión&lifecycle=active", label: "Pendientes" },
   { href: "/documentos?provider=xml-parser-cr", label: "XML" },
   { href: "/documentos?provider=openai-vision", label: "IA Vision" },
-  { href: "/documentos?status=Revisado", label: "Revisados" },
+  { href: "/documentos?status=Listo para convertir", label: "Revisados" },
   { href: "/documentos?lifecycle=archived", label: "Archivados" },
-  { href: "/documentos?status=Error", label: "Errores" },
+  { href: "/documentos?status=Error / requiere atención", label: "Errores" },
 ];
 
 function getParam(
@@ -63,34 +56,6 @@ function isAiProcessableDocument(document: {
   );
 }
 
-function formatBytes(value: number | null) {
-  const bytes = Number(value ?? 0);
-
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  const kilobytes = bytes / 1024;
-
-  if (kilobytes < 1024) {
-    return `${kilobytes.toFixed(1)} KB`;
-  }
-
-  return `${(kilobytes / 1024).toFixed(1)} MB`;
-}
-
-function formatDate(value: string | null) {
-  if (!value) {
-    return "Sin fecha";
-  }
-
-  return new Intl.DateTimeFormat("es-CR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
-}
-
 function getData(document: DocumentItem) {
   const data = document.extraction?.extracted_data ?? {};
 
@@ -111,110 +76,8 @@ function getValue(data: Record<string, unknown>, keys: string[], fallback = "No 
   return fallback;
 }
 
-function getMoney(data: Record<string, unknown>) {
-  const amount = Number(data.total ?? 0);
-
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return "No disponible";
-  }
-
-  return `${normalizeCurrencyCode(data.moneda ?? data.currency)} ${amount.toLocaleString(
-    "es-CR",
-    {
-      maximumFractionDigits: 2,
-      minimumFractionDigits: 2,
-    },
-  )}`;
-}
-
-function getConfidenceLabel(confidence: number | null | undefined) {
-  const value = Number(confidence ?? 0);
-
-  if (value >= 0.9 || value >= 90) {
-    return "Alta";
-  }
-
-  if (value >= 0.65 || value >= 65) {
-    return "Media";
-  }
-
-  return "Revisar";
-}
-
 function getDocumentState(document: DocumentItem) {
-  const extraction = document.extraction;
-
-  if (document.related_type === "purchase") {
-    return "Compra creada";
-  }
-
-  if (document.related_type === "invoice") {
-    return "Factura creada";
-  }
-
-  if (document.processing_status === "error" || extraction?.extraction_status === "error") {
-    return "Error";
-  }
-
-  if (extraction?.extraction_status === "reviewed") {
-    return "Revisado";
-  }
-
-  if (extraction?.extraction_status === "processed") {
-    return "Procesado";
-  }
-
-  if (document.processing_status === "uploaded" || document.processing_status === "pending") {
-    return "Subido";
-  }
-
-  return document.processing_status;
-}
-
-function getPrimaryAction(document: DocumentItem) {
-  const state = getDocumentState(document);
-
-  if (state === "Subido" && isAiProcessableDocument(document)) {
-    return "Procesar";
-  }
-
-  if (state === "Procesado") {
-    return "Revisar";
-  }
-
-  if (state === "Revisado") {
-    return "Convertir";
-  }
-
-  if (state === "Error") {
-    return "Resolver";
-  }
-
-  if (state === "Compra creada" || state === "Factura creada") {
-    return "Ver registro";
-  }
-
-  return "Abrir";
-}
-
-function getDocumentInitials(document: DocumentItem) {
-  if (isXmlDocument(document)) {
-    return "XML";
-  }
-
-  if (document.mime_type === "application/pdf") {
-    return "PDF";
-  }
-
-  if (document.mime_type?.startsWith("image/")) {
-    return "IMG";
-  }
-
-  return "DOC";
-}
-
-function getDocumentTitle(document: DocumentItem) {
-  return document.display_name || document.original_filename || "Documento";
+  return getDocumentHumanStatus(document).label;
 }
 
 function getLifecycleState(document: DocumentItem) {
@@ -231,24 +94,6 @@ function getLifecycleState(document: DocumentItem) {
   }
 
   return "active";
-}
-
-function getLifecycleLabel(document: DocumentItem) {
-  const lifecycle = getLifecycleState(document);
-
-  if (lifecycle === "deleted") {
-    return "Eliminado";
-  }
-
-  if (lifecycle === "inactive") {
-    return "Inactivo";
-  }
-
-  if (lifecycle === "archived") {
-    return "Archivado";
-  }
-
-  return "Activo";
 }
 
 function matchesFilter(document: DocumentItem, filters: Record<string, string>) {
@@ -339,13 +184,13 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
     (document) => getLifecycleState(document) === "active",
   );
   const pendingReviewCount = activeDocuments.filter(
-    (document) => getDocumentState(document) === "Procesado",
+    (document) => getDocumentState(document) === "Requiere revisión",
   ).length;
   const convertedCount = activeDocuments.filter((document) =>
-    ["Compra creada", "Factura creada"].includes(getDocumentState(document)),
+    ["Convertido a compra", "Convertido a factura"].includes(getDocumentState(document)),
   ).length;
   const ocrPendingCount = activeDocuments.filter(
-    (document) => getDocumentState(document) === "Subido" && isAiProcessableDocument(document),
+    (document) => getDocumentState(document) === "Recibido" && isAiProcessableDocument(document),
   ).length;
   const recentActivityCount = activeDocuments.filter((document) => {
     const today = new Date().toISOString().slice(0, 10);
@@ -357,6 +202,11 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
       <section className="overflow-hidden rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_34%),rgba(255,255,255,0.045)] shadow-2xl shadow-cyan-950/20">
         <div className="grid gap-6 p-5 lg:grid-cols-[1.1fr_0.9fr] lg:p-7">
           <div>
+            <div className="mb-4 flex justify-end lg:hidden">
+              <Link className="om7-btn-ghost px-4 py-2.5" href="/dashboard">
+                Volver al dashboard
+              </Link>
+            </div>
             <p className="text-xs font-semibold uppercase tracking-[0.26em] text-cyan-200/75">
               Centro operativo documental
             </p>
@@ -364,8 +214,8 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
               Inbox financiero para revisar, aprobar y convertir documentos.
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-              Priorice XML, PDFs e imagenes desde una sola bandeja. Abra cada
-              documento solo cuando necesite trabajar en su workspace.
+              Priorice XML, PDFs e imagenes desde una sola bandeja. Abra un
+              documento solo cuando necesite revisarlo o convertirlo.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               <a
@@ -378,11 +228,17 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
                 className="om7-btn-ghost px-4 py-3"
                 href="/bandeja"
               >
-                Ir a bandeja cliente
+                Ir a bandeja diaria
               </Link>
             </div>
           </div>
 
+          <div>
+            <div className="mb-4 hidden justify-end lg:flex">
+              <Link className="om7-btn-ghost px-4 py-2.5" href="/dashboard">
+                Volver al dashboard
+              </Link>
+            </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <InboxStat
               label="pendientes de revision"
@@ -404,6 +260,7 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
               value={recentActivityCount}
             />
           </div>
+          </div>
         </div>
       </section>
 
@@ -413,8 +270,8 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
             Selecciona una empresa activa
           </p>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-100/75">
-            Los documentos se almacenan bajo una empresa especifica. Ve a
-            Empresas y define el contexto antes de subir archivos.
+            Los documentos se guardan para el cliente/empresa activa. Define
+            ese contexto antes de subir archivos.
           </p>
           <Link
             className="mt-4 inline-flex rounded-xl border border-amber-200/20 bg-black/15 px-4 py-2 text-sm font-medium text-amber-100 transition hover:bg-black/25"
@@ -467,12 +324,12 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
                 >
                   {[
                     "all",
-                    "Subido",
-                    "Procesado",
-                    "Revisado",
-                    "Compra creada",
-                    "Factura creada",
-                    "Error",
+                    "Recibido",
+                    "Requiere revisión",
+                    "Listo para convertir",
+                    "Convertido a compra",
+                    "Convertido a factura",
+                    "Error / requiere atención",
                   ].map((status) => (
                     <option className="bg-slate-950" key={status} value={status}>
                       {status === "all" ? "Estado: todos" : status}
