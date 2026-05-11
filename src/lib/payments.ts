@@ -397,7 +397,11 @@ export async function registerPurchasePayment(input: {
   const currentPaid = summaries.get(input.purchaseId)?.amount ?? 0;
   const remaining = getRemainingAmount(Number(purchase.total ?? 0), currentPaid);
 
-  if (remaining > 0 && amount > remaining + 0.01) {
+  if (remaining <= 0) {
+    throw new Error("La compra ya esta pagada.");
+  }
+
+  if (amount > remaining + 0.01) {
     throw new Error("El pago supera el saldo pendiente de la compra.");
   }
 
@@ -471,7 +475,11 @@ export async function registerInvoiceCollection(input: {
   const currentCollected = summaries.get(input.invoiceId)?.amount ?? 0;
   const remaining = getRemainingAmount(Number(invoice.total ?? 0), currentCollected);
 
-  if (remaining > 0 && amount > remaining + 0.01) {
+  if (remaining <= 0) {
+    throw new Error("La factura ya esta cobrada.");
+  }
+
+  if (amount > remaining + 0.01) {
     throw new Error("El cobro supera el saldo pendiente de la factura.");
   }
 

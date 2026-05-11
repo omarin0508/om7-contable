@@ -14,6 +14,12 @@ function parseAmount(value: FormDataEntryValue | null) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function redirectWithError(path: string, message: string) {
+  const separator = path.includes("?") ? "&" : "?";
+
+  return `${path}${separator}error=${encodeURIComponent(message)}`;
+}
+
 export async function createInvoiceAction(formData: FormData) {
   const proveedor = String(formData.get("proveedor") ?? "").trim();
 
@@ -41,14 +47,25 @@ export async function createInvoiceAction(formData: FormData) {
 export async function updateInvoiceReviewStatusAction(formData: FormData) {
   const redirectTo = String(formData.get("redirectTo") ?? "/facturas");
 
-  await updateInvoiceReviewStatus({
-    invoiceId: String(formData.get("invoiceId") ?? ""),
-    notes: String(formData.get("reviewNotes") ?? "").trim(),
-    status: String(formData.get("reviewStatus") ?? "pending"),
-  });
+  let target = redirectTo;
+
+  try {
+    await updateInvoiceReviewStatus({
+      invoiceId: String(formData.get("invoiceId") ?? ""),
+      notes: String(formData.get("reviewNotes") ?? "").trim(),
+      status: String(formData.get("reviewStatus") ?? "pending"),
+    });
+  } catch (error) {
+    target = redirectWithError(
+      redirectTo,
+      error instanceof Error
+        ? error.message
+        : "No se pudo actualizar la revision de la factura.",
+    );
+  }
 
   revalidatePath("/facturas");
-  redirect(redirectTo);
+  redirect(target);
 }
 
 export async function registerInvoiceCollectionAction(formData: FormData) {
