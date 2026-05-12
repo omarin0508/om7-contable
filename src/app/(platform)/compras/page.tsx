@@ -362,7 +362,7 @@ function PurchaseCard({
   const isPosted = journalEntry?.status === "posted";
 
   return (
-    <article className="rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.08),transparent_34%),rgba(255,255,255,0.035)] p-5 shadow-2xl shadow-black/15 transition hover:border-cyan-300/20 hover:bg-white/[0.05]">
+    <article className="min-w-0 rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.08),transparent_34%),rgba(255,255,255,0.035)] p-3 shadow-2xl shadow-black/15 transition hover:border-cyan-300/20 hover:bg-white/[0.05] sm:p-5">
       <div className="grid max-w-6xl gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,280px)] lg:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -400,24 +400,24 @@ function PurchaseCard({
             </span>
           </div>
 
-          <h3 className="mt-4 truncate text-lg font-semibold text-white">
+          <h3 className="mt-4 break-words text-lg font-semibold text-white">
             {title}
           </h3>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 break-words text-sm text-slate-500">
             {purchase.document_number ?? "Sin numero"} ·{" "}
             {purchase.purchase_date ?? "Sin fecha"}
           </p>
-          <p className="mt-1 text-xs text-slate-600">
+          <p className="mt-1 break-words text-xs text-slate-600">
             Periodo: {periodLabel}
             {period ? ` · ${getPeriodStatusLabel(period.status)}` : ""}
           </p>
         </div>
 
-        <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-4 text-left lg:text-right">
+        <div className="min-w-0 rounded-2xl border border-white/[0.07] bg-black/15 p-4 text-left lg:text-right">
           <p className="text-xs uppercase tracking-[0.18em] text-slate-600">
             Monto
           </p>
-          <p className="mt-1 text-2xl font-semibold text-white">
+          <p className="mt-1 break-words text-xl font-semibold text-white sm:text-2xl">
             {formatMoney(purchase.total, purchase.currency)}
           </p>
         </div>
@@ -508,7 +508,7 @@ function PurchaseCard({
               </p>
             ) : null}
           </div>
-          <div className="flex flex-wrap gap-2 lg:justify-end">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
             {canReopenReview(purchase, period) ? (
               <ReviewStatusForm
                 className="om7-btn-secondary px-3 py-2 text-xs"
@@ -572,7 +572,7 @@ function PurchaseCard({
         ) : null}
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-2">
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {traceDocumentId ? (
           <Link
             className="om7-btn-secondary px-4 py-2.5"
@@ -799,7 +799,7 @@ export default async function PurchasesPage({
             </div>
           </div>
 
-          <div className="max-h-[72vh] overflow-y-auto overscroll-contain p-5">
+          <div className="p-3 sm:p-5">
             <div className="grid gap-4">
             {filteredPurchases.length > 0 ? (
               filteredPurchases.map((purchase) => (

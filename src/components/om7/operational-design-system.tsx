@@ -41,7 +41,11 @@ const toneClasses: Record<
 };
 
 export function WorkspaceLayout({ children }: { children: ReactNode }) {
-  return <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">{children}</div>;
+  return (
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-4 sm:gap-5">
+      {children}
+    </div>
+  );
 }
 
 export function WorkspacePanel({
@@ -74,23 +78,23 @@ export function DashboardHero({
   title: string;
 }) {
   return (
-    <section className="om7-card rounded-3xl border-white/[0.09] bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.12),transparent_34%),rgba(255,255,255,0.035)] p-6 shadow-2xl shadow-black/20 sm:p-7">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-3xl">
+    <section className="om7-card om7-panel-safe rounded-3xl border-white/[0.09] bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.12),transparent_34%),rgba(255,255,255,0.035)] p-4 shadow-2xl shadow-black/20 sm:p-6 lg:p-7">
+      <div className="flex min-w-0 flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 max-w-3xl">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-200/80">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200/80 sm:text-xs sm:tracking-[0.24em]">
               {eyebrow}
             </p>
             {badge}
           </div>
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-white sm:mt-4 sm:text-3xl lg:text-4xl">
             {title}
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
             {description}
           </p>
         </div>
-        {action ? <div className="shrink-0">{action}</div> : null}
+        {action ? <div className="flex shrink-0 flex-wrap gap-2">{action}</div> : null}
       </div>
     </section>
   );
@@ -138,9 +142,9 @@ export function KPIStatCard({
   value: string;
 }) {
   return (
-    <WorkspacePanel className="p-5 transition hover:-translate-y-0.5 hover:bg-white/[0.045]" tone={tone}>
+    <WorkspacePanel className="p-4 transition hover:-translate-y-0.5 hover:bg-white/[0.045] sm:p-5" tone={tone}>
       <p className="text-sm text-slate-300">{label}</p>
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-white">{value}</p>
+      <p className="mt-3 break-words text-xl font-semibold tracking-tight text-white sm:text-2xl">{value}</p>
       <p className="mt-4 text-xs leading-5 text-slate-500">{detail}</p>
     </WorkspacePanel>
   );
@@ -170,7 +174,7 @@ export function OperationalCard({
       className="group overflow-hidden p-0 shadow-xl shadow-black/20 transition hover:-translate-y-0.5 hover:bg-white/[0.045] hover:shadow-2xl"
       tone={tone}
     >
-      <Link className="block p-5" href={href}>
+      <Link className="block p-4 sm:p-5" href={href}>
         <div className="flex items-start justify-between gap-4">
           <span className={`grid h-11 w-11 place-items-center rounded-2xl border text-sm font-semibold ${toneClasses[tone].icon}`}>
             {icon}
@@ -185,8 +189,8 @@ export function OperationalCard({
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
             {label}
           </p>
-          <h2 className="mt-2 text-lg font-semibold text-white">{title}</h2>
-          <p className="mt-3 text-2xl font-semibold tracking-tight text-white">
+          <h2 className="mt-2 text-base font-semibold text-white sm:text-lg">{title}</h2>
+          <p className="mt-3 break-words text-xl font-semibold tracking-tight text-white sm:text-2xl">
             {value}
           </p>
           {description ? (
@@ -261,8 +265,8 @@ export function SectionHeader({
   title: string;
 }) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
+    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
         <p className="text-base font-semibold text-white">{title}</p>
         {description ? (
           <p className="mt-1 text-sm leading-6 text-slate-400">{description}</p>

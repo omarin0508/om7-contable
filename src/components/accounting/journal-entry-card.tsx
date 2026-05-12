@@ -145,7 +145,7 @@ export function JournalEntryCard({
             {entry.explanation ?? "OM7 preparo este asiento segun el registro aprobado."}
           </p>
         </div>
-        <div className="grid gap-2 text-left sm:grid-cols-3 lg:min-w-[360px]">
+        <div className="grid min-w-0 gap-2 text-left sm:grid-cols-3 lg:w-full lg:max-w-[360px]">
           <div className="rounded-xl border border-white/[0.07] bg-black/20 p-3">
             <p className="text-xs text-slate-500">Debe</p>
             <p className="mt-1 text-sm font-semibold text-white">
@@ -186,7 +186,7 @@ export function JournalEntryCard({
               <span className="min-w-0 truncate text-sm text-slate-300">
                 {line.account?.code} · {line.account?.name}
               </span>
-              <span className="text-sm font-semibold text-white sm:text-right">
+              <span className="break-words text-sm font-semibold text-white sm:text-right">
                 {formatCurrencyAmount(line.amount, currency)}
               </span>
             </div>

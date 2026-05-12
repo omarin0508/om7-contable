@@ -98,8 +98,8 @@ export function PurchasesView() {
             Vista inicial para seguimiento de egresos y proveedores.
           </p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
+        <div className="om7-responsive-table">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="text-xs uppercase tracking-[0.16em] text-slate-600">
               <tr>
                 <th className="px-5 py-3 font-medium">Proveedor</th>

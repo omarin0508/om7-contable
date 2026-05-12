@@ -176,7 +176,7 @@ function TaxRecordList({
                     {record.date ?? "Sin fecha"}
                   </p>
                 </div>
-                <div className="grid gap-2 text-left sm:grid-cols-3 lg:min-w-[360px]">
+                <div className="grid min-w-0 gap-2 text-left sm:grid-cols-3 lg:w-full lg:max-w-[360px]">
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3">
                     <p className="text-xs text-slate-500">Subtotal</p>
                     <p className="mt-1 text-sm font-semibold text-white">
@@ -260,7 +260,7 @@ export default async function TaxCenterPage({ searchParams }: TaxPageProps) {
         className="p-5 shadow-2xl shadow-black/20"
         tone={getMindTone(data.e7Mind.status)}
       >
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
+        <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(220px,280px)] lg:items-start">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-200/80">
@@ -272,7 +272,7 @@ export default async function TaxCenterPage({ searchParams }: TaxPageProps) {
               <E7ConfidenceBadge value={data.e7Mind.score / 100} />
             </div>
 
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-white">
+            <h2 className="mt-3 text-xl font-semibold tracking-tight text-white sm:text-2xl">
               Lectura inteligente del estado tributario del periodo.
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
@@ -322,12 +322,12 @@ export default async function TaxCenterPage({ searchParams }: TaxPageProps) {
             )}
           </div>
 
-          <div className="rounded-3xl border border-white/[0.08] bg-black/20 p-5">
+          <div className="min-w-0 rounded-3xl border border-white/[0.08] bg-black/20 p-4 sm:p-5">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
               Confianza tributaria
             </p>
             <div className="mt-4 flex items-end gap-2">
-              <p className="text-5xl font-semibold tracking-tight text-white">
+              <p className="text-4xl font-semibold tracking-tight text-white sm:text-5xl">
                 {data.e7Mind.score}
               </p>
               <p className="pb-1.5 text-sm font-semibold text-slate-400">%</p>

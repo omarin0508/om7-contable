@@ -277,12 +277,12 @@ export default async function CounterpartiesPage({
             </div>
           </div>
 
-          <div className="max-h-[72vh] overflow-y-auto overscroll-contain">
+          <div>
             <div className="divide-y divide-white/[0.06]">
             {counterparties.length > 0 ? (
               counterparties.map((counterparty) => (
                 <article
-                  className="grid gap-4 p-5 transition hover:bg-white/[0.025] xl:grid-cols-[minmax(0,1.2fr)_0.8fr_auto]"
+                  className="grid min-w-0 gap-4 p-3 transition hover:bg-white/[0.025] sm:p-5 xl:grid-cols-[minmax(0,1.2fr)_0.8fr_auto]"
                   key={counterparty.id}
                 >
                   <div className="min-w-0">

@@ -470,7 +470,7 @@ export default async function ObservedRecordsPage({
           </div>
         </div>
 
-        <div className="max-h-[72vh] overflow-y-auto overscroll-contain p-5">
+        <div className="p-3 sm:p-5">
           <div className="grid gap-4">
           {observedRecords.length > 0 ? (
             observedRecords.map((record) => (

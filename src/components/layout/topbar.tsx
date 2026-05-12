@@ -25,9 +25,9 @@ export function Topbar({
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#070a12]/72 backdrop-blur-xl">
-      <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+      <div className="flex min-h-16 min-w-0 items-center justify-between gap-2 px-3 sm:gap-4 sm:px-5 lg:px-8">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500 sm:text-xs sm:tracking-[0.22em]">
             {organizationName ? `Despacho: ${organizationName}` : "Despacho"}
           </p>
           <h1 className="truncate text-base font-semibold text-white sm:text-lg">
@@ -42,7 +42,7 @@ export function Topbar({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
           {onSelectCompany ? (
             <CompanySelector
               activeCompanyId={activeCompanyId}
@@ -51,7 +51,7 @@ export function Topbar({
             />
           ) : null}
           <button
-            className="grid h-10 w-10 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-slate-300 transition hover:bg-white/[0.08] hover:text-white"
+            className="hidden h-10 w-10 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-slate-300 transition hover:bg-white/[0.08] hover:text-white sm:grid"
             type="button"
             aria-label="Notificaciones"
           >

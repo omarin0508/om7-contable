@@ -210,7 +210,7 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
             <p className="text-xs font-semibold uppercase tracking-[0.26em] text-cyan-200/75">
               Centro operativo documental
             </p>
-            <h1 className="mt-3 max-w-3xl text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            <h1 className="mt-3 max-w-3xl text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-4xl">
               Inbox financiero para revisar, aprobar y convertir documentos.
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">

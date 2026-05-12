@@ -94,9 +94,9 @@ function MiniStat({
   value: string | number;
 }) {
   return (
-    <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-3">
+    <div className="min-w-0 rounded-2xl border border-white/[0.07] bg-black/20 p-3">
       <p className="text-xs text-slate-400">{label}</p>
-      <p className="mt-2 text-xl font-semibold text-white">{value}</p>
+      <p className="mt-2 break-words text-lg font-semibold text-white sm:text-xl">{value}</p>
       {detail ? <p className="mt-1 text-xs text-slate-300/80">{detail}</p> : null}
     </div>
   );
@@ -130,7 +130,7 @@ function OperatingCenterCard({
 
   return (
     <Link
-      className={`group flex min-h-44 flex-col justify-between rounded-2xl p-5 ${dashboardCardFrame} ${dashboardHoverFrame}`}
+      className={`group flex min-h-0 flex-col justify-between rounded-2xl p-4 sm:min-h-44 sm:p-5 ${dashboardCardFrame} ${dashboardHoverFrame}`}
       href={href}
     >
       <div>
@@ -151,7 +151,7 @@ function OperatingCenterCard({
       </div>
       <div className="mt-5 flex items-center justify-between border-t border-white/[0.07] pt-4">
         <p className="text-sm text-slate-400">Foco</p>
-        <p className="text-sm font-semibold text-white">
+        <p className="break-words text-right text-sm font-semibold text-white">
           {primaryMetric} <span className="text-slate-500">/</span> {secondaryMetric}
         </p>
       </div>
@@ -299,13 +299,13 @@ export function DashboardView({
   if (viewMode === "operativo") {
     return (
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-        <section className="overflow-hidden rounded-[2rem] border border-cyan-300/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.12),transparent_30%),rgba(255,255,255,0.045)] p-6 shadow-2xl shadow-cyan-950/20 sm:p-7">
+        <section className="overflow-hidden rounded-3xl border border-cyan-300/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.12),transparent_30%),rgba(255,255,255,0.045)] p-4 shadow-2xl shadow-cyan-950/20 sm:p-6 lg:p-7">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="text-xs font-semibold uppercase tracking-[0.26em] text-cyan-200/80">
                 Centro operativo OM7
               </p>
-              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+              <h1 className="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-4xl">
                 Mapa del sistema
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
@@ -427,13 +427,13 @@ export function DashboardView({
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-      <section className="overflow-hidden rounded-[2rem] border border-cyan-300/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.12),transparent_30%),rgba(255,255,255,0.045)] p-6 shadow-2xl shadow-cyan-950/20 sm:p-7">
+      <section className="overflow-hidden rounded-3xl border border-cyan-300/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.12),transparent_30%),rgba(255,255,255,0.045)] p-4 shadow-2xl shadow-cyan-950/20 sm:p-6 lg:p-7">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.26em] text-cyan-200/80">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200/80 sm:text-xs sm:tracking-[0.26em]">
               OM7 Finance OS - by April7th
             </p>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            <h1 className="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-4xl">
               Panel principal
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
@@ -441,7 +441,7 @@ export function DashboardView({
               del mes.
             </p>
           </div>
-          <div className="flex flex-col gap-3 rounded-3xl border border-white/[0.08] bg-black/25 p-4 sm:min-w-72">
+          <div className="flex min-w-0 flex-col gap-3 rounded-3xl border border-white/[0.08] bg-black/25 p-4 lg:min-w-72">
             <div>
               <p className="text-xs text-slate-400">
                 {activeCompany ? "Cliente / empresa activa" : "Siguiente paso"}

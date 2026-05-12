@@ -16,10 +16,16 @@
 body {
   background: var(--background);
   color: var(--foreground);
+  overflow-x: hidden;
+  text-rendering: geometricPrecision;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
 }
 
 ::selection {
@@ -40,6 +46,12 @@ a {
       rgba(255, 255, 255, 0.045);
     box-shadow: 0 22px 70px rgba(0, 0, 0, 0.24);
     backdrop-filter: blur(18px);
+  }
+
+  .om7-card,
+  .om7-panel-safe {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .om7-muted {
@@ -65,6 +77,14 @@ a {
       transform 160ms ease,
       background 160ms ease,
       box-shadow 160ms ease;
+  }
+
+  .om7-btn-primary,
+  .om7-btn-secondary,
+  .om7-btn-ghost {
+    max-width: 100%;
+    text-align: center;
+    white-space: normal;
   }
 
   .om7-btn-primary:hover {
@@ -128,6 +148,26 @@ a {
     font-size: 0.6875rem;
     font-weight: 650;
     line-height: 1.1;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .om7-responsive-table {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-color: rgba(103, 232, 249, 0.18) transparent;
+    scrollbar-width: thin;
+  }
+
+  .om7-responsive-table table {
+    width: 100%;
+  }
+
+  .om7-responsive-table th,
+  .om7-responsive-table td {
+    white-space: nowrap;
   }
 
   .om7-chip-cyan {

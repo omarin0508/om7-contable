@@ -443,7 +443,7 @@ export default async function ReviewInboxPage({
                 </span>
               </div>
 
-              <div className="max-h-[68vh] space-y-3 overflow-y-auto overscroll-contain pr-1">
+              <div className="space-y-3 pr-0 xl:max-h-[68vh] xl:overflow-y-auto xl:overscroll-contain xl:pr-1">
                 {laneDocuments.length > 0 ? (
                   laneDocuments.map((document) => (
                     <WorkflowCard document={document} key={document.id} />

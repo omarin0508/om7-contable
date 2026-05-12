@@ -8,7 +8,7 @@ type PremiumCardProps = {
 export function PremiumCard({ children, className = "" }: PremiumCardProps) {
   return (
     <section
-      className={`om7-card rounded-2xl ${className}`}
+      className={`om7-card om7-panel-safe rounded-2xl ${className}`}
     >
       {children}
     </section>

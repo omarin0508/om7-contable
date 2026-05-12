@@ -472,7 +472,7 @@ export default async function AccountingPeriodsPage({
           </div>
         </div>
 
-        <div className="max-h-[72vh] overflow-y-auto overscroll-contain p-5">
+        <div className="p-3 sm:p-5">
           <div className="grid gap-4">
             {activeCompany ? (
               summaries.map((summary) => (

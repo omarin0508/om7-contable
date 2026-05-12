@@ -498,7 +498,7 @@ export default async function ClientPortalPage({
                 </p>
               </div>
 
-              <div className="mt-5 max-h-[70vh] overflow-y-auto overscroll-contain pr-1">
+              <div className="mt-5 pr-0 lg:max-h-[70vh] lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
                 <div className="grid gap-3">
                 {clientUploads.length > 0 ? (
                   clientUploads.map((document) => (

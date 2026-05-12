@@ -219,7 +219,7 @@ export function DocumentInboxList({
         </span>
       </div>
 
-      <div className="mt-5 max-h-[72vh] overflow-y-auto overscroll-contain pr-1">
+      <div className="mt-5 pr-0 sm:pr-1">
         <div className="grid gap-3">
         {documents.length > 0 ? (
           documents.map((document) => {
@@ -231,7 +231,7 @@ export function DocumentInboxList({
 
             return (
               <article
-                className="group relative isolate rounded-3xl border border-white/[0.08] bg-white/[0.025] p-4 shadow-lg shadow-black/10 transition hover:border-cyan-300/25 hover:bg-white/[0.045] hover:shadow-cyan-950/20"
+                className="group relative isolate min-w-0 rounded-3xl border border-white/[0.08] bg-white/[0.025] p-3 shadow-lg shadow-black/10 transition hover:border-cyan-300/25 hover:bg-white/[0.045] hover:shadow-cyan-950/20 sm:p-4"
                 key={document.id}
               >
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(250px,0.58fr)_minmax(150px,auto)] lg:items-center">
@@ -254,13 +254,13 @@ export function DocumentInboxList({
                     <p className="mt-3 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-white sm:whitespace-normal sm:break-words sm:[display:-webkit-box] sm:[-webkit-line-clamp:2] sm:[-webkit-box-orient:vertical]">
                       {getDocumentTitle(document)}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 break-words text-xs text-slate-500">
                       {activeCompanyName} · {document.document_type} ·{" "}
                       {formatBytes(document.size_bytes)} · {formatDate(document.created_at)}
                     </p>
                   </Link>
 
-                  <div className="grid min-w-0 gap-3 sm:grid-cols-3">
+                  <div className="grid min-w-0 gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
                     <div className="min-w-0">
                       <p className="text-xs text-slate-500">Proveedor</p>
                       <p className="mt-1 truncate text-sm font-medium text-slate-100">
@@ -283,7 +283,7 @@ export function DocumentInboxList({
 
                   <div className="flex min-w-0 items-center justify-end gap-2">
                     <Link
-                      className="om7-btn-primary h-10 min-w-0 flex-1 px-3 text-xs sm:flex-none lg:min-w-28"
+                      className="om7-btn-primary h-10 min-w-0 flex-1 px-3 text-xs sm:flex-none lg:w-full xl:w-auto xl:min-w-28"
                       href={primaryAction.href}
                     >
                       {primaryAction.label}

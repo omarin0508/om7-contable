@@ -135,8 +135,8 @@ export default async function CompaniesPage() {
             </div>
           ) : null}
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-left text-sm">
+          <div className="om7-responsive-table">
+            <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="text-xs uppercase tracking-[0.16em] text-slate-600">
                 <tr>
                   <th className="px-5 py-3 font-medium">Empresa</th>

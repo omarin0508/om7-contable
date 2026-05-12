@@ -88,8 +88,8 @@ export function InvoicesView() {
             Datos mock para validar la experiencia del módulo.
           </p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
+        <div className="om7-responsive-table">
+          <table className="w-full min-w-[680px] text-left text-sm">
             <thead className="text-xs uppercase tracking-[0.16em] text-slate-600">
               <tr>
                 <th className="px-5 py-3 font-medium">Proveedor</th>
