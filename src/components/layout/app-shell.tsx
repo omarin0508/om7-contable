@@ -30,9 +30,9 @@ export function AppShell({
   assistantSnapshot,
 }: AppShellProps) {
   return (
-    <div className="min-h-screen overflow-x-clip bg-[#03050a] text-slate-100">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.14),transparent_34%),radial-gradient(circle_at_78%_10%,rgba(16,185,129,0.09),transparent_28%),linear-gradient(180deg,rgba(15,23,42,0.9),rgba(2,6,23,0.98))]" />
-      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:64px_64px] opacity-30" />
+    <div className="om7-app-shell min-h-screen overflow-x-clip">
+      <div className="om7-app-glow pointer-events-none fixed inset-0" />
+      <div className="om7-app-grid pointer-events-none fixed inset-0" />
 
       <AssistantProvider snapshot={assistantSnapshot}>
         <Sidebar />

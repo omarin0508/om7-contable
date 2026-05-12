@@ -1,6 +1,7 @@
 import { settingsSections } from "@/lib/module-data";
 import { PremiumCard } from "@/components/ui/premium-card";
 import { ModuleFrame, ModuleHeader, StatusBadge } from "@/components/modules/shared";
+import { ThemeSelector } from "@/components/theme/theme-selector";
 
 export function SettingsView() {
   return (
@@ -9,6 +10,19 @@ export function SettingsView() {
         title="Configuración"
         description="Centro visual para preparar preferencias, automatizaciones, integraciones y seguridad del sistema."
       />
+
+      <PremiumCard className="p-5 sm:p-6">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-center">
+          <div>
+            <p className="text-sm font-semibold text-white">Apariencia</p>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Escoge el modo visual de OM7. La preferencia se guarda en este
+              navegador y puede seguir el tema del sistema operativo.
+            </p>
+          </div>
+          <ThemeSelector />
+        </div>
+      </PremiumCard>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {settingsSections.map((section) => (

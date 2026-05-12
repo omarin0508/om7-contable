@@ -24,7 +24,7 @@ export function Topbar({
   const avatarLetter = displayEmail.charAt(0).toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#070a12]/72 backdrop-blur-xl">
+    <header className="om7-topbar sticky top-0 z-30 border-b backdrop-blur-xl">
       <div className="flex min-h-16 min-w-0 items-center justify-between gap-2 px-3 sm:gap-4 sm:px-5 lg:px-8">
         <div className="min-w-0 flex-1">
           <p className="truncate text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500 sm:text-xs sm:tracking-[0.22em]">

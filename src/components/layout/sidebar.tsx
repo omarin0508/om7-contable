@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ThemeSelector } from "@/components/theme/theme-selector";
 import { Icon } from "@/components/ui/icons";
 import { navigationItems } from "@/lib/navigation";
 
@@ -16,7 +17,7 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-white/[0.08] bg-[#05070d]/92 px-3 py-3.5 backdrop-blur-xl lg:flex lg:flex-col">
+    <aside className="om7-sidebar fixed inset-y-0 left-0 z-40 hidden w-72 border-r px-3 py-3.5 backdrop-blur-xl lg:flex lg:flex-col">
       <Link
         className="group flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] px-2.5 py-2"
         href="/dashboard"
@@ -81,6 +82,9 @@ export function Sidebar() {
       </nav>
 
       <div className="mt-2 border-t border-white/[0.07] pt-2.5">
+        <div className="mb-2">
+          <ThemeSelector compact />
+        </div>
         <div className="rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.03] p-2.5 shadow-2xl shadow-black/20">
           <div className="flex items-center justify-between gap-2">
             <div>
