@@ -18,6 +18,13 @@ type ToolDefinition = {
   shortLabel: string;
 };
 
+type ExchangeRateResponse = {
+  rates?: {
+    CRC?: number;
+  };
+  time_last_update_utc?: string;
+};
+
 const tools: ToolDefinition[] = [
   { id: "basic", label: "Normal", shortLabel: "Calc" },
   { id: "iva", label: "IVA", shortLabel: "IVA" },
@@ -95,7 +102,7 @@ function NumberField({
   value: string;
 }) {
   return (
-    <label className="grid gap-1.5">
+    <label className="grid min-w-0 gap-1.5">
       <span className="text-[11px] font-semibold uppercase text-slate-500">
         {label}
       </span>
@@ -135,7 +142,7 @@ function ResultTile({
         : "border-white/[0.08] bg-white/[0.04] text-white";
 
   return (
-    <div className={`rounded-2xl border px-3 py-2.5 ${toneClass}`}>
+    <div className={`min-w-0 rounded-2xl border px-3 py-2.5 ${toneClass}`}>
       <p className="text-[10px] font-semibold uppercase text-slate-500">
         {label}
       </p>
@@ -154,14 +161,14 @@ function ToolSwitch({
   onChange: (tool: ToolId) => void;
 }) {
   return (
-    <div className="om7-scrollbar flex gap-1.5 overflow-x-auto border-b border-white/[0.08] px-4 pb-3">
+    <div className="flex flex-wrap gap-1.5 border-b border-white/[0.08] px-4 pb-3">
       {tools.map((tool) => {
         const isActive = tool.id === activeTool;
 
         return (
           <button
             className={[
-              "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+              "min-w-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
               isActive
                 ? "border-cyan-200/30 bg-cyan-300/12 text-cyan-50 shadow-[0_0_18px_rgba(34,211,238,0.16)]"
                 : "border-white/[0.08] bg-white/[0.035] text-slate-400 hover:border-white/[0.16] hover:bg-white/[0.07] hover:text-white",
@@ -546,16 +553,31 @@ function RuleOfThreeCalculator() {
   }, [a, b, c]);
 
   return (
-    <div className="grid gap-3">
-      <div className="grid grid-cols-3 gap-2">
-        <NumberField label="A" onChange={setA} value={a} />
-        <NumberField label="B" onChange={setB} value={b} />
-        <NumberField label="C" onChange={setC} value={c} />
+    <div className="grid min-w-0 gap-3">
+      <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+        <NumberField label="Valor base" onChange={setA} value={a} />
+        <NumberField label="Equivale a" onChange={setB} value={b} />
+        <div className="sm:col-span-2">
+          <NumberField label="Nuevo valor" onChange={setC} value={c} />
+        </div>
       </div>
-      <p className="text-xs leading-5 text-slate-500">
-        Si A equivale a B, C equivale al resultado.
-      </p>
-      <ResultTile label="Resultado" tone="accent" value={formatAmount(result)} />
+      <div className="grid min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-2xl border border-white/[0.07] bg-white/[0.035] px-3 py-2">
+        <p className="truncate text-xs font-semibold text-slate-300">
+          {formatAmount(parseAmount(a))}
+        </p>
+        <span className="text-xs font-semibold text-slate-500">:</span>
+        <p className="truncate text-right text-xs font-semibold text-cyan-100">
+          {formatAmount(parseAmount(b))}
+        </p>
+        <p className="truncate text-xs font-semibold text-slate-300">
+          {formatAmount(parseAmount(c))}
+        </p>
+        <span className="text-xs font-semibold text-slate-500">:</span>
+        <p className="truncate text-right text-xs font-semibold text-cyan-100">
+          resultado
+        </p>
+      </div>
+      <ResultTile label="Resultado proporcional" tone="accent" value={formatAmount(result)} />
     </div>
   );
 }
@@ -564,6 +586,46 @@ function CurrencyCalculator() {
   const [amount, setAmount] = useState("100000");
   const [rate, setRate] = useState("520");
   const [direction, setDirection] = useState<"crc-usd" | "usd-crc">("crc-usd");
+  const [rateStatus, setRateStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [rateDate, setRateDate] = useState<string | null>(null);
+
+  const fetchExchangeRate = useCallback(async () => {
+    setRateStatus("loading");
+
+    try {
+      const response = await fetch("https://open.er-api.com/v6/latest/USD", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudo consultar el tipo de cambio.");
+      }
+
+      const data = (await response.json()) as ExchangeRateResponse;
+      const crcRate = data.rates?.CRC;
+
+      if (!crcRate || !Number.isFinite(crcRate)) {
+        throw new Error("La respuesta no incluyo CRC.");
+      }
+
+      setRate(String(Number(crcRate.toFixed(2))));
+      setRateDate(data.time_last_update_utc ?? null);
+      setRateStatus("ready");
+    } catch (error) {
+      console.error("[OM7 Calculator]", error);
+      setRateStatus("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void fetchExchangeRate();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchExchangeRate]);
 
   const result = useMemo(() => {
     const value = parseAmount(amount);
@@ -574,19 +636,19 @@ function CurrencyCalculator() {
   }, [amount, direction, rate]);
 
   return (
-    <div className="grid gap-3">
-      <div className="grid grid-cols-[1fr_96px] gap-2">
+    <div className="grid min-w-0 gap-3">
+      <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(92px,112px)]">
         <NumberField label="Monto" onChange={setAmount} value={amount} />
         <NumberField label="TC" onChange={setRate} value={rate} />
       </div>
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid min-w-0 grid-cols-2 gap-1.5">
         {[
           ["crc-usd", "CRC a USD"],
           ["usd-crc", "USD a CRC"],
         ].map(([id, label]) => (
           <button
             className={[
-              "h-10 rounded-2xl border text-xs font-semibold transition",
+              "min-w-0 rounded-2xl border px-2 py-2.5 text-xs font-semibold leading-4 transition",
               direction === id
                 ? "border-cyan-200/30 bg-cyan-300/12 text-cyan-50"
                 : "border-white/[0.08] bg-white/[0.035] text-slate-300 hover:bg-white/[0.07]",
@@ -598,6 +660,23 @@ function CurrencyCalculator() {
             {label}
           </button>
         ))}
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/[0.07] bg-white/[0.035] px-3 py-2">
+        <p className="min-w-0 flex-1 text-[11px] leading-4 text-slate-400">
+          {rateStatus === "loading"
+            ? "Consultando tipo de cambio de hoy..."
+            : rateStatus === "ready"
+              ? `Tipo de cambio actualizado${rateDate ? `: ${rateDate}` : ""}`
+              : "Tipo de cambio editable. No se pudo consultar en linea."}
+        </p>
+        <button
+          className="shrink-0 rounded-xl border border-cyan-200/20 bg-cyan-300/[0.08] px-2.5 py-1.5 text-[11px] font-semibold text-cyan-50 transition hover:bg-cyan-300/[0.14]"
+          disabled={rateStatus === "loading"}
+          onClick={fetchExchangeRate}
+          type="button"
+        >
+          {rateStatus === "loading" ? "..." : "Actualizar"}
+        </button>
       </div>
       <ResultTile
         label="Convertido"
@@ -656,7 +735,7 @@ export function QuickCalculator() {
           <>
             <motion.div
               animate={{ opacity: 1 }}
-              className="fixed inset-0 z-[9998] bg-black/45 backdrop-blur-[2px]"
+              className="fixed inset-0 z-[9998] bg-transparent"
               exit={{ opacity: 0 }}
               initial={{ opacity: 0 }}
               onClick={() => setIsOpen(false)}
@@ -664,7 +743,7 @@ export function QuickCalculator() {
             />
             <motion.aside
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              className="relative z-[10000] mb-3 w-[calc(100vw-2rem)] max-w-[420px] overflow-hidden rounded-[1.75rem] border border-cyan-100/18 bg-[#03050a]/98 shadow-[0_28px_90px_rgba(0,0,0,0.72),0_0_34px_rgba(34,211,238,0.12)] backdrop-blur-2xl"
+              className="relative z-[10000] mb-3 w-[calc(100vw-2rem)] max-w-[420px] overflow-hidden rounded-[1.75rem] border border-cyan-100/22 bg-[#03050a] shadow-[0_30px_95px_rgba(0,0,0,0.82),0_0_0_1px_rgba(255,255,255,0.045),0_0_38px_rgba(34,211,238,0.16)]"
               exit={{ opacity: 0, scale: 0.96, y: 12 }}
               initial={{ opacity: 0, scale: 0.96, y: 12 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
@@ -695,7 +774,7 @@ export function QuickCalculator() {
 
               <div className="pt-3">
                 <ToolSwitch activeTool={activeTool} onChange={setActiveTool} />
-                <div className="om7-scrollbar max-h-[62vh] overflow-y-auto p-4">
+                <div className="om7-scrollbar h-[clamp(390px,58vh,430px)] overflow-y-auto overflow-x-hidden p-4">
                   <ActiveTool activeTool={activeTool} />
                   <div className="mt-3 rounded-2xl border border-cyan-100/10 bg-cyan-300/[0.045] px-3 py-2.5">
                     <p className="text-xs leading-5 text-slate-300">
