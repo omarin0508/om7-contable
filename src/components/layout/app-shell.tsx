@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { AssistantFloatingButton } from "@/components/assistant/assistant-floating-button";
+import { QuickCalculator } from "@/components/global/quick-calculator";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
@@ -50,6 +51,7 @@ export function AppShell({
             {children}
           </main>
         </div>
+        <QuickCalculator />
         <AssistantFloatingButton />
       </AssistantProvider>
     </div>
