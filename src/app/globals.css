@@ -13,10 +13,20 @@
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
+html {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
 body {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
   background: var(--background);
   color: var(--foreground);
-  overflow-x: hidden;
   text-rendering: geometricPrecision;
 }
 
@@ -24,8 +34,24 @@ body {
   box-sizing: border-box;
 }
 
-html {
-  overflow-x: hidden;
+body > * {
+  max-width: 100%;
+  min-width: 0;
+}
+
+img,
+picture,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+@supports not (overflow: clip) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
 }
 
 ::selection {
@@ -50,6 +76,7 @@ a {
 
   .om7-card,
   .om7-panel-safe {
+    max-width: 100%;
     min-width: 0;
     overflow-wrap: anywhere;
   }
@@ -154,7 +181,10 @@ a {
   }
 
   .om7-responsive-table {
+    display: block;
+    width: 100%;
     max-width: 100%;
+    min-width: 0;
     overflow-x: auto;
     overscroll-behavior-inline: contain;
     scrollbar-color: rgba(103, 232, 249, 0.18) transparent;

@@ -743,7 +743,7 @@ export function QuickCalculator() {
             />
             <motion.aside
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              className="relative z-[10000] mb-3 w-[calc(100vw-2rem)] max-w-[420px] overflow-hidden rounded-[1.75rem] border border-cyan-100/22 bg-[#03050a] shadow-[0_30px_95px_rgba(0,0,0,0.82),0_0_0_1px_rgba(255,255,255,0.045),0_0_38px_rgba(34,211,238,0.16)]"
+              className="relative z-[10000] mb-3 w-[min(calc(100dvw-2rem),420px)] max-w-[calc(100dvw-2rem)] overflow-hidden rounded-[1.75rem] border border-cyan-100/22 bg-[#03050a] shadow-[0_30px_95px_rgba(0,0,0,0.82),0_0_0_1px_rgba(255,255,255,0.045),0_0_38px_rgba(34,211,238,0.16)]"
               exit={{ opacity: 0, scale: 0.96, y: 12 }}
               initial={{ opacity: 0, scale: 0.96, y: 12 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
