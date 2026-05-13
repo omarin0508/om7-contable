@@ -42,6 +42,18 @@ const reportCards = [
     title: "Mayor General",
     type: "mayor-general",
   },
+  {
+    description: "Entradas, salidas y saldo acumulado de caja/bancos.",
+    href: "/contabilidad/flujo-efectivo",
+    title: "Flujo de Efectivo",
+    type: "flujo-efectivo",
+  },
+  {
+    description: "Presupuesto aprobado contra gasto real contabilizado.",
+    href: "/contabilidad/presupuesto-vs-real",
+    title: "Presupuesto vs Real",
+    type: "presupuesto-vs-real",
+  },
 ] as const;
 
 export default async function ReportesFinancierosPage() {
@@ -54,6 +66,7 @@ export default async function ReportesFinancierosPage() {
         organizationId: "",
         organizationName: "Organizacion OM7",
         cuentaId: null,
+        centroCostoId: null,
       },
       error:
         error instanceof Error && error.message

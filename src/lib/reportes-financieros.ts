@@ -1,5 +1,11 @@
 import { getActiveContext } from "@/lib/active-context";
 import {
+  getFlujoEfectivo,
+  getResumenFlujoEfectivo,
+  type FlujoEfectivoMovimiento,
+  type ResumenFlujoEfectivo,
+} from "@/lib/flujo-efectivo";
+import {
   getBalanceGeneral,
   getEstadoResultados,
   getResumenFinanciero,
@@ -13,18 +19,26 @@ import {
   type BalanceComprobacionRow,
   type MayorGeneralMovimiento,
 } from "@/lib/reportes-contables";
+import {
+  getPresupuestoVsContabilidad,
+  type PresupuestoVsContabilidadRow,
+  type ResumenPresupuestoVsContabilidad,
+} from "@/lib/presupuesto-contabilidad";
 
 export type ReporteFinancieroTipo =
   | "balance-general"
   | "estado-resultados"
   | "balance-comprobacion"
-  | "mayor-general";
+  | "mayor-general"
+  | "flujo-efectivo"
+  | "presupuesto-vs-real";
 
 export type ReporteFinancieroFilters = {
   organizationId?: string;
   fechaDesde?: string | null;
   fechaHasta?: string | null;
   cuentaId?: string | null;
+  centroCostoId?: string | null;
   moneda?: string;
   incluirCuentasSinMovimiento?: boolean;
 };
@@ -36,6 +50,7 @@ export type ReporteFinancieroContext = {
   fechaDesde: string | null;
   fechaHasta: string | null;
   cuentaId: string | null;
+  centroCostoId: string | null;
 };
 
 async function resolveReportContext(
@@ -55,11 +70,28 @@ async function resolveReportContext(
 
   return {
     cuentaId: filters.cuentaId ?? null,
+    centroCostoId: filters.centroCostoId ?? null,
     fechaDesde: filters.fechaDesde ?? null,
     fechaHasta: filters.fechaHasta ?? null,
     moneda,
     organizationId,
     organizationName,
+  };
+}
+
+export async function getReportePresupuestoVsReal(
+  filters: ReporteFinancieroFilters = {},
+) {
+  const result = await getPresupuestoVsContabilidad(filters);
+  const context = await resolveReportContext(
+    filters,
+    result.context.organizationId,
+  );
+
+  return {
+    context,
+    resumen: result.resumen as ResumenPresupuestoVsContabilidad,
+    rows: result.rows as PresupuestoVsContabilidadRow[],
   };
 }
 
@@ -109,6 +141,25 @@ export async function getReporteMayorGeneral(
   return {
     context,
     movimientos: result.movimientos as MayorGeneralMovimiento[],
+  };
+}
+
+export async function getReporteFlujoEfectivo(
+  filters: ReporteFinancieroFilters = {},
+) {
+  const [flujoResult, resumenResult] = await Promise.all([
+    getFlujoEfectivo(filters),
+    getResumenFlujoEfectivo(filters),
+  ]);
+  const context = await resolveReportContext(
+    filters,
+    flujoResult.context.organizationId,
+  );
+
+  return {
+    context,
+    movimientos: flujoResult.movimientos as FlujoEfectivoMovimiento[],
+    resumen: resumenResult.resumen as ResumenFlujoEfectivo,
   };
 }
 

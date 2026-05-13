@@ -18,7 +18,11 @@ import {
   normalizePeriodStatus,
   type AccountingPeriod,
 } from "@/lib/accounting-periods";
-import { normalizeCurrencyCode } from "@/lib/currency";
+import { formatCurrencyAmount, normalizeCurrencyCode } from "@/lib/currency";
+import {
+  getAlertasContables,
+  getDashboardContableEjecutivo,
+} from "@/lib/dashboard-contable";
 import { getInvoicesForActiveCompany } from "@/lib/invoices";
 import { listPurchases } from "@/lib/purchases";
 
@@ -62,6 +66,18 @@ export default async function AccountingPage({
       listPurchases(),
       getInvoicesForActiveCompany(),
     ]);
+  const [dashboardContableResult, alertasContablesResult] = await Promise.all([
+    getDashboardContableEjecutivo().catch((error: unknown) => ({
+      error:
+        error instanceof Error && error.message
+          ? error.message
+          : "No se pudo cargar el dashboard contable.",
+      resumen: null,
+    })),
+    getAlertasContables().catch(() => ({
+      alertas: [],
+    })),
+  ]);
   const activeContext = purchasesResult.activeContext;
   const activeCompany = activeContext.activeCompany;
   const organization = activeContext.organization;
@@ -94,6 +110,50 @@ export default async function AccountingPage({
         ] as const,
     ),
   ]);
+  const dashboardContable =
+    "error" in dashboardContableResult ? null : dashboardContableResult.resumen;
+  const dashboardContableError =
+    "error" in dashboardContableResult ? dashboardContableResult.error : null;
+  const alertasContables = alertasContablesResult.alertas;
+  const accountingStatusRows = dashboardContable
+    ? [
+        {
+          errors: dashboardContable.compras_errores_contables,
+          href: "/compras",
+          label: "Compras",
+          pending: dashboardContable.compras_pendientes_contables,
+          posted: dashboardContable.compras_contabilizadas_contables,
+        },
+        {
+          errors: dashboardContable.facturas_errores_contables,
+          href: "/facturas",
+          label: "Facturas",
+          pending: dashboardContable.facturas_pendientes_contables,
+          posted: dashboardContable.facturas_contabilizadas_contables,
+        },
+        {
+          errors: dashboardContable.caja_errores_contable,
+          href: "/movimientos",
+          label: "Caja/Bancos",
+          pending: dashboardContable.caja_pendiente_contable,
+          posted: dashboardContable.caja_contabilizada_contable,
+        },
+        {
+          errors: dashboardContable.planillas_errores_contables,
+          href: "/planillas",
+          label: "Planillas",
+          pending: dashboardContable.planillas_pendientes_contables,
+          posted: dashboardContable.planillas_contabilizadas_contables,
+        },
+        {
+          errors: dashboardContable.subcontratos_errores_contables,
+          href: "/subcontratos",
+          label: "Subcontratos",
+          pending: dashboardContable.subcontratos_pendientes_contables,
+          posted: dashboardContable.subcontratos_contabilizados_contables,
+        },
+      ]
+    : [];
 
   return (
     <ModuleFrame>
@@ -134,6 +194,30 @@ export default async function AccountingPage({
               Reportes
             </Link>
             <Link
+              className="om7-btn-ghost px-4 py-2.5"
+              href="/contabilidad/flujo-efectivo"
+            >
+              Flujo efectivo
+            </Link>
+            <Link
+              className="om7-btn-ghost px-4 py-2.5"
+              href="/contabilidad/cierres"
+            >
+              Cierres
+            </Link>
+            <Link
+              className="om7-btn-ghost px-4 py-2.5"
+              href="/contabilidad/presupuesto-vs-real"
+            >
+              Presupuesto vs real
+            </Link>
+            <Link
+              className="om7-btn-ghost px-4 py-2.5"
+              href="/contabilidad/reglas"
+            >
+              Reglas
+            </Link>
+            <Link
               className="om7-btn-primary px-4 py-2.5"
               href="/contabilidad/catalogo"
             >
@@ -169,6 +253,157 @@ export default async function AccountingPage({
             Ir a clientes/empresas
           </Link>
         </PremiumCard>
+      ) : null}
+
+      {dashboardContableError ? (
+        <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
+          <p className="text-sm font-semibold text-amber-100">
+            Dashboard contable no disponible
+          </p>
+          <p className="mt-2 text-sm leading-6 text-amber-100/75">
+            {dashboardContableError}
+          </p>
+        </PremiumCard>
+      ) : null}
+
+      {dashboardContable ? (
+        <>
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+            <MetricCard
+              detail="get_resumen_financiero"
+              label="Utilidad neta"
+              value={formatCurrencyAmount(dashboardContable.utilidad_neta, currency)}
+            />
+            <MetricCard
+              detail="get_resumen_flujo_efectivo"
+              label="Flujo neto"
+              value={formatCurrencyAmount(dashboardContable.flujo_neto, currency)}
+            />
+            <MetricCard
+              detail="Caja/Bancos oficiales"
+              label="Saldo efectivo"
+              value={formatCurrencyAmount(
+                dashboardContable.saldo_final_efectivo,
+                currency,
+              )}
+            />
+            <MetricCard
+              detail={dashboardContable.balance_cuadra ? "OK" : "Atencion"}
+              label="Balance"
+              value={
+                dashboardContable.balance_cuadra
+                  ? "Cuadra"
+                  : formatCurrencyAmount(
+                      dashboardContable.diferencia_balance,
+                      currency,
+                    )
+              }
+            />
+            <MetricCard
+              detail="SQL estado_contable"
+              label="Pendientes"
+              value={String(dashboardContable.total_pendientes_contables)}
+            />
+            <MetricCard
+              detail="get_alertas_contables"
+              label="Alertas"
+              value={String(dashboardContable.alertas_count)}
+            />
+          </section>
+
+          <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <PremiumCard className="overflow-hidden">
+              <div className="border-b border-white/[0.07] p-5">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <p className="text-base font-semibold text-white">
+                      Estado contable OM7
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">
+                      Contabilizados, pendientes y errores provienen de
+                      `get_dashboard_contable_ejecutivo`.
+                    </p>
+                  </div>
+                  <StatusBadge>SQL/RPC</StatusBadge>
+                </div>
+              </div>
+              <div className="om7-responsive-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Modulo</th>
+                      <th>Contabilizados</th>
+                      <th>Pendientes</th>
+                      <th>Errores</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {accountingStatusRows.map((row) => (
+                      <tr key={row.label}>
+                        <td>
+                          <Link className="font-semibold text-cyan-100" href={row.href}>
+                            {row.label}
+                          </Link>
+                        </td>
+                        <td>{row.posted}</td>
+                        <td>{row.pending}</td>
+                        <td>{row.errors}</td>
+                        <td>
+                          <StatusBadge>
+                            {row.errors > 0
+                              ? "Error"
+                              : row.pending > 0
+                                ? "Pendiente"
+                                : "OK"}
+                          </StatusBadge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </PremiumCard>
+
+            <PremiumCard className="p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-base font-semibold text-white">
+                    Alertas contables
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">
+                    Alertas oficiales desde backend.
+                  </p>
+                </div>
+                <StatusBadge>{alertasContables.length}</StatusBadge>
+              </div>
+              <div className="mt-5 grid gap-3">
+                {alertasContables.length > 0 ? (
+                  alertasContables.slice(0, 4).map((alerta) => (
+                    <div
+                      className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-4"
+                      key={alerta.alerta_tipo}
+                    >
+                      <p className="text-sm font-semibold text-white">
+                        {alerta.titulo}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-slate-400">
+                        {alerta.descripcion}
+                      </p>
+                      <p className="mt-3 text-xs font-semibold text-slate-300">
+                        Cantidad: {alerta.cantidad}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm leading-6 text-slate-400">
+                    Sin alertas contables para el periodo actual.
+                  </p>
+                )}
+              </div>
+            </PremiumCard>
+          </section>
+        </>
       ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

@@ -4,6 +4,10 @@ import { getActiveContext } from "@/lib/active-context";
 import { getAccountingSummaryForPeriod } from "@/lib/accounting-entries";
 import { getCurrentAccountingPeriod } from "@/lib/accounting-periods";
 import { listCounterparties } from "@/lib/counterparties";
+import {
+  getAlertasContables,
+  getDashboardContableEjecutivo,
+} from "@/lib/dashboard-contable";
 import { getInvoicesForActiveCompany } from "@/lib/invoices";
 import {
   getCollectionStatusKey,
@@ -33,6 +37,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     invoicesResult,
     counterpartiesResult,
     currentPeriod,
+    dashboardContableResult,
+    alertasContablesResult,
   ] = await Promise.all([
     getAdminDashboardMetrics(),
     listDocumentsByCompany(),
@@ -42,6 +48,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     activeContext.activeCompany
       ? getCurrentAccountingPeriod(activeContext.activeCompany.id).catch(() => null)
       : Promise.resolve(null),
+    getDashboardContableEjecutivo().catch((error: unknown) => ({
+      error:
+        error instanceof Error && error.message
+          ? error.message
+          : "No se pudo cargar el dashboard contable.",
+      resumen: null,
+    })),
+    getAlertasContables().catch(() => ({
+      alertas: [],
+    })),
   ]);
   const accountingSummary =
     activeContext.activeCompany && currentPeriod
@@ -124,6 +140,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       counterparties={counterpartiesResult.counterparties}
       currentPeriod={currentPeriod}
       accountingSummary={accountingSummary}
+      alertasContables={alertasContablesResult.alertas}
+      dashboardContable={
+        "error" in dashboardContableResult
+          ? null
+          : dashboardContableResult.resumen
+      }
+      dashboardContableError={
+        "error" in dashboardContableResult ? dashboardContableResult.error : null
+      }
       documents={documentsResult.documents}
       invoices={invoicesResult.invoices}
       paymentOverview={paymentOverview}
