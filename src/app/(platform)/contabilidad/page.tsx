@@ -154,6 +154,17 @@ export default async function AccountingPage({
         },
       ]
     : [];
+  const accountingNavItems = [
+    { href: "/contabilidad/asientos", label: "Asientos reales" },
+    { href: "/contabilidad/mayor", label: "Mayor" },
+    { href: "/contabilidad/balance-comprobacion", label: "Balance" },
+    { href: "/contabilidad/estados-financieros", label: "Estados financieros" },
+    { href: "/contabilidad/reportes", label: "Reportes" },
+    { href: "/contabilidad/flujo-efectivo", label: "Flujo efectivo" },
+    { href: "/contabilidad/cierres", label: "Cierres" },
+    { href: "/contabilidad/presupuesto-vs-real", label: "Presupuesto vs real" },
+    { href: "/contabilidad/reglas", label: "Reglas" },
+  ];
 
   return (
     <ModuleFrame>
@@ -164,60 +175,6 @@ export default async function AccountingPage({
           <div className="flex flex-wrap gap-2">
             <BackLink />
             <Link
-              className="om7-btn-ghost px-4 py-2.5"
-              href="/contabilidad/asientos"
-            >
-              Asientos reales
-            </Link>
-            <Link
-              className="om7-btn-ghost px-4 py-2.5"
-              href="/contabilidad/mayor"
-            >
-              Mayor
-            </Link>
-            <Link
-              className="om7-btn-ghost px-4 py-2.5"
-              href="/contabilidad/balance-comprobacion"
-            >
-              Balance
-            </Link>
-            <Link
-              className="om7-btn-ghost px-4 py-2.5"
-              href="/contabilidad/estados-financieros"
-            >
-              Estados financieros
-            </Link>
-            <Link
-              className="om7-btn-ghost px-4 py-2.5"
-              href="/contabilidad/reportes"
-            >
-              Reportes
-            </Link>
-            <Link
-              className="om7-btn-ghost px-4 py-2.5"
-              href="/contabilidad/flujo-efectivo"
-            >
-              Flujo efectivo
-            </Link>
-            <Link
-              className="om7-btn-ghost px-4 py-2.5"
-              href="/contabilidad/cierres"
-            >
-              Cierres
-            </Link>
-            <Link
-              className="om7-btn-ghost px-4 py-2.5"
-              href="/contabilidad/presupuesto-vs-real"
-            >
-              Presupuesto vs real
-            </Link>
-            <Link
-              className="om7-btn-ghost px-4 py-2.5"
-              href="/contabilidad/reglas"
-            >
-              Reglas
-            </Link>
-            <Link
               className="om7-btn-primary px-4 py-2.5"
               href="/contabilidad/catalogo"
             >
@@ -226,6 +183,21 @@ export default async function AccountingPage({
           </div>
         }
       />
+
+      <nav
+        aria-label="Navegacion contable"
+        className="flex flex-wrap gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.035] p-2"
+      >
+        {accountingNavItems.map((item) => (
+          <Link
+            className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-200/25 hover:bg-cyan-300/[0.08] hover:text-cyan-100"
+            href={item.href}
+            key={item.href}
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
 
       {actionError ? (
         <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
