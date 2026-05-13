@@ -104,6 +104,30 @@ export default async function AccountingPage({
           <div className="flex flex-wrap gap-2">
             <BackLink />
             <Link
+              className="om7-btn-ghost px-4 py-2.5"
+              href="/contabilidad/asientos"
+            >
+              Asientos reales
+            </Link>
+            <Link
+              className="om7-btn-ghost px-4 py-2.5"
+              href="/contabilidad/mayor"
+            >
+              Mayor
+            </Link>
+            <Link
+              className="om7-btn-ghost px-4 py-2.5"
+              href="/contabilidad/balance-comprobacion"
+            >
+              Balance
+            </Link>
+            <Link
+              className="om7-btn-ghost px-4 py-2.5"
+              href="/contabilidad/estados-financieros"
+            >
+              Estados financieros
+            </Link>
+            <Link
               className="om7-btn-primary px-4 py-2.5"
               href="/contabilidad/catalogo"
             >
