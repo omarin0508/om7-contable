@@ -6,6 +6,7 @@ import {
   generarAsientoCompra,
   revertirAsientoCompra,
 } from "@/lib/contabilizacion-compras";
+import { generarAsientoMovimientoCaja } from "@/lib/contabilizacion-caja";
 import { normalizeCurrencyCode } from "@/lib/currency";
 import { registerPurchasePayment } from "@/lib/payments";
 import { createPurchase, updatePurchaseReviewStatus } from "@/lib/purchases";
@@ -145,7 +146,7 @@ export async function registerPurchasePaymentAction(formData: FormData) {
   let target = redirectTo;
 
   try {
-    await registerPurchasePayment({
+    const payment = await registerPurchasePayment({
       amount: parseAmount(formData.get("amount")),
       notes: String(formData.get("notes") ?? "").trim(),
       paymentDate:
@@ -154,6 +155,7 @@ export async function registerPurchasePaymentAction(formData: FormData) {
       paymentMethodId: String(formData.get("paymentMethodId") ?? ""),
       purchaseId: String(formData.get("purchaseId") ?? ""),
     });
+    await generarAsientoMovimientoCaja(payment.id);
   } catch (error) {
     logActionError("registerPurchasePaymentAction", error);
     target = redirectWithError(
@@ -165,5 +167,10 @@ export async function registerPurchasePaymentAction(formData: FormData) {
   revalidatePath("/compras");
   revalidatePath("/movimientos");
   revalidatePath("/dashboard");
+  revalidatePath("/contabilidad/asientos");
+  revalidatePath("/contabilidad/mayor");
+  revalidatePath("/contabilidad/balance-comprobacion");
+  revalidatePath("/contabilidad/balance-general");
+  revalidatePath("/contabilidad/estado-resultados");
   redirect(target);
 }

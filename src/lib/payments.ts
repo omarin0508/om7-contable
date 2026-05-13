@@ -18,6 +18,7 @@ export type PaymentMethod = {
   code: string;
   name: string;
   type: PaymentMethodType | string;
+  cuenta_contable_id?: string | null;
   is_active: boolean;
   created_at: string | null;
 };
@@ -31,6 +32,9 @@ export type PurchasePayment = {
   amount: number;
   payment_date: string;
   notes: string | null;
+  asiento_contable_id?: string | null;
+  estado_contable?: string | null;
+  contabilizacion_error?: string | null;
   created_at: string | null;
   payment_method?: PaymentMethod | null;
 };
@@ -44,6 +48,9 @@ export type InvoiceCollection = {
   amount: number;
   collection_date: string;
   notes: string | null;
+  asiento_contable_id?: string | null;
+  estado_contable?: string | null;
+  contabilizacion_error?: string | null;
   created_at: string | null;
   payment_method?: PaymentMethod | null;
 };

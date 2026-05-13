@@ -6,6 +6,7 @@ import {
   generarAsientoFactura,
   revertirAsientoFactura,
 } from "@/lib/contabilizacion-facturas";
+import { generarAsientoMovimientoCaja } from "@/lib/contabilizacion-caja";
 import { normalizeCurrencyCode } from "@/lib/currency";
 import {
   createInvoiceForActiveCompany,
@@ -152,7 +153,7 @@ export async function registerInvoiceCollectionAction(formData: FormData) {
   let target = redirectTo;
 
   try {
-    await registerInvoiceCollection({
+    const collection = await registerInvoiceCollection({
       amount: parseAmount(formData.get("amount")),
       collectionDate:
         String(formData.get("collectionDate") ?? "").trim() ||
@@ -161,6 +162,7 @@ export async function registerInvoiceCollectionAction(formData: FormData) {
       notes: String(formData.get("notes") ?? "").trim(),
       paymentMethodId: String(formData.get("paymentMethodId") ?? ""),
     });
+    await generarAsientoMovimientoCaja(collection.id);
   } catch (error) {
     logActionError("registerInvoiceCollectionAction", error);
     target = redirectWithError(
@@ -172,5 +174,10 @@ export async function registerInvoiceCollectionAction(formData: FormData) {
   revalidatePath("/facturas");
   revalidatePath("/movimientos");
   revalidatePath("/dashboard");
+  revalidatePath("/contabilidad/asientos");
+  revalidatePath("/contabilidad/mayor");
+  revalidatePath("/contabilidad/balance-comprobacion");
+  revalidatePath("/contabilidad/balance-general");
+  revalidatePath("/contabilidad/estado-resultados");
   redirect(target);
 }
