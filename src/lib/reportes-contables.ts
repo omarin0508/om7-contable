@@ -7,6 +7,7 @@ export type ReporteContableFilters = {
   fechaDesde?: string | null;
   fechaHasta?: string | null;
   cuentaId?: string | null;
+  incluirCuentasSinMovimiento?: boolean;
 };
 
 export type SaldoContable = {
@@ -51,11 +52,15 @@ export type MayorGeneralMovimiento = {
 
 export type BalanceComprobacionRow = {
   organization_id: string;
+  cuenta_contable_id?: string | null;
   codigo: string;
   nombre: string;
   categoria: string;
   tipo_estado: string;
   naturaleza: string;
+  tipo_cuenta?: string | null;
+  nivel?: number | null;
+  cuenta_padre_id?: string | null;
   total_debito: number;
   total_credito: number;
   saldo_deudor: number;
@@ -64,6 +69,7 @@ export type BalanceComprobacionRow = {
   total_debito_balance: number;
   total_credito_balance: number;
   diferencia_balance: number;
+  tiene_saldo_contrario?: boolean;
 };
 
 async function getAuthenticatedSupabase() {
@@ -161,6 +167,22 @@ export async function getBalanceComprobacion(
   }
 
   const rows = (data ?? []) as BalanceComprobacionRow[];
+  const { saldos } = await getSaldosContables(filters);
+  const saldosByCode = new Map(
+    saldos.map((saldo) => [saldo.codigo, saldo] as const),
+  );
+  const enrichedRows = rows.map((row) => {
+    const saldo = saldosByCode.get(row.codigo);
+
+    return {
+      ...row,
+      cuenta_contable_id: saldo?.cuenta_contable_id ?? null,
+      cuenta_padre_id: saldo?.cuenta_padre_id ?? null,
+      nivel: saldo?.nivel ?? null,
+      tiene_saldo_contrario: saldo?.tiene_saldo_contrario ?? false,
+      tipo_cuenta: saldo?.tipo_cuenta ?? "detalle",
+    };
+  });
   const summary = rows[0]
     ? {
         diferencia: Number(rows[0].diferencia_balance ?? 0),
@@ -175,7 +197,7 @@ export async function getBalanceComprobacion(
 
   return {
     organizationId,
-    rows,
+    rows: enrichedRows,
     summary,
   };
 }

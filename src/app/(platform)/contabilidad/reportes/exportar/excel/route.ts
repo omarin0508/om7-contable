@@ -15,7 +15,7 @@ import {
 export const runtime = "nodejs";
 
 const reportTitles: Record<ReporteFinancieroTipo, string> = {
-  "balance-comprobacion": "Balance de Comprobacion",
+  "balance-comprobacion": "Balance Comprobación",
   "balance-general": "Balance General",
   "estado-resultados": "Estado de Resultados",
   "flujo-efectivo": "Flujo de Efectivo",
@@ -158,6 +158,10 @@ function setReportColumns(
   const headerRow = sheet.getRow(8);
   headerRow.values = columns.map((column) => column.header);
   styleHeader(headerRow);
+  sheet.autoFilter = {
+    from: { column: 1, row: 8 },
+    to: { column: columns.length, row: 8 },
+  };
 }
 
 function styleSheet(sheet: ExcelJS.Worksheet) {
@@ -246,13 +250,22 @@ function addBalanceComprobacionRows(
     { header: "Cuenta", key: "nombre", width: 42 },
     { header: "Categoria", key: "categoria", width: 18 },
     { header: "Naturaleza", key: "naturaleza", width: 16 },
-    { header: "Debito", key: "total_debito", width: 16 },
-    { header: "Credito", key: "total_credito", width: 16 },
+    { header: "Debitos", key: "total_debito", width: 16 },
+    { header: "Creditos", key: "total_credito", width: 16 },
     { header: "Saldo deudor", key: "saldo_deudor", width: 16 },
     { header: "Saldo acreedor", key: "saldo_acreedor", width: 16 },
     { header: "Saldo natural", key: "saldo_natural", width: 18 },
+    { header: "Estado", key: "estado_alerta", width: 20 },
   ]);
-  rows.forEach((row) => sheet.addRow(row));
+  rows.forEach((row) => {
+    const excelRow = sheet.addRow({
+      ...row,
+      estado_alerta: row.tiene_saldo_contrario ? "Saldo contrario" : "OK",
+    });
+    excelRow.getCell("nombre").alignment = {
+      indent: Math.max(Number(row.nivel ?? 1) - 1, 0),
+    };
+  });
   addMoneyFormat(sheet, [
     "total_debito",
     "total_credito",
@@ -421,6 +434,27 @@ export async function GET(request: NextRequest) {
     if (tipo === "balance-comprobacion") {
       const report = await getReporteBalanceComprobacion(filters);
       addBalanceComprobacionRows(sheet, report.rows);
+      sheet.addRow([]);
+      sheet.addRow(["Totales finales"]);
+      sheet.addRow(["Total debitos", report.summary.totalDebito]);
+      sheet.addRow(["Total creditos", report.summary.totalCredito]);
+      sheet.addRow(["Diferencia", report.summary.diferencia]);
+      sheet.addRow([
+        "Estado",
+        Math.abs(report.summary.diferencia) < 0.01 ? "Cuadra" : "Diferencia",
+      ]);
+      addMoneyFormat(sheet, ["B"]);
+      styleSheet(sheet);
+
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      return new Response(buffer, {
+        headers: {
+          "Content-Disposition": `attachment; filename="${getFileName(tipo)}"`,
+          "Content-Type":
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
+      });
     }
 
     if (tipo === "mayor-general") {
