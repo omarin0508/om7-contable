@@ -94,7 +94,11 @@ export function DashboardHero({
             {description}
           </p>
         </div>
-        {action ? <div className="flex shrink-0 flex-wrap gap-2">{action}</div> : null}
+        {action ? (
+          <div className="flex w-full min-w-0 flex-wrap gap-2 [&>a]:max-w-full [&>a]:whitespace-nowrap [&>button]:max-w-full [&>button]:whitespace-nowrap lg:w-auto lg:flex-none lg:justify-end">
+            {action}
+          </div>
+        ) : null}
       </div>
     </section>
   );
