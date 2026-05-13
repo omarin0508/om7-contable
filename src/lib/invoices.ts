@@ -25,6 +25,9 @@ export type Invoice = {
   reviewed_at?: string | null;
   reviewed_by?: string | null;
   review_notes?: string | null;
+  asiento_contable_id?: string | null;
+  estado_contable?: string | null;
+  contabilizacion_error?: string | null;
   counterparty_id?: string | null;
   classification_id?: string | null;
   classification_rule_applied?: string | null;
@@ -45,6 +48,13 @@ export type Invoice = {
     display_name: string | null;
     original_filename: string | null;
     converted_at: string | null;
+  } | null;
+  asiento_contable?: {
+    id: string;
+    numero_asiento: number;
+    estado: string;
+    total_debito: number;
+    total_credito: number;
   } | null;
   created_at: string | null;
 };
@@ -125,24 +135,35 @@ export async function getInvoicesForActiveCompany() {
   const documentIds = [
     ...new Set(invoices.map((item) => item.source_document_id).filter(Boolean)),
   ] as string[];
-  const [{ data: counterparties }, { data: documents }] = await Promise.all([
-    counterpartyIds.length > 0
-      ? supabase
-          .from("counterparties")
-          .select("id, name, tax_id, type")
-          .in("id", counterpartyIds)
-      : Promise.resolve({ data: [] }),
-    documentIds.length > 0
-      ? supabase
-          .from("documents")
-          .select("id, display_name, original_filename, converted_at")
-          .in("id", documentIds)
-      : Promise.resolve({ data: [] }),
-  ]);
+  const asientoIds = [
+    ...new Set(invoices.map((item) => item.asiento_contable_id).filter(Boolean)),
+  ] as string[];
+  const [{ data: counterparties }, { data: documents }, { data: asientos }] =
+    await Promise.all([
+      counterpartyIds.length > 0
+        ? supabase
+            .from("counterparties")
+            .select("id, name, tax_id, type")
+            .in("id", counterpartyIds)
+        : Promise.resolve({ data: [] }),
+      documentIds.length > 0
+        ? supabase
+            .from("documents")
+            .select("id, display_name, original_filename, converted_at")
+            .in("id", documentIds)
+        : Promise.resolve({ data: [] }),
+      asientoIds.length > 0
+        ? supabase
+            .from("asientos_contables")
+            .select("id, numero_asiento, estado, total_debito, total_credito")
+            .in("id", asientoIds)
+        : Promise.resolve({ data: [] }),
+    ]);
   const counterpartyMap = new Map(
     (counterparties ?? []).map((item) => [item.id, item]),
   );
   const documentMap = new Map((documents ?? []).map((item) => [item.id, item]));
+  const asientoMap = new Map((asientos ?? []).map((item) => [item.id, item]));
 
   return {
     activeContext,
@@ -153,6 +174,9 @@ export async function getInvoicesForActiveCompany() {
         : null,
       source_document: invoice.source_document_id
         ? documentMap.get(invoice.source_document_id) ?? null
+        : null,
+      asiento_contable: invoice.asiento_contable_id
+        ? asientoMap.get(invoice.asiento_contable_id) ?? null
         : null,
     })),
   };

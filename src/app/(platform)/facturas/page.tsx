@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import {
+  generateInvoiceAccountingEntryAction,
   registerInvoiceCollectionAction,
+  revertInvoiceAccountingEntryAction,
   updateInvoiceReviewStatusAction,
 } from "@/app/(platform)/facturas/actions";
 import {
@@ -109,6 +111,46 @@ function hasAccountingStatus(invoice: Invoice, status: string) {
   return (invoice.review_status ?? "pending") === status;
 }
 
+function getInvoiceAccountingStatusLabel(status: string | null | undefined) {
+  if (status === "borrador") {
+    return "Borrador contable";
+  }
+
+  if (status === "contabilizado") {
+    return "Contabilizado";
+  }
+
+  if (status === "anulado") {
+    return "Anulado contable";
+  }
+
+  if (status === "error") {
+    return "Error contable";
+  }
+
+  return "Pendiente contable";
+}
+
+function getInvoiceAccountingStatusClass(status: string | null | undefined) {
+  if (status === "borrador") {
+    return "om7-chip om7-chip-cyan";
+  }
+
+  if (status === "contabilizado") {
+    return "om7-chip om7-chip-emerald";
+  }
+
+  if (status === "anulado") {
+    return "om7-chip text-slate-400";
+  }
+
+  if (status === "error") {
+    return "om7-chip om7-chip-rose";
+  }
+
+  return "om7-chip om7-chip-amber";
+}
+
 function getInvoicePeriodDate(invoice: Invoice) {
   const rawDate = invoice.fecha ?? invoice.created_at;
   const date = rawDate ? new Date(rawDate) : null;
@@ -212,6 +254,33 @@ function ReviewStatusForm({
       <input name="invoiceId" type="hidden" value={invoiceId} />
       <input name="reviewStatus" type="hidden" value={status} />
       <input name="redirectTo" type="hidden" value={redirectTo} />
+      <button className={className} type="submit">
+        {children}
+      </button>
+    </form>
+  );
+}
+
+function InvoiceAccountingForm({
+  action,
+  children,
+  className,
+  invoiceId,
+  motivo,
+  redirectTo,
+}: {
+  action: (formData: FormData) => Promise<void>;
+  children: ReactNode;
+  className: string;
+  invoiceId: string;
+  motivo?: string;
+  redirectTo: string;
+}) {
+  return (
+    <form action={action}>
+      <input name="invoiceId" type="hidden" value={invoiceId} />
+      <input name="redirectTo" type="hidden" value={redirectTo} />
+      {motivo ? <input name="motivo" type="hidden" value={motivo} /> : null}
       <button className={className} type="submit">
         {children}
       </button>
@@ -345,6 +414,12 @@ function InvoiceCard({
       ? "Marcar corregido"
       : "Marcar revisada";
   const isPosted = journalEntry?.status === "posted";
+  const accountingStatus = invoice.estado_contable ?? "pendiente";
+  const actualAsiento = invoice.asiento_contable;
+  const canGenerateAccounting =
+    !lockedByPeriod &&
+    ["reviewed", "approved"].includes(String(invoice.review_status ?? "")) &&
+    accountingStatus !== "contabilizado";
 
   return (
     <article className="min-w-0 rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_right,rgba(52,211,153,0.08),transparent_34%),rgba(255,255,255,0.035)] p-3 shadow-2xl shadow-black/15 transition hover:border-emerald-300/20 hover:bg-white/[0.05] sm:p-5">
@@ -378,6 +453,9 @@ function InvoiceCard({
             {isPosted ? (
               <span className="om7-chip om7-chip-emerald">Contabilizada</span>
             ) : null}
+            <span className={getInvoiceAccountingStatusClass(accountingStatus)}>
+              {getInvoiceAccountingStatusLabel(accountingStatus)}
+            </span>
             <span className={getMovementStatusBadgeClass(collectionStatus)}>
               {collectionLabel}
             </span>
@@ -451,6 +529,62 @@ function InvoiceCard({
           methods={paymentMethods}
           redirectTo={redirectTo}
         />
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/75">
+              Contabilizacion oficial
+            </p>
+            <p className="mt-2 text-sm font-semibold text-slate-100">
+              {getInvoiceAccountingStatusLabel(accountingStatus)}
+              {actualAsiento ? ` - Asiento #${actualAsiento.numero_asiento}` : ""}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              El asiento real se genera desde reglas contables de facturas y
+              alimenta mayor, balance y estados financieros.
+            </p>
+            {invoice.contabilizacion_error ? (
+              <p className="mt-2 text-sm leading-6 text-rose-100/80">
+                {invoice.contabilizacion_error}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
+            {invoice.asiento_contable_id ? (
+              <Link
+                className="om7-btn-secondary px-3 py-2 text-xs"
+                href={`/contabilidad/asientos/${invoice.asiento_contable_id}`}
+              >
+                Ver asiento
+              </Link>
+            ) : null}
+            {canGenerateAccounting ? (
+              <InvoiceAccountingForm
+                action={generateInvoiceAccountingEntryAction}
+                className="om7-btn-primary px-3 py-2 text-xs"
+                invoiceId={invoice.id}
+                redirectTo={redirectTo}
+              >
+                {accountingStatus === "error" || accountingStatus === "anulado"
+                  ? "Recontabilizar"
+                  : "Generar asiento"}
+              </InvoiceAccountingForm>
+            ) : null}
+            {accountingStatus === "borrador" ? (
+              <InvoiceAccountingForm
+                action={revertInvoiceAccountingEntryAction}
+                className="om7-btn-ghost px-3 py-2 text-xs"
+                invoiceId={invoice.id}
+                motivo="Reversion de borrador contable de factura"
+                redirectTo={redirectTo}
+              >
+                Anular borrador
+              </InvoiceAccountingForm>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       <details className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">

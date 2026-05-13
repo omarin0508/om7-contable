@@ -128,6 +128,12 @@ export default async function AccountingPage({
               Estados financieros
             </Link>
             <Link
+              className="om7-btn-ghost px-4 py-2.5"
+              href="/contabilidad/reportes"
+            >
+              Reportes
+            </Link>
+            <Link
               className="om7-btn-primary px-4 py-2.5"
               href="/contabilidad/catalogo"
             >

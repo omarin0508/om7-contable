@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import {
   BackLink,
   MetricCard,
@@ -24,18 +23,6 @@ function formatCurrency(value: number, currency = "CRC") {
   }).format(Number(value ?? 0));
 }
 
-function getEstadoLabel(estado: string) {
-  if (estado === "contabilizado") {
-    return "Contabilizado";
-  }
-
-  if (estado === "anulado") {
-    return "Anulado";
-  }
-
-  return "Borrador";
-}
-
 function getEstadoTone(estado: string) {
   if (estado === "contabilizado") {
     return "emerald" as const;
@@ -48,18 +35,55 @@ function getEstadoTone(estado: string) {
   return "amber" as const;
 }
 
+function getEstadoLabel(estado: string) {
+  if (estado === "contabilizado") {
+    return "Contabilizado";
+  }
+
+  if (estado === "anulado") {
+    return "Anulado";
+  }
+
+  return "Borrador";
+}
+
 export default async function AsientoDetallePage({
   params,
 }: AsientoDetallePageProps) {
   const { asientoId } = await params;
-  const result = await getAsientoContableById(asientoId).catch(() => null);
+  const result = await getAsientoContableById(asientoId).catch((error: unknown) => ({
+    asiento: null,
+    error:
+      error instanceof Error && error.message
+        ? error.message
+        : "No se pudo cargar el asiento.",
+    organization: null,
+  }));
 
-  if (!result) {
-    notFound();
+  const { asiento, organization } = result;
+  const actionError = "error" in result ? result.error : null;
+
+  if (!asiento) {
+    return (
+      <ModuleFrame>
+        <ModuleHeader
+          title="Detalle de asiento"
+          description="Consulta del asiento contable oficial generado por OM7."
+          action={<BackLink href="/contabilidad/asientos" label="Volver a asientos" />}
+        />
+        <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
+          <p className="text-sm font-semibold text-amber-100">
+            Asiento no disponible
+          </p>
+          <p className="mt-2 text-sm leading-6 text-amber-100/75">
+            {actionError}
+          </p>
+        </PremiumCard>
+      </ModuleFrame>
+    );
   }
 
-  const { asiento } = result;
-  const diferencia = Number(asiento.total_debito ?? 0) - Number(asiento.total_credito ?? 0);
+  const lineas = asiento.lineas ?? [];
 
   return (
     <ModuleFrame>
@@ -69,45 +93,87 @@ export default async function AsientoDetallePage({
         action={
           <div className="flex flex-wrap gap-2">
             <BackLink href="/contabilidad/asientos" label="Volver a asientos" />
-            <Link className="om7-btn-ghost px-4 py-2.5" href="/contabilidad/catalogo">
-              Ver catalogo
+            <Link className="om7-btn-ghost px-4 py-2.5" href="/contabilidad/mayor">
+              Mayor
+            </Link>
+            <Link
+              className="om7-btn-ghost px-4 py-2.5"
+              href="/contabilidad/balance-comprobacion"
+            >
+              Balance comprobacion
             </Link>
           </div>
         }
       />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard detail={asiento.fecha} label="Fecha" value={asiento.periodo ?? "-"} />
         <MetricCard
-          detail="Debe"
-          label="Total debito"
+          detail={organization?.name ?? "Organizacion activa"}
+          label="Estado"
+          value={getEstadoLabel(asiento.estado)}
+        />
+        <MetricCard
+          detail={asiento.moneda}
+          label="Debito"
           value={formatCurrency(asiento.total_debito, asiento.moneda)}
         />
         <MetricCard
-          detail="Haber"
-          label="Total credito"
+          detail={asiento.moneda}
+          label="Credito"
           value={formatCurrency(asiento.total_credito, asiento.moneda)}
         />
         <MetricCard
-          detail="Debe - Haber"
-          label="Diferencia"
-          value={formatCurrency(diferencia, asiento.moneda)}
+          detail={asiento.periodo ?? "Sin periodo"}
+          label="Fecha"
+          value={asiento.fecha}
         />
       </section>
 
+      <PremiumCard className="p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/70">
+              Asiento oficial
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-white">
+              {asiento.descripcion}
+            </h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <StatusBadge tone={getEstadoTone(asiento.estado)}>
+                {getEstadoLabel(asiento.estado)}
+              </StatusBadge>
+              <StatusBadge tone="cyan">
+                {asiento.modulo_origen ?? "manual"}
+              </StatusBadge>
+              {asiento.referencia ? (
+                <StatusBadge tone="slate">{asiento.referencia}</StatusBadge>
+              ) : null}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-4 py-3 text-sm text-slate-300">
+            <p>
+              Total debito:{" "}
+              <span className="font-semibold text-white">
+                {formatCurrency(asiento.total_debito, asiento.moneda)}
+              </span>
+            </p>
+            <p className="mt-1">
+              Total credito:{" "}
+              <span className="font-semibold text-white">
+                {formatCurrency(asiento.total_credito, asiento.moneda)}
+              </span>
+            </p>
+          </div>
+        </div>
+      </PremiumCard>
+
       <PremiumCard className="overflow-hidden">
         <div className="border-b border-white/[0.07] p-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-base font-semibold text-white">Lineas del asiento</p>
-              <p className="mt-1 text-sm leading-6 text-slate-500">
-                Cada linea apunta a una cuenta detalle del catalogo contable real.
-              </p>
-            </div>
-            <StatusBadge tone={getEstadoTone(asiento.estado)}>
-              {getEstadoLabel(asiento.estado)}
-            </StatusBadge>
-          </div>
+          <p className="text-base font-semibold text-white">Lineas contables</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            Lineas oficiales persistidas en el motor contable. Los saldos y
+            reportes se calculan desde SQL/RPC.
+          </p>
         </div>
 
         <div className="om7-responsive-table">
@@ -122,20 +188,20 @@ export default async function AsientoDetallePage({
               </tr>
             </thead>
             <tbody>
-              {(asiento.lineas ?? []).length > 0 ? (
-                (asiento.lineas ?? []).map((linea) => (
+              {lineas.length > 0 ? (
+                lineas.map((linea) => (
                   <tr key={linea.id}>
                     <td>
-                      <div>
-                        <p className="font-mono text-cyan-100">
-                          {linea.cuenta?.codigo ?? "-"}
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs text-cyan-100">
+                          {linea.cuenta?.codigo ?? "Sin cuenta"}
                         </p>
-                        <p className="mt-1 text-sm text-white">
+                        <p className="mt-1 font-semibold text-white">
                           {linea.cuenta?.nombre ?? "Cuenta no disponible"}
                         </p>
                       </div>
                     </td>
-                    <td>{linea.descripcion ?? "-"}</td>
+                    <td>{linea.descripcion ?? "Sin descripcion"}</td>
                     <td>{formatCurrency(linea.debito, linea.moneda)}</td>
                     <td>{formatCurrency(linea.credito, linea.moneda)}</td>
                     <td>{linea.moneda}</td>
@@ -146,11 +212,10 @@ export default async function AsientoDetallePage({
                   <td colSpan={5}>
                     <div className="p-8 text-center">
                       <p className="text-base font-semibold text-white">
-                        Este asiento aun no tiene lineas.
+                        Este asiento no tiene lineas.
                       </p>
                       <p className="mt-2 text-sm text-slate-500">
-                        Las lineas se agregaran desde formularios o automatizaciones en
-                        fases posteriores.
+                        Agrega lineas antes de contabilizarlo.
                       </p>
                     </div>
                   </td>

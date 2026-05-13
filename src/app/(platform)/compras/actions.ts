@@ -2,6 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import {
+  generarAsientoCompra,
+  revertirAsientoCompra,
+} from "@/lib/contabilizacion-compras";
 import { normalizeCurrencyCode } from "@/lib/currency";
 import { registerPurchasePayment } from "@/lib/payments";
 import { createPurchase, updatePurchaseReviewStatus } from "@/lib/purchases";
@@ -65,11 +69,16 @@ export async function updatePurchaseReviewStatusAction(formData: FormData) {
   let target = redirectTo;
 
   try {
-    await updatePurchaseReviewStatus({
+    const reviewStatus = String(formData.get("reviewStatus") ?? "pending");
+    const purchase = await updatePurchaseReviewStatus({
       notes: String(formData.get("reviewNotes") ?? "").trim(),
       purchaseId: String(formData.get("purchaseId") ?? ""),
-      status: String(formData.get("reviewStatus") ?? "pending"),
+      status: reviewStatus,
     });
+
+    if (reviewStatus === "reviewed" || reviewStatus === "approved") {
+      await generarAsientoCompra(purchase.id);
+    }
   } catch (error) {
     logActionError("updatePurchaseReviewStatusAction", error);
     target = redirectWithError(
@@ -79,6 +88,55 @@ export async function updatePurchaseReviewStatusAction(formData: FormData) {
   }
 
   revalidatePath("/compras");
+  redirect(target);
+}
+
+export async function generatePurchaseAccountingEntryAction(formData: FormData) {
+  const redirectTo = String(formData.get("redirectTo") ?? "/compras");
+  let target = redirectTo;
+
+  try {
+    await generarAsientoCompra(String(formData.get("purchaseId") ?? ""));
+  } catch (error) {
+    logActionError("generatePurchaseAccountingEntryAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo generar el asiento contable."),
+    );
+  }
+
+  revalidatePath("/compras");
+  revalidatePath("/contabilidad/asientos");
+  revalidatePath("/contabilidad/mayor");
+  revalidatePath("/contabilidad/balance-comprobacion");
+  revalidatePath("/contabilidad/balance-general");
+  revalidatePath("/contabilidad/estado-resultados");
+  redirect(target);
+}
+
+export async function revertPurchaseAccountingEntryAction(formData: FormData) {
+  const redirectTo = String(formData.get("redirectTo") ?? "/compras");
+  let target = redirectTo;
+
+  try {
+    await revertirAsientoCompra(
+      String(formData.get("purchaseId") ?? ""),
+      String(formData.get("motivo") ?? "Reversion contable de compra").trim(),
+    );
+  } catch (error) {
+    logActionError("revertPurchaseAccountingEntryAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo revertir el asiento contable."),
+    );
+  }
+
+  revalidatePath("/compras");
+  revalidatePath("/contabilidad/asientos");
+  revalidatePath("/contabilidad/mayor");
+  revalidatePath("/contabilidad/balance-comprobacion");
+  revalidatePath("/contabilidad/balance-general");
+  revalidatePath("/contabilidad/estado-resultados");
   redirect(target);
 }
 

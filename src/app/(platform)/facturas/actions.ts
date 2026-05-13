@@ -2,6 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import {
+  generarAsientoFactura,
+  revertirAsientoFactura,
+} from "@/lib/contabilizacion-facturas";
 import { normalizeCurrencyCode } from "@/lib/currency";
 import {
   createInvoiceForActiveCompany,
@@ -72,11 +76,16 @@ export async function updateInvoiceReviewStatusAction(formData: FormData) {
   let target = redirectTo;
 
   try {
-    await updateInvoiceReviewStatus({
+    const reviewStatus = String(formData.get("reviewStatus") ?? "pending");
+    const invoice = await updateInvoiceReviewStatus({
       invoiceId: String(formData.get("invoiceId") ?? ""),
       notes: String(formData.get("reviewNotes") ?? "").trim(),
-      status: String(formData.get("reviewStatus") ?? "pending"),
+      status: reviewStatus,
     });
+
+    if (reviewStatus === "reviewed" || reviewStatus === "approved") {
+      await generarAsientoFactura(invoice.id);
+    }
   } catch (error) {
     logActionError("updateInvoiceReviewStatusAction", error);
     target = redirectWithError(
@@ -86,6 +95,55 @@ export async function updateInvoiceReviewStatusAction(formData: FormData) {
   }
 
   revalidatePath("/facturas");
+  redirect(target);
+}
+
+export async function generateInvoiceAccountingEntryAction(formData: FormData) {
+  const redirectTo = String(formData.get("redirectTo") ?? "/facturas");
+  let target = redirectTo;
+
+  try {
+    await generarAsientoFactura(String(formData.get("invoiceId") ?? ""));
+  } catch (error) {
+    logActionError("generateInvoiceAccountingEntryAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo generar el asiento contable."),
+    );
+  }
+
+  revalidatePath("/facturas");
+  revalidatePath("/contabilidad/asientos");
+  revalidatePath("/contabilidad/mayor");
+  revalidatePath("/contabilidad/balance-comprobacion");
+  revalidatePath("/contabilidad/balance-general");
+  revalidatePath("/contabilidad/estado-resultados");
+  redirect(target);
+}
+
+export async function revertInvoiceAccountingEntryAction(formData: FormData) {
+  const redirectTo = String(formData.get("redirectTo") ?? "/facturas");
+  let target = redirectTo;
+
+  try {
+    await revertirAsientoFactura(
+      String(formData.get("invoiceId") ?? ""),
+      String(formData.get("motivo") ?? "Reversion contable de factura").trim(),
+    );
+  } catch (error) {
+    logActionError("revertInvoiceAccountingEntryAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo revertir el asiento contable."),
+    );
+  }
+
+  revalidatePath("/facturas");
+  revalidatePath("/contabilidad/asientos");
+  revalidatePath("/contabilidad/mayor");
+  revalidatePath("/contabilidad/balance-comprobacion");
+  revalidatePath("/contabilidad/balance-general");
+  revalidatePath("/contabilidad/estado-resultados");
   redirect(target);
 }
 
