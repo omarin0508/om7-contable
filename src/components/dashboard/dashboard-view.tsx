@@ -398,6 +398,7 @@ export function DashboardView({
                 ["Compras", "/compras", "expenses", "Gastos y proveedores"],
                 ["Facturas", "/facturas", "invoice", "Ingresos y clientes"],
                 ["Movimientos", "/movimientos", "expenses", "Pagos y cobros"],
+                ["Planillas", "/planillas", "expenses", "Nomina y cargas"],
                 ["Contabilidad", "/contabilidad", "reports", "Asientos sugeridos"],
                 ["Periodos", "/periodos", "reports", "Cierre mensual"],
                 ["Reportes", "/reportes", "reports", "Resumen ejecutivo"],
