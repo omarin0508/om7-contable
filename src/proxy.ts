@@ -13,6 +13,7 @@ export const config = {
     "/facturas-inteligentes/:path*",
     "/compras/:path*",
     "/documentos/:path*",
+    "/gmail-xml/:path*",
     "/cliente/:path*",
     "/contabilidad/:path*",
     "/contrapartes/:path*",

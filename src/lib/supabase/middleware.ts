@@ -9,6 +9,7 @@ const protectedRoutes = [
   "/facturas-inteligentes",
   "/compras",
   "/documentos",
+  "/gmail-xml",
   "/cliente",
   "/contabilidad",
   "/contrapartes",
