@@ -1,5 +1,10 @@
 import { getActiveContext } from "@/lib/active-context";
+import {
+  extractionHasUsefulData,
+  type DocumentExtraction,
+} from "@/lib/document-processing";
 import { assertInternalUser } from "@/lib/permissions";
+import { uploadDocumentContent } from "@/lib/storage";
 import { createClient } from "@/lib/supabase/server";
 
 const GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
@@ -22,17 +27,54 @@ export type GmailXmlCandidate = {
   from: string | null;
   subject: string | null;
   received_at: string | null;
+  attachments: GmailXmlAttachmentCandidate[];
   attachment_filenames: string[];
+};
+
+export type GmailXmlAttachmentCandidate = {
+  gmail_attachment_id: string;
+  filename: string;
+  mime_type: string | null;
+};
+
+export type GmailXmlImportStatus =
+  | "pendiente"
+  | "procesado"
+  | "duplicado"
+  | "error";
+
+export type GmailXmlImportRecord = {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  source: "gmail";
+  gmail_message_id: string;
+  gmail_thread_id: string | null;
+  gmail_attachment_id: string;
+  from: string | null;
+  subject: string | null;
+  received_at: string | null;
+  attachment_filename: string | null;
+  imported_document_id: string | null;
+  import_status: GmailXmlImportStatus;
+  error_message: string | null;
+  created_at: string | null;
 };
 
 export type GmailXmlDashboard = {
   activeContext: Awaited<ReturnType<typeof getActiveContext>>;
   connection: GmailXmlConnection | null;
   candidates: GmailXmlCandidate[];
+  recentImports: GmailXmlImportRecord[];
 };
 
 type GmailMessagePart = {
   filename?: string;
+  mimeType?: string;
+  body?: {
+    attachmentId?: string;
+    data?: string;
+  };
   parts?: GmailMessagePart[];
 };
 
@@ -44,6 +86,13 @@ type GmailMessage = {
     headers?: Array<{ name: string; value: string }>;
     parts?: GmailMessagePart[];
   } & GmailMessagePart;
+};
+
+export type GmailXmlSyncSummary = {
+  totalFound: number;
+  imported: number;
+  duplicates: number;
+  errors: number;
 };
 
 function getGmailEnv() {
@@ -131,9 +180,220 @@ function getMessageParts(part: GmailMessagePart | undefined): GmailMessagePart[]
 }
 
 function getXmlAttachmentFilenames(message: GmailMessage) {
+  return getXmlAttachments(message)
+    .map((attachment) => attachment.filename);
+}
+
+function getXmlAttachments(message: GmailMessage): GmailXmlAttachmentCandidate[] {
   return getMessageParts(message.payload)
-    .map((part) => part.filename?.trim() ?? "")
-    .filter((filename) => filename.toLowerCase().endsWith(".xml"));
+    .map((part) => ({
+      filename: part.filename?.trim() ?? "",
+      gmail_attachment_id: part.body?.attachmentId ?? "",
+      mime_type: part.mimeType ?? null,
+    }))
+    .filter(
+      (part) =>
+        part.filename.toLowerCase().endsWith(".xml") &&
+        part.gmail_attachment_id,
+    );
+}
+
+function decodeBase64Url(data: string) {
+  return new Uint8Array(Buffer.from(data, "base64url"));
+}
+
+function getExtractionData(extraction: DocumentExtraction | null) {
+  const data = extraction?.extracted_data;
+
+  return data && typeof data === "object" && !Array.isArray(data)
+    ? (data as Record<string, unknown>)
+    : {};
+}
+
+function normalizeText(value: unknown) {
+  return String(value ?? "").trim();
+}
+
+function isProcessedStatus(status: unknown) {
+  return ["procesado", "duplicado"].includes(String(status));
+}
+
+async function getLatestDocumentExtraction(documentId: string) {
+  const { supabase } = await getAuthenticatedSupabase();
+  const { data, error } = await supabase
+    .from("document_extractions")
+    .select("*")
+    .eq("document_id", documentId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as DocumentExtraction | null) ?? null;
+}
+
+async function hasDuplicateXmlClave({
+  clave,
+  documentId,
+  organizationId,
+}: {
+  clave: unknown;
+  documentId: string;
+  organizationId: string;
+}) {
+  const cleanClave = normalizeText(clave);
+
+  if (!cleanClave) {
+    return false;
+  }
+
+  const { supabase } = await getAuthenticatedSupabase();
+  const { data, error } = await supabase
+    .from("document_extractions")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("extraction_provider", "xml-parser-cr")
+    .eq("extracted_data->>clave", cleanClave)
+    .neq("document_id", documentId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return Boolean(data);
+}
+
+async function getRecentGmailXmlImports() {
+  const activeContext = await getActiveContext();
+  const { supabase, user } = await getAuthenticatedSupabase();
+
+  if (!activeContext.organization) {
+    return [] as GmailXmlImportRecord[];
+  }
+
+  const { data, error } = await supabase
+    .from("gmail_xml_imports")
+    .select("*")
+    .eq("organization_id", activeContext.organization.id)
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    if (error.code === "42P01") {
+      return [] as GmailXmlImportRecord[];
+    }
+
+    throw new Error(error.message);
+  }
+
+  return (data ?? []) as GmailXmlImportRecord[];
+}
+
+async function getGmailXmlMessagesWithAttachments(
+  accessToken: string,
+  limit = 10,
+) {
+  const search = new URLSearchParams({
+    q: "filename:xml has:attachment",
+    maxResults: String(limit),
+  });
+  const listResponse = await gmailFetch<{ messages?: Array<{ id: string }> }>(
+    accessToken,
+    `/messages?${search.toString()}`,
+  );
+  const messages: Array<{
+    message: GmailMessage;
+    attachments: GmailXmlAttachmentCandidate[];
+  }> = [];
+
+  for (const item of listResponse.messages ?? []) {
+    const message = await gmailFetch<GmailMessage>(
+      accessToken,
+      `/messages/${item.id}?format=full&metadataHeaders=From&metadataHeaders=Subject`,
+    );
+    const attachments = getXmlAttachments(message);
+
+    if (attachments.length > 0) {
+      messages.push({ message, attachments });
+    }
+  }
+
+  return messages;
+}
+
+async function downloadGmailAttachment(
+  accessToken: string,
+  messageId: string,
+  attachmentId: string,
+) {
+  const attachment = await gmailFetch<{ data?: string }>(
+    accessToken,
+    `/messages/${messageId}/attachments/${attachmentId}`,
+  );
+
+  if (!attachment.data) {
+    throw new Error("Gmail no devolvio contenido para el adjunto XML.");
+  }
+
+  return decodeBase64Url(attachment.data);
+}
+
+function getImportTrace(message: GmailMessage, attachment: GmailXmlAttachmentCandidate) {
+  return {
+    source: "gmail" as const,
+    gmail_message_id: message.id,
+    gmail_thread_id: message.threadId ?? null,
+    gmail_attachment_id: attachment.gmail_attachment_id,
+    from: getHeader(message, "from"),
+    subject: getHeader(message, "subject"),
+    received_at: message.internalDate
+      ? new Date(Number(message.internalDate)).toISOString()
+      : null,
+    attachment_filename: attachment.filename,
+  };
+}
+
+function getSyncNotice(summary: GmailXmlSyncSummary) {
+  return `Sincronizacion lista: ${summary.totalFound} XML encontrados, ${summary.imported} importados, ${summary.duplicates} duplicados, ${summary.errors} errores.`;
+}
+
+export function formatGmailXmlSyncNotice(summary: GmailXmlSyncSummary) {
+  return getSyncNotice(summary);
+}
+
+function assertXmlAttachment(attachment: GmailXmlAttachmentCandidate) {
+  if (!attachment.filename.toLowerCase().endsWith(".xml")) {
+    throw new Error("El adjunto no es un archivo XML.");
+  }
+
+  if (!attachment.gmail_attachment_id) {
+    throw new Error("El adjunto XML no tiene attachmentId de Gmail.");
+  }
+}
+
+function getAttachmentCandidateKey(attachment: GmailXmlAttachmentCandidate) {
+  return `${attachment.gmail_attachment_id}:${attachment.filename}`;
+}
+
+function uniqueAttachments(attachments: GmailXmlAttachmentCandidate[]) {
+  const seen = new Set<string>();
+
+  return attachments.filter((attachment) => {
+    const key = getAttachmentCandidateKey(attachment);
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
 }
 
 async function refreshAccessToken(refreshToken: string) {
@@ -367,28 +627,8 @@ export async function testGmailConnection() {
 export async function listGmailXmlMessages(limit = 10): Promise<GmailXmlCandidate[]> {
   const { connection } = await getActiveConnection();
   const accessToken = await getConnectionAccessToken(connection);
-  const search = new URLSearchParams({
-    q: "filename:xml has:attachment",
-    maxResults: String(limit),
-  });
-  const listResponse = await gmailFetch<{ messages?: Array<{ id: string }> }>(
-    accessToken,
-    `/messages?${search.toString()}`,
-  );
-  const messages: GmailXmlCandidate[] = [];
-
-  for (const item of listResponse.messages ?? []) {
-    const message = await gmailFetch<GmailMessage>(
-      accessToken,
-      `/messages/${item.id}?format=full&metadataHeaders=From&metadataHeaders=Subject`,
-    );
-    const attachmentFilenames = getXmlAttachmentFilenames(message);
-
-    if (attachmentFilenames.length === 0) {
-      continue;
-    }
-
-    messages.push({
+  const gmailMessages = await getGmailXmlMessagesWithAttachments(accessToken, limit);
+  const messages = gmailMessages.map(({ message, attachments }) => ({
       gmail_message_id: message.id,
       gmail_thread_id: message.threadId ?? null,
       from: getHeader(message, "from"),
@@ -396,9 +636,9 @@ export async function listGmailXmlMessages(limit = 10): Promise<GmailXmlCandidat
       received_at: message.internalDate
         ? new Date(Number(message.internalDate)).toISOString()
         : null,
-      attachment_filenames: attachmentFilenames,
-    });
-  }
+      attachments: uniqueAttachments(attachments),
+      attachment_filenames: getXmlAttachmentFilenames(message),
+    }));
 
   const { supabase } = await getAuthenticatedSupabase();
   await supabase
@@ -412,6 +652,174 @@ export async function listGmailXmlMessages(limit = 10): Promise<GmailXmlCandidat
   return messages;
 }
 
+export async function syncGmailXmlAttachments(limit = 10): Promise<GmailXmlSyncSummary> {
+  const { activeContext, connection } = await getActiveConnection();
+  const { supabase, user } = await getAuthenticatedSupabase();
+
+  if (!activeContext.organization || !activeContext.activeCompany) {
+    throw new Error("Selecciona una empresa activa antes de importar XML desde Gmail.");
+  }
+
+  const accessToken = await getConnectionAccessToken(connection);
+  const gmailMessages = await getGmailXmlMessagesWithAttachments(accessToken, limit);
+  const summary: GmailXmlSyncSummary = {
+    totalFound: gmailMessages.reduce(
+      (count, item) => count + uniqueAttachments(item.attachments).length,
+      0,
+    ),
+    imported: 0,
+    duplicates: 0,
+    errors: 0,
+  };
+
+  for (const { message, attachments } of gmailMessages) {
+    for (const attachment of uniqueAttachments(attachments)) {
+      const trace = getImportTrace(message, attachment);
+
+      try {
+        assertXmlAttachment(attachment);
+
+        const { data: existing, error: existingError } = await supabase
+          .from("gmail_xml_imports")
+          .select("id, import_status")
+          .eq("organization_id", activeContext.organization.id)
+          .eq("user_id", user.id)
+          .eq("gmail_message_id", trace.gmail_message_id)
+          .eq("gmail_attachment_id", trace.gmail_attachment_id)
+          .maybeSingle();
+
+        if (existingError) {
+          throw new Error(existingError.message);
+        }
+
+        if (existing && isProcessedStatus(existing.import_status)) {
+          summary.duplicates += 1;
+          continue;
+        }
+
+        const { data: importRow, error: upsertError } = await supabase
+          .from("gmail_xml_imports")
+          .upsert(
+            {
+              ...trace,
+              organization_id: activeContext.organization.id,
+              user_id: user.id,
+              import_status: "pendiente",
+              error_message: null,
+            },
+            {
+              onConflict:
+                "organization_id,user_id,gmail_message_id,gmail_attachment_id",
+            },
+          )
+          .select("id")
+          .single();
+
+        if (upsertError || !importRow) {
+          throw new Error(upsertError?.message ?? "No se pudo registrar la traza Gmail.");
+        }
+
+        try {
+          const content = await downloadGmailAttachment(
+            accessToken,
+            trace.gmail_message_id,
+            trace.gmail_attachment_id,
+          );
+          const result = await uploadDocumentContent({
+            content,
+            filename: trace.attachment_filename,
+            mimeType: attachment.mime_type || "application/xml",
+            relatedType: "general",
+            companyId: activeContext.activeCompany.id,
+            documentType: "factura",
+            metadata: {
+              ...trace,
+              organization_id: activeContext.organization.id,
+              user_id: user.id,
+            },
+          });
+          const extraction = await getLatestDocumentExtraction(result.document.id);
+          const extractedData = getExtractionData(extraction);
+          const duplicateByClave =
+            extractionHasUsefulData(extraction) &&
+            (await hasDuplicateXmlClave({
+              clave: extractedData.clave,
+              documentId: result.document.id,
+              organizationId: activeContext.organization.id,
+            }));
+          const status: GmailXmlImportStatus =
+            result.warningCode || extraction?.extraction_status === "error"
+              ? "error"
+              : duplicateByClave
+                ? "duplicado"
+                : "procesado";
+          const errorMessage =
+            status === "error"
+              ? extraction?.error_message ?? "No se pudo procesar el XML."
+              : null;
+
+          const { error: updateError } = await supabase
+            .from("gmail_xml_imports")
+            .update({
+              imported_document_id: result.document.id,
+              import_status: status,
+              error_message: errorMessage,
+            })
+            .eq("id", importRow.id);
+
+          if (updateError) {
+            throw new Error(updateError.message);
+          }
+
+          if (status === "procesado") {
+            summary.imported += 1;
+          } else if (status === "duplicado") {
+            summary.duplicates += 1;
+          } else {
+            summary.errors += 1;
+          }
+        } catch (error) {
+          summary.errors += 1;
+          await supabase
+            .from("gmail_xml_imports")
+            .update({
+              import_status: "error",
+              error_message:
+                error instanceof Error ? error.message : "No se pudo importar el XML.",
+            })
+            .eq("id", importRow.id);
+        }
+      } catch (error) {
+        summary.errors += 1;
+        await supabase.from("gmail_xml_imports").upsert(
+          {
+            ...trace,
+            organization_id: activeContext.organization.id,
+            user_id: user.id,
+            import_status: "error",
+            error_message:
+              error instanceof Error ? error.message : "No se pudo preparar el XML.",
+          },
+          {
+            onConflict:
+              "organization_id,user_id,gmail_message_id,gmail_attachment_id",
+          },
+        );
+      }
+    }
+  }
+
+  await supabase
+    .from("gmail_xml_connections")
+    .update({
+      last_list_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", connection.id);
+
+  return summary;
+}
+
 export async function getGmailXmlDashboard(
   shouldListMessages = false,
 ): Promise<GmailXmlDashboard> {
@@ -420,7 +828,12 @@ export async function getGmailXmlDashboard(
   const { supabase, user } = await getAuthenticatedSupabase();
 
   if (!activeContext.organization) {
-    return { activeContext, connection: null, candidates: [] };
+    return {
+      activeContext,
+      connection: null,
+      candidates: [],
+      recentImports: [],
+    };
   }
 
   const { data: connection, error } = await supabase
@@ -441,5 +854,6 @@ export async function getGmailXmlDashboard(
     activeContext,
     connection: (connection as GmailXmlConnection | null) ?? null,
     candidates: connection && shouldListMessages ? await listGmailXmlMessages() : [],
+    recentImports: await getRecentGmailXmlImports(),
   };
 }

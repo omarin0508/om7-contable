@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   connectGmailXmlAction,
   listGmailXmlMessagesAction,
+  syncGmailXmlAttachmentsAction,
   testGmailXmlConnectionAction,
 } from "@/app/(platform)/gmail-xml/actions";
 import { ModuleFrame } from "@/components/modules/shared";
@@ -31,13 +32,38 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
+function statusClass(status: string) {
+  if (status === "error") {
+    return "om7-chip om7-chip-rose";
+  }
+
+  if (status === "duplicado") {
+    return "om7-chip om7-chip-amber";
+  }
+
+  if (status === "procesado") {
+    return "om7-chip om7-chip-emerald";
+  }
+
+  return "om7-chip om7-chip-cyan";
+}
+
 export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) {
   const params = (await searchParams) ?? {};
   const notice = getParam(params, "notice");
   const error = getParam(params, "error");
   const shouldListMessages = getParam(params, "list") === "xml";
-  const { activeContext, connection, candidates } =
+  const { activeContext, connection, candidates, recentImports } =
     await getGmailXmlDashboard(shouldListMessages);
+  const importedCount = recentImports.filter(
+    (item) => item.import_status === "procesado",
+  ).length;
+  const duplicateCount = recentImports.filter(
+    (item) => item.import_status === "duplicado",
+  ).length;
+  const errorCount = recentImports.filter(
+    (item) => item.import_status === "error",
+  ).length;
 
   return (
     <ModuleFrame>
@@ -51,9 +77,9 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
               Importacion Gmail XML
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-              Conecta una cuenta Gmail y valida lectura basica de correos con
-              adjuntos XML. Esta fase no descarga, no importa y no modifica
-              correos.
+              Conecta Gmail, lista correos con XML y envia sus adjuntos al
+              pipeline documental oficial de OM7 sin modificar correos ni
+              labels.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               <form action={connectGmailXmlAction}>
@@ -79,6 +105,15 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                   Listar correos XML
                 </button>
               </form>
+              <form action={syncGmailXmlAttachmentsAction}>
+                <button
+                  className="om7-btn-primary px-4 py-3 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!connection || !activeContext.activeCompany}
+                  type="submit"
+                >
+                  Sincronizar XML
+                </button>
+              </form>
             </div>
           </div>
 
@@ -94,6 +129,18 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                 {candidates.length}
               </p>
               <p className="mt-1 text-xs text-current/70">correos XML listados</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 px-4 py-3 text-emerald-100">
+              <p className="text-2xl font-semibold tracking-tight">
+                {importedCount}
+              </p>
+              <p className="mt-1 text-xs text-current/70">XML importados</p>
+            </div>
+            <div className="rounded-2xl border border-rose-300/20 bg-rose-300/10 px-4 py-3 text-rose-100">
+              <p className="text-2xl font-semibold tracking-tight">
+                {errorCount}
+              </p>
+              <p className="mt-1 text-xs text-current/70">errores recientes</p>
             </div>
           </div>
         </div>
@@ -159,6 +206,12 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                 {formatDate(connection?.last_list_at ?? null)}
               </span>
             </div>
+            <div className="flex items-center justify-between gap-3">
+              <span>Duplicados recientes</span>
+              <span className="text-right font-medium text-amber-100">
+                {duplicateCount}
+              </span>
+            </div>
           </div>
         </PremiumCard>
 
@@ -168,8 +221,8 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
               Correos con adjuntos XML
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              Vista de lectura basica. Los adjuntos no se descargan ni se
-              importan.
+              La lista no modifica Gmail. La sincronizacion descarga solo XML y
+              los manda al pipeline documental actual.
             </p>
           </div>
 
@@ -228,6 +281,85 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
           </div>
         </PremiumCard>
       </section>
+
+      <PremiumCard className="overflow-hidden p-0">
+        <div className="border-b border-white/[0.08] px-5 py-4">
+          <p className="text-sm font-semibold text-white">Ultimos XML procesados</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Trazabilidad Gmail guardada por adjunto.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[960px] text-left text-sm">
+            <thead className="border-b border-white/[0.08] text-xs uppercase tracking-[0.18em] text-slate-500">
+              <tr>
+                <th className="px-5 py-3">Estado</th>
+                <th className="px-5 py-3">Correo</th>
+                <th className="px-5 py-3">Adjunto</th>
+                <th className="px-5 py-3">Documento OM7</th>
+                <th className="px-5 py-3">Error</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.06]">
+              {recentImports.map((item) => (
+                <tr key={item.id} className="align-top text-slate-300">
+                  <td className="px-5 py-4">
+                    <span className={statusClass(item.import_status)}>
+                      {item.import_status}
+                    </span>
+                  </td>
+                  <td className="px-5 py-4">
+                    <p className="font-medium text-slate-100">
+                      {item.subject || "Sin asunto"}
+                    </p>
+                    <p className="mt-1 max-w-xs truncate text-xs text-slate-500">
+                      {item.from || "Remitente no disponible"}
+                    </p>
+                  </td>
+                  <td className="px-5 py-4">
+                    <p className="font-medium text-cyan-100">
+                      {item.attachment_filename || "documento.xml"}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {item.gmail_attachment_id}
+                    </p>
+                  </td>
+                  <td className="px-5 py-4">
+                    {item.imported_document_id ? (
+                      <Link
+                        className="text-cyan-100 underline decoration-cyan-100/30 underline-offset-4"
+                        href={`/documentos/${item.imported_document_id}`}
+                      >
+                        Ver documento
+                      </Link>
+                    ) : (
+                      <span className="text-slate-500">Sin documento</span>
+                    )}
+                  </td>
+                  <td className="px-5 py-4">
+                    {item.error_message ? (
+                      <p className="max-w-md text-xs leading-5 text-rose-200/85">
+                        {item.error_message}
+                      </p>
+                    ) : (
+                      <span className="text-slate-500">Sin error</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+
+              {recentImports.length === 0 ? (
+                <tr>
+                  <td className="px-5 py-8 text-center text-sm text-slate-500" colSpan={5}>
+                    Todavia no hay XML procesados desde Gmail.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </PremiumCard>
     </ModuleFrame>
   );
 }

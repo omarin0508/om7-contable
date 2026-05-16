@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
+  formatGmailXmlSyncNotice,
   getGmailConnectUrl,
+  syncGmailXmlAttachments,
   testGmailConnection,
 } from "@/lib/gmail-xml-import";
 
@@ -56,4 +58,28 @@ export async function testGmailXmlConnectionAction() {
 
 export async function listGmailXmlMessagesAction() {
   redirect("/gmail-xml?list=xml");
+}
+
+export async function syncGmailXmlAttachmentsAction() {
+  let target = "/gmail-xml?list=xml";
+
+  try {
+    const summary = await syncGmailXmlAttachments();
+    target = redirectWithParam(
+      "/gmail-xml?list=xml",
+      "notice",
+      formatGmailXmlSyncNotice(summary),
+    );
+  } catch (error) {
+    target = redirectWithParam(
+      "/gmail-xml?list=xml",
+      "error",
+      getErrorMessage(error, "No se pudo importar XML desde Gmail."),
+    );
+  }
+
+  revalidatePath("/gmail-xml");
+  revalidatePath("/documentos");
+  revalidatePath("/bandeja");
+  redirect(target);
 }
