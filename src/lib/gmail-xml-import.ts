@@ -5,7 +5,12 @@ import {
 } from "@/lib/document-processing";
 import { assertInternalUser } from "@/lib/permissions";
 import { uploadDocumentContent } from "@/lib/storage";
+import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
+import {
+  createClient as createSupabaseServiceClient,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 
 const GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 
@@ -89,6 +94,14 @@ type GmailMessage = {
   } & GmailMessagePart;
 };
 
+type GmailXmlTraceWrite = ReturnType<typeof getImportTrace> & {
+  organization_id: string;
+  user_id: string;
+  import_status: GmailXmlImportStatus;
+  imported_document_id?: string | null;
+  error_message?: string | null;
+};
+
 export type GmailXmlSyncSummary = {
   totalFound: number;
   imported: number;
@@ -156,6 +169,95 @@ async function getAuthenticatedSupabase() {
   }
 
   return { supabase, user };
+}
+
+async function getGmailTraceSupabase(
+  fallbackSupabase: SupabaseClient,
+): Promise<SupabaseClient> {
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ??
+    process.env.SUPABASE_SERVICE_KEY?.trim();
+  const supabaseEnv = getSupabaseEnv();
+
+  if (!serviceRoleKey || !supabaseEnv) {
+    return fallbackSupabase;
+  }
+
+  return createSupabaseServiceClient(supabaseEnv.supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function logGmailXmlSync(stage: string, context: Record<string, unknown>) {
+  console.info("[OM7 Gmail XML sync]", {
+    stage,
+    ...context,
+  });
+}
+
+function logGmailXmlSyncError(
+  stage: string,
+  context: Record<string, unknown>,
+  error: unknown,
+) {
+  console.error("[OM7 Gmail XML sync error]", {
+    stage,
+    ...context,
+    error: getErrorMessage(error, String(error)),
+  });
+}
+
+async function upsertGmailImportTrace(
+  supabase: SupabaseClient,
+  payload: GmailXmlTraceWrite,
+  stage: string,
+) {
+  const { data, error } = await supabase
+    .from("gmail_xml_imports")
+    .upsert(payload, {
+      onConflict: "organization_id,user_id,gmail_message_id,gmail_attachment_id",
+    })
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    throw new Error(
+      `[${stage}] No se pudo guardar trazabilidad Gmail XML: ${
+        error?.message ?? "sin respuesta de Supabase"
+      }`,
+    );
+  }
+
+  return data.id as string;
+}
+
+async function updateGmailImportTrace(
+  supabase: SupabaseClient,
+  id: string,
+  values: {
+    imported_document_id?: string | null;
+    import_status: GmailXmlImportStatus;
+    error_message?: string | null;
+  },
+  stage: string,
+) {
+  const { error } = await supabase
+    .from("gmail_xml_imports")
+    .update(values)
+    .eq("id", id);
+
+  if (error) {
+    throw new Error(
+      `[${stage}] No se pudo actualizar trazabilidad Gmail XML: ${error.message}`,
+    );
+  }
 }
 
 async function gmailFetch<T>(
@@ -731,6 +833,7 @@ export async function listGmailXmlMessages(limit = 10): Promise<GmailXmlCandidat
 export async function syncGmailXmlAttachments(limit = 10): Promise<GmailXmlSyncSummary> {
   const { activeContext, connection } = await getActiveConnection();
   const { supabase, user } = await getAuthenticatedSupabase();
+  const traceSupabase = await getGmailTraceSupabase(supabase);
 
   if (!activeContext.organization || !activeContext.activeCompany) {
     throw new Error("Selecciona una empresa activa antes de importar XML desde Gmail.");
@@ -748,15 +851,31 @@ export async function syncGmailXmlAttachments(limit = 10): Promise<GmailXmlSyncS
     omitted: 0,
     errors: 0,
   };
+  const baseLogContext = {
+    organization_id: activeContext.organization.id,
+    user_id: user.id,
+  };
+
+  logGmailXmlSync("attachments_found", {
+    ...baseLogContext,
+    count: summary.totalFound,
+  });
 
   for (const { message, attachments } of gmailMessages) {
     for (const attachment of uniqueAttachments(attachments)) {
       const trace = getImportTrace(message, attachment);
+      const logContext = {
+        ...baseLogContext,
+        gmail_message_id: trace.gmail_message_id,
+        gmail_attachment_id: trace.gmail_attachment_id,
+        filename: trace.attachment_filename,
+      };
 
       try {
         assertXmlAttachment(attachment);
+        logGmailXmlSync("attachment_detected", logContext);
 
-        const { data: existing, error: existingError } = await supabase
+        const { data: existing, error: existingError } = await traceSupabase
           .from("gmail_xml_imports")
           .select("id, import_status")
           .eq("organization_id", activeContext.organization.id)
@@ -770,6 +889,10 @@ export async function syncGmailXmlAttachments(limit = 10): Promise<GmailXmlSyncS
         }
 
         if (existing && isProcessedStatus(existing.import_status)) {
+          logGmailXmlSync("attachment_already_processed", {
+            ...logContext,
+            import_status: existing.import_status,
+          });
           if (existing.import_status === "omitido") {
             summary.omitted += 1;
           } else {
@@ -778,29 +901,22 @@ export async function syncGmailXmlAttachments(limit = 10): Promise<GmailXmlSyncS
           continue;
         }
 
-        const { data: importRow, error: upsertError } = await supabase
-          .from("gmail_xml_imports")
-          .upsert(
-            {
-              ...trace,
-              organization_id: activeContext.organization.id,
-              user_id: user.id,
-              import_status: "pendiente",
-              error_message: null,
-            },
-            {
-              onConflict:
-                "organization_id,user_id,gmail_message_id,gmail_attachment_id",
-            },
-          )
-          .select("id")
-          .single();
-
-        if (upsertError || !importRow) {
-          throw new Error(upsertError?.message ?? "No se pudo registrar la traza Gmail.");
-        }
+        const importRowId = await upsertGmailImportTrace(
+          traceSupabase,
+          {
+            ...trace,
+            organization_id: activeContext.organization.id,
+            user_id: user.id,
+            import_status: "pendiente",
+            imported_document_id: null,
+            error_message: null,
+          },
+          "trace_pending",
+        );
+        logGmailXmlSync("trace_pending", logContext);
 
         try {
+          logGmailXmlSync("download_attachment", logContext);
           const content = await downloadGmailAttachment(
             accessToken,
             trace.gmail_message_id,
@@ -813,23 +929,26 @@ export async function syncGmailXmlAttachments(limit = 10): Promise<GmailXmlSyncS
           );
 
           if (!classification.importable) {
-            const { error: omittedError } = await supabase
-              .from("gmail_xml_imports")
-              .update({
+            await updateGmailImportTrace(
+              traceSupabase,
+              importRowId,
+              {
                 imported_document_id: null,
                 import_status: "omitido",
                 error_message: classification.reason,
-              })
-              .eq("id", importRow.id);
-
-            if (omittedError) {
-              throw new Error(omittedError.message);
-            }
+              },
+              "trace_omitted",
+            );
+            logGmailXmlSync("attachment_omitted", {
+              ...logContext,
+              reason: classification.reason,
+            });
 
             summary.omitted += 1;
             continue;
           }
 
+          logGmailXmlSync("upload_pipeline", logContext);
           const result = await uploadDocumentContent({
             content,
             filename: trace.attachment_filename,
@@ -863,18 +982,21 @@ export async function syncGmailXmlAttachments(limit = 10): Promise<GmailXmlSyncS
               ? extraction?.error_message ?? "No se pudo procesar el XML."
               : null;
 
-          const { error: updateError } = await supabase
-            .from("gmail_xml_imports")
-            .update({
+          await updateGmailImportTrace(
+            traceSupabase,
+            importRowId,
+            {
               imported_document_id: result.document.id,
               import_status: status,
               error_message: errorMessage,
-            })
-            .eq("id", importRow.id);
-
-          if (updateError) {
-            throw new Error(updateError.message);
-          }
+            },
+            "trace_import_result",
+          );
+          logGmailXmlSync("trace_import_result", {
+            ...logContext,
+            import_status: status,
+            imported_document_id: result.document.id,
+          });
 
           if (status === "procesado") {
             summary.imported += 1;
@@ -884,31 +1006,35 @@ export async function syncGmailXmlAttachments(limit = 10): Promise<GmailXmlSyncS
             summary.errors += 1;
           }
         } catch (error) {
+          const errorMessage = getErrorMessage(error, "No se pudo importar el XML.");
+          logGmailXmlSyncError("attachment_failed", logContext, error);
           summary.errors += 1;
-          await supabase
-            .from("gmail_xml_imports")
-            .update({
+          await updateGmailImportTrace(
+            traceSupabase,
+            importRowId,
+            {
               import_status: "error",
-              error_message:
-                error instanceof Error ? error.message : "No se pudo importar el XML.",
-            })
-            .eq("id", importRow.id);
+              error_message: errorMessage,
+            },
+            "trace_error",
+          );
         }
       } catch (error) {
+        const errorMessage = getErrorMessage(error, "No se pudo preparar el XML.");
+        logGmailXmlSyncError("attachment_prepare_failed", logContext, error);
         summary.errors += 1;
-        await supabase.from("gmail_xml_imports").upsert(
+
+        await upsertGmailImportTrace(
+          traceSupabase,
           {
             ...trace,
             organization_id: activeContext.organization.id,
             user_id: user.id,
             import_status: "error",
-            error_message:
-              error instanceof Error ? error.message : "No se pudo preparar el XML.",
+            imported_document_id: null,
+            error_message: errorMessage,
           },
-          {
-            onConflict:
-              "organization_id,user_id,gmail_message_id,gmail_attachment_id",
-          },
+          "trace_prepare_error",
         );
       }
     }
