@@ -65,6 +65,17 @@ export type UploadDocumentResult = {
   warningCode?: "xml_processing_failed";
 };
 
+export type UploadDocumentContentInput = {
+  content: Uint8Array;
+  filename: string;
+  mimeType?: string;
+  relatedType?: "invoice" | "purchase" | "general" | "client_upload";
+  relatedId?: string;
+  companyId?: string;
+  documentType?: string;
+  metadata?: Record<string, unknown>;
+};
+
 export type DocumentViewerData = {
   document: DocumentRecord;
   signedUrl: string | null;
@@ -136,6 +147,21 @@ function isXmlFile(file: File) {
 
 function isAllowedFile(file: File) {
   return ALLOWED_MIME_TYPES.has(file.type) || isXmlFile(file);
+}
+
+function isXmlDocumentPayload(filename: string, mimeType?: string | null) {
+  return (
+    filename.toLowerCase().endsWith(".xml") ||
+    mimeType === "application/xml" ||
+    mimeType === "text/xml"
+  );
+}
+
+function isAllowedDocumentPayload(filename: string, mimeType?: string | null) {
+  return (
+    Boolean(mimeType && ALLOWED_MIME_TYPES.has(mimeType)) ||
+    isXmlDocumentPayload(filename, mimeType)
+  );
 }
 
 async function validateRelatedRecord(
@@ -212,23 +238,79 @@ async function getUploadContext(companyId?: string) {
 }
 
 export async function uploadDocument(input: UploadDocumentInput): Promise<UploadDocumentResult> {
-  const { supabase, user } = await getAuthenticatedSupabase();
-  const { organization, activeCompany } = await getUploadContext(input.companyId);
-  const baseLogContext = {
-    userId: user.id,
-    companyId: activeCompany.id,
-    organizationId: organization.id,
-    mimeType: input.file?.type,
-    filename: input.file?.name,
-  };
-
   if (!input.file || input.file.size === 0) {
-    logUploadFailure("file_validation", baseLogContext, "Archivo vacio.");
+    logUploadFailure(
+      "file_validation",
+      {
+        mimeType: input.file?.type,
+        filename: input.file?.name,
+      },
+      "Archivo vacio.",
+    );
     throw new Error("Selecciona un archivo valido.");
   }
 
   if (!isAllowedFile(input.file)) {
-    logUploadFailure("file_type_validation", baseLogContext, input.file.type);
+    logUploadFailure(
+      "file_type_validation",
+      {
+        mimeType: input.file.type,
+        filename: input.file.name,
+      },
+      input.file.type,
+    );
+    throw new Error("Solo se permiten archivos PDF, XML o imagenes.");
+  }
+
+  let arrayBuffer: ArrayBuffer;
+  try {
+    arrayBuffer = await input.file.arrayBuffer();
+  } catch (error) {
+    logUploadFailure(
+      "file_read",
+      {
+        mimeType: input.file.type,
+        filename: input.file.name,
+      },
+      error,
+    );
+    throw new Error("No se pudo leer el archivo seleccionado.");
+  }
+
+  return uploadDocumentContent({
+    content: new Uint8Array(arrayBuffer),
+    filename: input.file.name,
+    mimeType: input.file.type || (isXmlFile(input.file) ? "application/xml" : undefined),
+    relatedType: input.relatedType,
+    relatedId: input.relatedId,
+    companyId: input.companyId,
+    documentType: input.documentType,
+    metadata: input.metadata,
+  });
+}
+
+export async function uploadDocumentContent(
+  input: UploadDocumentContentInput,
+): Promise<UploadDocumentResult> {
+  const { supabase, user } = await getAuthenticatedSupabase();
+  const { organization, activeCompany } = await getUploadContext(input.companyId);
+  const filenameInput = input.filename || "documento";
+  const mimeTypeInput = input.mimeType || undefined;
+  const baseLogContext = {
+    userId: user.id,
+    companyId: activeCompany.id,
+    organizationId: organization.id,
+    mimeType: mimeTypeInput,
+    filename: filenameInput,
+  };
+
+  if (!input.content || input.content.byteLength === 0) {
+    logUploadFailure("file_validation", baseLogContext, "Archivo vacio.");
+    throw new Error("Selecciona un archivo valido.");
+  }
+
+  if (!isAllowedDocumentPayload(filenameInput, mimeTypeInput)) {
+    logUploadFailure("file_type_validation", baseLogContext, mimeTypeInput);
     throw new Error("Solo se permiten archivos PDF, XML o imagenes.");
   }
 
@@ -242,7 +324,7 @@ export async function uploadDocument(input: UploadDocumentInput): Promise<Upload
     activeCompany.id,
   );
 
-  const filename = sanitizeFilename(input.file.name);
+  const filename = sanitizeFilename(filenameInput);
   const storagePath = [
     "organizations",
     organization.id,
@@ -252,16 +334,9 @@ export async function uploadDocument(input: UploadDocumentInput): Promise<Upload
     `${crypto.randomUUID()}-${filename}`,
   ].join("/");
 
-  let arrayBuffer: ArrayBuffer;
-  try {
-    arrayBuffer = await input.file.arrayBuffer();
-  } catch (error) {
-    logUploadFailure("file_read", baseLogContext, error);
-    throw new Error("No se pudo leer el archivo seleccionado.");
-  }
-  const fileBuffer = new Uint8Array(arrayBuffer);
-  const xmlFile = isXmlFile(input.file);
-  const contentType = input.file.type || (xmlFile ? "application/xml" : undefined);
+  const fileBuffer = input.content;
+  const xmlFile = isXmlDocumentPayload(filenameInput, mimeTypeInput);
+  const contentType = mimeTypeInput || (xmlFile ? "application/xml" : undefined);
   const { error: uploadError } = await supabase.storage
     .from(DOCUMENTS_BUCKET)
     .upload(storagePath, fileBuffer, {
@@ -282,10 +357,10 @@ export async function uploadDocument(input: UploadDocumentInput): Promise<Upload
       user_id: user.id,
       related_type: relatedType,
       related_id: relatedId ?? null,
-      original_filename: input.file.name,
+      original_filename: filenameInput,
       storage_path: storagePath,
       mime_type: contentType,
-      size_bytes: input.file.size,
+      size_bytes: input.content.byteLength,
       document_type: input.documentType || (xmlFile ? "factura" : "otro"),
       processing_status: "uploaded",
       metadata: {
@@ -306,7 +381,7 @@ export async function uploadDocument(input: UploadDocumentInput): Promise<Upload
   let warningCode: UploadDocumentResult["warningCode"];
 
   if (xmlFile) {
-    const xmlText = new TextDecoder("utf-8").decode(arrayBuffer);
+    const xmlText = new TextDecoder("utf-8").decode(fileBuffer);
 
     try {
       const extractedData = parseCostaRicaInvoiceXml(xmlText);
