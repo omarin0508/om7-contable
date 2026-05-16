@@ -5,6 +5,7 @@ import {
   syncGmailXmlAttachmentsAction,
   testGmailXmlConnectionAction,
 } from "@/app/(platform)/gmail-xml/actions";
+import { GmailSubmitButton } from "@/components/gmail/gmail-submit-button";
 import { ModuleFrame } from "@/components/modules/shared";
 import { PremiumCard } from "@/components/ui/premium-card";
 import { getGmailXmlDashboard } from "@/lib/gmail-xml-import";
@@ -64,6 +65,15 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
   const errorCount = recentImports.filter(
     (item) => item.import_status === "error",
   ).length;
+  const syncDisabledReason = !connection
+    ? "Conecta Gmail antes de sincronizar XML."
+    : !activeContext.activeCompany
+      ? "Selecciona una empresa activa antes de sincronizar XML."
+      : null;
+  const canSync = !syncDisabledReason;
+  const latestError = recentImports.find(
+    (item) => item.import_status === "error" && item.error_message,
+  );
 
   return (
     <ModuleFrame>
@@ -83,38 +93,51 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               <form action={connectGmailXmlAction}>
-                <button className="om7-btn-primary px-4 py-3" type="submit">
+                <GmailSubmitButton
+                  className="om7-btn-primary px-4 py-3 disabled:cursor-not-allowed disabled:opacity-50"
+                  pendingLabel={connection ? "Reconectando..." : "Conectando..."}
+                >
                   {connection ? "Reconectar Gmail" : "Conectar Gmail"}
-                </button>
+                </GmailSubmitButton>
               </form>
               <form action={testGmailXmlConnectionAction}>
-                <button
+                <GmailSubmitButton
                   className="om7-btn-secondary px-4 py-3 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!connection}
-                  type="submit"
+                  pendingLabel="Probando..."
                 >
                   Probar conexion
-                </button>
+                </GmailSubmitButton>
               </form>
               <form action={listGmailXmlMessagesAction}>
-                <button
+                <GmailSubmitButton
                   className="om7-btn-ghost px-4 py-3 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!connection}
-                  type="submit"
+                  pendingLabel="Listando..."
                 >
                   Listar correos XML
-                </button>
+                </GmailSubmitButton>
               </form>
               <form action={syncGmailXmlAttachmentsAction}>
-                <button
+                <GmailSubmitButton
                   className="om7-btn-primary px-4 py-3 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={!connection || !activeContext.activeCompany}
-                  type="submit"
+                  disabled={!canSync}
+                  pendingLabel="Sincronizando XML..."
                 >
                   Sincronizar XML
-                </button>
+                </GmailSubmitButton>
               </form>
             </div>
+            {syncDisabledReason ? (
+              <p className="mt-3 text-sm text-amber-200/85">
+                {syncDisabledReason}
+              </p>
+            ) : (
+              <p className="mt-3 text-sm text-cyan-100/75">
+                Listo para descargar adjuntos XML y enviarlos al pipeline
+                documental.
+              </p>
+            )}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -155,6 +178,17 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
       {error ? (
         <PremiumCard className="border-rose-300/15 bg-rose-300/10 p-4">
           <p className="text-sm font-medium text-rose-100">{error}</p>
+        </PremiumCard>
+      ) : null}
+
+      {latestError?.error_message ? (
+        <PremiumCard className="border-rose-300/15 bg-rose-300/10 p-4">
+          <p className="text-sm font-semibold text-rose-100">
+            Ultimo error de sincronizacion
+          </p>
+          <p className="mt-2 text-sm leading-6 text-rose-100/80">
+            {latestError.error_message}
+          </p>
         </PremiumCard>
       ) : null}
 

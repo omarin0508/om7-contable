@@ -13,6 +13,13 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function logGmailXmlActionError(action: string, error: unknown) {
+  console.error("[OM7 Gmail XML action error]", {
+    action,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 function redirectWithParam(path: string, key: "error" | "notice", message: string) {
   const separator = path.includes("?") ? "&" : "?";
   return `${path}${separator}${key}=${encodeURIComponent(message)}`;
@@ -24,6 +31,7 @@ export async function connectGmailXmlAction() {
   try {
     target = await getGmailConnectUrl();
   } catch (error) {
+    logGmailXmlActionError("connectGmailXmlAction", error);
     target = redirectWithParam(
       "/gmail-xml",
       "error",
@@ -45,6 +53,7 @@ export async function testGmailXmlConnectionAction() {
       `Conexion Gmail correcta para ${email}.`,
     );
   } catch (error) {
+    logGmailXmlActionError("testGmailXmlConnectionAction", error);
     target = redirectWithParam(
       "/gmail-xml",
       "error",
@@ -71,6 +80,7 @@ export async function syncGmailXmlAttachmentsAction() {
       formatGmailXmlSyncNotice(summary),
     );
   } catch (error) {
+    logGmailXmlActionError("syncGmailXmlAttachmentsAction", error);
     target = redirectWithParam(
       "/gmail-xml?list=xml",
       "error",
