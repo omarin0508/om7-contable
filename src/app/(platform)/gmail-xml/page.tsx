@@ -8,7 +8,10 @@ import {
 import { GmailSubmitButton } from "@/components/gmail/gmail-submit-button";
 import { ModuleFrame } from "@/components/modules/shared";
 import { PremiumCard } from "@/components/ui/premium-card";
-import { getGmailXmlDashboard } from "@/lib/gmail-xml-import";
+import {
+  getGmailXmlDashboard,
+  normalizeGmailXmlLimit,
+} from "@/lib/gmail-xml-import";
 
 type GmailXmlPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -58,8 +61,19 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
   const notice = getParam(params, "notice");
   const error = getParam(params, "error");
   const shouldListMessages = getParam(params, "list") === "xml";
-  const { activeContext, connection, candidates, recentImports } =
-    await getGmailXmlDashboard(shouldListMessages);
+  const limit = normalizeGmailXmlLimit(getParam(params, "limit"));
+  const {
+    activeContext,
+    connection,
+    candidates,
+    recentImports,
+    lastSyncAt,
+    listLimit,
+    listedMessages,
+    listedXmlAttachments,
+    hasMoreResults,
+    gmailQuery,
+  } = await getGmailXmlDashboard(shouldListMessages, limit);
   const importedCount = recentImports.filter(
     (item) => item.import_status === "procesado",
   ).length;
@@ -95,8 +109,8 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
               Conecta Gmail, lista correos con XML y envia sus adjuntos al
-              pipeline documental oficial de OM7 sin modificar correos ni
-              labels.
+              pipeline documental oficial de OM7 con trazabilidad y labels
+              operativos.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               <form action={connectGmailXmlAction}>
@@ -117,6 +131,7 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                 </GmailSubmitButton>
               </form>
               <form action={listGmailXmlMessagesAction}>
+                <input name="limit" type="hidden" value={listLimit} />
                 <GmailSubmitButton
                   className="om7-btn-ghost px-4 py-3 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!connection}
@@ -126,6 +141,7 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                 </GmailSubmitButton>
               </form>
               <form action={syncGmailXmlAttachmentsAction}>
+                <input name="limit" type="hidden" value={listLimit} />
                 <GmailSubmitButton
                   className="om7-btn-primary px-4 py-3 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!canSync}
@@ -134,6 +150,22 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                   Sincronizar XML
                 </GmailSubmitButton>
               </form>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+              <span className="font-medium text-slate-300">Limite por sync</span>
+              {[20, 50, 100].map((option) => (
+                <Link
+                  className={
+                    option === listLimit
+                      ? "om7-chip om7-chip-cyan"
+                      : "om7-chip"
+                  }
+                  href={`/gmail-xml?list=xml&limit=${option}`}
+                  key={option}
+                >
+                  {option}
+                </Link>
+              ))}
             </div>
             {syncDisabledReason ? (
               <p className="mt-3 text-sm text-amber-200/85">
@@ -160,6 +192,12 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
               </p>
               <p className="mt-1 text-xs text-current/70">correos XML listados</p>
             </div>
+            <div className="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-cyan-100">
+              <p className="text-2xl font-semibold tracking-tight">
+                {listedXmlAttachments}
+              </p>
+              <p className="mt-1 text-xs text-current/70">XML en esta pagina</p>
+            </div>
             <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 px-4 py-3 text-emerald-100">
               <p className="text-2xl font-semibold tracking-tight">
                 {importedCount}
@@ -177,6 +215,12 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                 {omittedCount}
               </p>
               <p className="mt-1 text-xs text-current/70">omitidos</p>
+            </div>
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-slate-100 sm:col-span-2">
+              <p className="text-base font-semibold tracking-tight">
+                {formatDate(lastSyncAt)}
+              </p>
+              <p className="mt-1 text-xs text-current/70">ultima sincronizacion</p>
             </div>
           </div>
         </div>
@@ -254,6 +298,46 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
               </span>
             </div>
             <div className="flex items-center justify-between gap-3">
+              <span>Ultima sincronizacion</span>
+              <span className="text-right font-medium text-slate-100">
+                {formatDate(connection?.last_sync_at ?? null)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span>Autosync</span>
+              <span
+                className={
+                  connection?.auto_sync_enabled
+                    ? "om7-chip om7-chip-emerald"
+                    : "om7-chip"
+                }
+              >
+                {connection?.auto_sync_enabled ? "Activo" : "Pendiente"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span>Estado autosync</span>
+              <span
+                className={
+                  connection?.last_sync_status === "error"
+                    ? "om7-chip om7-chip-rose"
+                    : connection?.last_sync_status === "ok"
+                      ? "om7-chip om7-chip-emerald"
+                      : "om7-chip"
+                }
+              >
+                {connection?.last_sync_status ?? "Sin ejecutar"}
+              </span>
+            </div>
+            {connection?.last_sync_error ? (
+              <div className="rounded-xl border border-rose-300/15 bg-rose-300/10 p-3 text-rose-100">
+                <p className="text-xs font-semibold">Error autosync</p>
+                <p className="mt-1 text-xs leading-5 text-rose-100/80">
+                  {connection.last_sync_error}
+                </p>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between gap-3">
               <span>Duplicados recientes</span>
               <span className="text-right font-medium text-amber-100">
                 {duplicateCount}
@@ -270,6 +354,23 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
             <p className="mt-1 text-xs text-slate-500">
               La lista no modifica Gmail. La sincronizacion descarga solo XML y
               los manda al pipeline documental actual.
+            </p>
+            <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-4">
+              <span className="om7-chip">correos revisados: {listedMessages}</span>
+              <span className="om7-chip">XML encontrados: {listedXmlAttachments}</span>
+              <span className={hasMoreResults ? "om7-chip om7-chip-amber" : "om7-chip"}>
+                {hasMoreResults ? "hay mas resultados" : "sin pagina pendiente"}
+              </span>
+              <span className="om7-chip">limite: {listLimit}</span>
+            </div>
+            {gmailQuery ? (
+              <p className="mt-2 text-xs text-slate-500">
+                Busqueda Gmail: {gmailQuery}
+              </p>
+            ) : null}
+            <p className="mt-2 text-xs text-slate-500">
+              ZIP u otros adjuntos comprimidos no se importan todavia; esta
+              vista solo procesa adjuntos con nombre .xml.
             </p>
           </div>
 

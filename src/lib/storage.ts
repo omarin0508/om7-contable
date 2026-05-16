@@ -1,12 +1,16 @@
 import { getActiveContext } from "@/lib/active-context";
 import { parseCostaRicaInvoiceXml } from "@/lib/costa-rica-invoice-xml";
 import {
-  createDocumentExtraction,
   selectBestDocumentExtraction,
   type DocumentExtraction,
 } from "@/lib/document-processing";
 import { assertClientAccessToCompany, getCurrentUserRole } from "@/lib/permissions";
+import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
+import {
+  createClient as createSupabaseServiceClient,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 
 const DOCUMENTS_BUCKET = "om7-documents";
 const ALLOWED_MIME_TYPES = new Set([
@@ -76,6 +80,11 @@ export type UploadDocumentContentInput = {
   metadata?: Record<string, unknown>;
 };
 
+export type UploadDocumentSystemContext = {
+  userId: string;
+  companyId: string;
+};
+
 export type DocumentViewerData = {
   document: DocumentRecord;
   signedUrl: string | null;
@@ -126,6 +135,24 @@ async function getAuthenticatedSupabase() {
   return { supabase, user };
 }
 
+function createServiceSupabaseClient() {
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ??
+    process.env.SUPABASE_SERVICE_KEY?.trim();
+  const supabaseEnv = getSupabaseEnv();
+
+  if (!serviceRoleKey || !supabaseEnv) {
+    throw new Error("Configura SUPABASE_SERVICE_ROLE_KEY para procesos automaticos.");
+  }
+
+  return createSupabaseServiceClient(supabaseEnv.supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
 function sanitizeFilename(filename: string) {
   const cleanName = filename
     .normalize("NFD")
@@ -164,7 +191,8 @@ function isAllowedDocumentPayload(filename: string, mimeType?: string | null) {
   );
 }
 
-async function validateRelatedRecord(
+async function validateRelatedRecordWithClient(
+  supabase: SupabaseClient,
   relatedType: string,
   relatedId: string | undefined,
   organizationId: string,
@@ -174,7 +202,6 @@ async function validateRelatedRecord(
     return;
   }
 
-  const { supabase } = await getAuthenticatedSupabase();
   const table = relatedType === "invoice" ? "invoices" : "purchases";
   const { data, error } = await supabase
     .from(table)
@@ -237,6 +264,30 @@ async function getUploadContext(companyId?: string) {
   };
 }
 
+async function getSystemUploadContext(
+  supabase: SupabaseClient,
+  companyId: string,
+) {
+  const { data: company, error } = await supabase
+    .from("companies")
+    .select("*")
+    .eq("id", companyId)
+    .single();
+
+  if (error || !company) {
+    logUploadFailure("company_lookup", { companyId }, error);
+    throw new Error("No tiene una empresa asignada para subir documentos.");
+  }
+
+  return {
+    organization: {
+      id: company.organization_id,
+      base_currency: company.base_currency,
+    },
+    activeCompany: company,
+  };
+}
+
 export async function uploadDocument(input: UploadDocumentInput): Promise<UploadDocumentResult> {
   if (!input.file || input.file.size === 0) {
     logUploadFailure(
@@ -294,10 +345,47 @@ export async function uploadDocumentContent(
 ): Promise<UploadDocumentResult> {
   const { supabase, user } = await getAuthenticatedSupabase();
   const { organization, activeCompany } = await getUploadContext(input.companyId);
+
+  return uploadDocumentContentWithClient(input, {
+    supabase,
+    userId: user.id,
+    organization,
+    activeCompany,
+  });
+}
+
+export async function uploadDocumentContentForSystem(
+  input: UploadDocumentContentInput,
+  context: UploadDocumentSystemContext,
+): Promise<UploadDocumentResult> {
+  const supabase = createServiceSupabaseClient();
+  const { organization, activeCompany } = await getSystemUploadContext(
+    supabase,
+    context.companyId,
+  );
+
+  return uploadDocumentContentWithClient(input, {
+    supabase,
+    userId: context.userId,
+    organization,
+    activeCompany,
+  });
+}
+
+async function uploadDocumentContentWithClient(
+  input: UploadDocumentContentInput,
+  context: {
+    supabase: SupabaseClient;
+    userId: string;
+    organization: { id: string; base_currency?: string | null };
+    activeCompany: { id: string };
+  },
+): Promise<UploadDocumentResult> {
+  const { supabase, userId, organization, activeCompany } = context;
   const filenameInput = input.filename || "documento";
   const mimeTypeInput = input.mimeType || undefined;
   const baseLogContext = {
-    userId: user.id,
+    userId,
     companyId: activeCompany.id,
     organizationId: organization.id,
     mimeType: mimeTypeInput,
@@ -317,7 +405,8 @@ export async function uploadDocumentContent(
   const relatedType = input.relatedType ?? "general";
   const relatedId = input.relatedId || undefined;
 
-  await validateRelatedRecord(
+  await validateRelatedRecordWithClient(
+    supabase,
     relatedType,
     relatedId,
     organization.id,
@@ -354,7 +443,7 @@ export async function uploadDocumentContent(
     .insert({
       organization_id: organization.id,
       company_id: activeCompany.id,
-      user_id: user.id,
+      user_id: userId,
       related_type: relatedType,
       related_id: relatedId ?? null,
       original_filename: filenameInput,
@@ -386,27 +475,72 @@ export async function uploadDocumentContent(
     try {
       const extractedData = parseCostaRicaInvoiceXml(xmlText);
 
-      await createDocumentExtraction(document.id, {
-        provider: "xml-parser-cr",
-        status: "processed",
-        rawText: xmlText,
-        extractedData,
-        confidence: 1,
-      });
+      const { error: extractionError } = await supabase
+        .from("document_extractions")
+        .insert({
+          organization_id: document.organization_id,
+          company_id: document.company_id,
+          document_id: document.id,
+          user_id: userId,
+          extraction_provider: "xml-parser-cr",
+          extraction_status: "processed",
+          raw_text: xmlText,
+          extracted_data: extractedData,
+          confidence: 1,
+          error_message: null,
+          processed_at: new Date().toISOString(),
+        });
+
+      if (extractionError) {
+        throw extractionError;
+      }
+
+      const { error: documentProcessingError } = await supabase
+        .from("documents")
+        .update({ processing_status: "processed" })
+        .eq("id", document.id)
+        .eq("organization_id", document.organization_id)
+        .eq("company_id", document.company_id);
+
+      if (documentProcessingError) {
+        throw documentProcessingError;
+      }
     } catch (error) {
       logUploadFailure("xml_processing", baseLogContext, error);
       warningCode = "xml_processing_failed";
 
       try {
-        await createDocumentExtraction(document.id, {
-          provider: "xml-parser-cr",
-          status: "error",
-          rawText: xmlText,
-          extractedData: {},
-          confidence: 0,
-          errorMessage:
-            error instanceof Error ? error.message : "No se pudo procesar el XML.",
-        });
+        const { error: extractionError } = await supabase
+          .from("document_extractions")
+          .insert({
+            organization_id: document.organization_id,
+            company_id: document.company_id,
+            document_id: document.id,
+            user_id: userId,
+            extraction_provider: "xml-parser-cr",
+            extraction_status: "error",
+            raw_text: xmlText,
+            extracted_data: {},
+            confidence: 0,
+            error_message:
+              error instanceof Error ? error.message : "No se pudo procesar el XML.",
+            processed_at: new Date().toISOString(),
+          });
+
+        if (extractionError) {
+          throw extractionError;
+        }
+
+        const { error: documentProcessingError } = await supabase
+          .from("documents")
+          .update({ processing_status: "error" })
+          .eq("id", document.id)
+          .eq("organization_id", document.organization_id)
+          .eq("company_id", document.company_id);
+
+        if (documentProcessingError) {
+          throw documentProcessingError;
+        }
       } catch (extractionError) {
         logUploadFailure("document_extraction_insert", baseLogContext, extractionError);
         throw new Error("El XML se subió, pero no se pudo procesar.");

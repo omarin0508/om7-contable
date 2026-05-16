@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import {
   formatGmailXmlSyncNotice,
   getGmailConnectUrl,
+  normalizeGmailXmlLimit,
   syncGmailXmlAttachments,
   testGmailConnection,
 } from "@/lib/gmail-xml-import";
@@ -65,24 +66,31 @@ export async function testGmailXmlConnectionAction() {
   redirect(target);
 }
 
-export async function listGmailXmlMessagesAction() {
-  redirect("/gmail-xml?list=xml");
+function getFormLimit(formData?: FormData) {
+  return normalizeGmailXmlLimit(formData?.get("limit"));
 }
 
-export async function syncGmailXmlAttachmentsAction() {
-  let target = "/gmail-xml?list=xml";
+export async function listGmailXmlMessagesAction(formData?: FormData) {
+  const limit = getFormLimit(formData);
+
+  redirect(`/gmail-xml?list=xml&limit=${limit}`);
+}
+
+export async function syncGmailXmlAttachmentsAction(formData?: FormData) {
+  const limit = getFormLimit(formData);
+  let target = `/gmail-xml?list=xml&limit=${limit}`;
 
   try {
-    const summary = await syncGmailXmlAttachments();
+    const summary = await syncGmailXmlAttachments(limit);
     target = redirectWithParam(
-      "/gmail-xml?list=xml",
+      `/gmail-xml?list=xml&limit=${limit}`,
       "notice",
       formatGmailXmlSyncNotice(summary),
     );
   } catch (error) {
     logGmailXmlActionError("syncGmailXmlAttachmentsAction", error);
     target = redirectWithParam(
-      "/gmail-xml?list=xml",
+      `/gmail-xml?list=xml&limit=${limit}`,
       "error",
       getErrorMessage(error, "No se pudo importar XML desde Gmail."),
     );

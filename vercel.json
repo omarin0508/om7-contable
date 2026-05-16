@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/gmail-xml?limit=50",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}
