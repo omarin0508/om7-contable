@@ -21,7 +21,7 @@ create table if not exists public.gmail_xml_imports (
   updated_at timestamptz default now(),
   constraint gmail_xml_imports_source_check check (source = 'gmail'),
   constraint gmail_xml_imports_status_check
-    check (import_status in ('pendiente', 'procesado', 'duplicado', 'error')),
+    check (import_status in ('pendiente', 'procesado', 'duplicado', 'omitido', 'error')),
   constraint gmail_xml_imports_unique_attachment
     unique (
       organization_id,
@@ -64,6 +64,13 @@ add column if not exists error_message text;
 alter table public.gmail_xml_imports
 add column if not exists updated_at timestamptz default now();
 
+alter table public.gmail_xml_imports
+drop constraint if exists gmail_xml_imports_status_check;
+
+alter table public.gmail_xml_imports
+add constraint gmail_xml_imports_status_check
+check (import_status in ('pendiente', 'procesado', 'duplicado', 'omitido', 'error'));
+
 do $$
 begin
   if not exists (
@@ -91,15 +98,6 @@ begin
       check (source = 'gmail');
   end if;
 
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'gmail_xml_imports_status_check'
-  ) then
-    alter table public.gmail_xml_imports
-    add constraint gmail_xml_imports_status_check
-      check (import_status in ('pendiente', 'procesado', 'duplicado', 'error'));
-  end if;
 end;
 $$;
 

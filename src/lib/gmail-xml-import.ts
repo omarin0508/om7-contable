@@ -41,6 +41,7 @@ export type GmailXmlImportStatus =
   | "pendiente"
   | "procesado"
   | "duplicado"
+  | "omitido"
   | "error";
 
 export type GmailXmlImportRecord = {
@@ -92,8 +93,24 @@ export type GmailXmlSyncSummary = {
   totalFound: number;
   imported: number;
   duplicates: number;
+  omitted: number;
   errors: number;
 };
+
+const TRIBUTARY_DOCUMENT_TAGS = [
+  "ComprobanteElectronico",
+  "FacturaElectronica",
+  "TiqueteElectronico",
+  "NotaCreditoElectronica",
+  "NotaDebitoElectronica",
+];
+
+const HACIENDA_RESPONSE_TAGS = [
+  "MensajeHacienda",
+  "MensajeReceptor",
+  "RespuestaHacienda",
+  "RespuestaComprobante",
+];
 
 function getGmailEnv() {
   const clientId = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID;
@@ -215,7 +232,66 @@ function normalizeText(value: unknown) {
 }
 
 function isProcessedStatus(status: unknown) {
-  return ["procesado", "duplicado"].includes(String(status));
+  return ["procesado", "duplicado", "omitido"].includes(String(status));
+}
+
+function stripNamespaces(xmlText: string) {
+  return xmlText
+    .replace(/<\/?[a-zA-Z0-9_-]+:/g, (match) => match.replace(/([</])[^:]+:/, "$1"))
+    .replace(/\s+xmlns(:[a-zA-Z0-9_-]+)?="[^"]*"/g, "");
+}
+
+function getXmlRootName(xmlText: string) {
+  const xml = stripNamespaces(xmlText).replace(/^\uFEFF/, "").trim();
+  const rootMatch = xml.match(/^<\?xml[\s\S]*?\?>\s*<([A-Za-z0-9_-]+)(?:\s|>)/i)
+    ?? xml.match(/^<([A-Za-z0-9_-]+)(?:\s|>)/i);
+
+  return rootMatch?.[1] ?? "";
+}
+
+function hasXmlTag(xmlText: string, tagName: string) {
+  return new RegExp(`<(?:[A-Za-z0-9_-]+:)?${tagName}(?:\\s|>)`, "i").test(xmlText);
+}
+
+function isHaciendaResponseFilename(filename: string) {
+  const cleanFilename = filename.toLowerCase();
+
+  return (
+    cleanFilename.includes("_respuesta") ||
+    cleanFilename.includes("-respuesta") ||
+    cleanFilename.includes("respuesta.xml") ||
+    cleanFilename.endsWith("respuesta.xml")
+  );
+}
+
+function classifyXmlAttachment(filename: string, xmlText: string) {
+  const rootName = getXmlRootName(xmlText);
+
+  if (
+    isHaciendaResponseFilename(filename) ||
+    HACIENDA_RESPONSE_TAGS.includes(rootName) ||
+    HACIENDA_RESPONSE_TAGS.some((tag) => hasXmlTag(xmlText, tag))
+  ) {
+    return {
+      importable: false,
+      reason: "XML omitido: respuesta de Hacienda, no es comprobante tributario.",
+    };
+  }
+
+  if (
+    TRIBUTARY_DOCUMENT_TAGS.includes(rootName) ||
+    TRIBUTARY_DOCUMENT_TAGS.some((tag) => hasXmlTag(xmlText, tag))
+  ) {
+    return {
+      importable: true,
+      reason: null,
+    };
+  }
+
+  return {
+    importable: false,
+    reason: `XML omitido: tipo no soportado (${rootName || "sin raiz detectada"}).`,
+  };
 }
 
 async function getLatestDocumentExtraction(documentId: string) {
@@ -360,7 +436,7 @@ function getImportTrace(message: GmailMessage, attachment: GmailXmlAttachmentCan
 }
 
 function getSyncNotice(summary: GmailXmlSyncSummary) {
-  return `Sincronizacion lista: ${summary.totalFound} XML encontrados, ${summary.imported} importados, ${summary.duplicates} duplicados, ${summary.errors} errores.`;
+  return `Sincronizacion lista: ${summary.totalFound} XML encontrados, ${summary.imported} importados, ${summary.duplicates} duplicados, ${summary.omitted} omitidos, ${summary.errors} errores.`;
 }
 
 export function formatGmailXmlSyncNotice(summary: GmailXmlSyncSummary) {
@@ -669,6 +745,7 @@ export async function syncGmailXmlAttachments(limit = 10): Promise<GmailXmlSyncS
     ),
     imported: 0,
     duplicates: 0,
+    omitted: 0,
     errors: 0,
   };
 
@@ -693,7 +770,11 @@ export async function syncGmailXmlAttachments(limit = 10): Promise<GmailXmlSyncS
         }
 
         if (existing && isProcessedStatus(existing.import_status)) {
-          summary.duplicates += 1;
+          if (existing.import_status === "omitido") {
+            summary.omitted += 1;
+          } else {
+            summary.duplicates += 1;
+          }
           continue;
         }
 
@@ -725,6 +806,30 @@ export async function syncGmailXmlAttachments(limit = 10): Promise<GmailXmlSyncS
             trace.gmail_message_id,
             trace.gmail_attachment_id,
           );
+          const xmlText = new TextDecoder("utf-8").decode(content);
+          const classification = classifyXmlAttachment(
+            trace.attachment_filename,
+            xmlText,
+          );
+
+          if (!classification.importable) {
+            const { error: omittedError } = await supabase
+              .from("gmail_xml_imports")
+              .update({
+                imported_document_id: null,
+                import_status: "omitido",
+                error_message: classification.reason,
+              })
+              .eq("id", importRow.id);
+
+            if (omittedError) {
+              throw new Error(omittedError.message);
+            }
+
+            summary.omitted += 1;
+            continue;
+          }
+
           const result = await uploadDocumentContent({
             content,
             filename: trace.attachment_filename,

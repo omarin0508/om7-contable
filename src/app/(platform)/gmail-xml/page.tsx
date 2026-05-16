@@ -46,6 +46,10 @@ function statusClass(status: string) {
     return "om7-chip om7-chip-emerald";
   }
 
+  if (status === "omitido") {
+    return "om7-chip";
+  }
+
   return "om7-chip om7-chip-cyan";
 }
 
@@ -64,6 +68,9 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
   ).length;
   const errorCount = recentImports.filter(
     (item) => item.import_status === "error",
+  ).length;
+  const omittedCount = recentImports.filter(
+    (item) => item.import_status === "omitido",
   ).length;
   const syncDisabledReason = !connection
     ? "Conecta Gmail antes de sincronizar XML."
@@ -164,6 +171,12 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                 {errorCount}
               </p>
               <p className="mt-1 text-xs text-current/70">errores recientes</p>
+            </div>
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-slate-100">
+              <p className="text-2xl font-semibold tracking-tight">
+                {omittedCount}
+              </p>
+              <p className="mt-1 text-xs text-current/70">omitidos</p>
             </div>
           </div>
         </div>
