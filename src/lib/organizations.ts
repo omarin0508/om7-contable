@@ -21,6 +21,7 @@ export type Company = {
   country: string | null;
   base_currency: string | null;
   status: string | null;
+  gmail_xml_enabled?: boolean | null;
   created_at: string | null;
   updated_at: string | null;
 };

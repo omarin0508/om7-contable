@@ -66,6 +66,7 @@ export type GmailXmlImportStatus =
 export type GmailXmlImportRecord = {
   id: string;
   organization_id: string;
+  company_id: string | null;
   user_id: string;
   source: "gmail";
   gmail_message_id: string;
@@ -78,12 +79,29 @@ export type GmailXmlImportRecord = {
   imported_document_id: string | null;
   import_status: GmailXmlImportStatus;
   error_message: string | null;
+  sync_mode?: GmailXmlSyncMode | null;
+  date_from?: string | null;
+  date_to?: string | null;
+  gmail_query?: string | null;
+  batch_period?: string | null;
+  has_more_results?: boolean | null;
   created_at: string | null;
+};
+
+export type GmailXmlSyncMode = "daily" | "historical";
+
+export type GmailXmlRunOptions = {
+  mode?: GmailXmlSyncMode;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  batchPeriod?: string | null;
 };
 
 export type GmailXmlDashboard = {
   activeContext: Awaited<ReturnType<typeof getActiveContext>>;
   connection: GmailXmlConnection | null;
+  currentUserEmail: string | null;
+  gmailXmlEnabled: boolean;
   candidates: GmailXmlCandidate[];
   recentImports: GmailXmlImportRecord[];
   lastSyncAt: string | null;
@@ -92,6 +110,30 @@ export type GmailXmlDashboard = {
   listedXmlAttachments: number;
   hasMoreResults: boolean;
   gmailQuery: string | null;
+  syncPeriod: GmailXmlSyncPeriod | null;
+};
+
+export type GmailXmlSyncPeriod = {
+  id: string;
+  organization_id: string;
+  company_id: string;
+  period_key: string;
+  date_from: string;
+  date_to: string;
+  gmail_query: string | null;
+  status: string;
+  found_count: number;
+  processed_count: number;
+  imported_count: number;
+  duplicated_count: number;
+  omitted_count: number;
+  error_count: number;
+  has_more_results: boolean;
+  last_synced_at: string | null;
+  closed_at: string | null;
+  closed_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 type GmailMessagePart = {
@@ -116,6 +158,7 @@ type GmailMessage = {
 
 type GmailXmlTraceWrite = ReturnType<typeof getImportTrace> & {
   organization_id: string;
+  company_id: string;
   user_id: string;
   import_status: GmailXmlImportStatus;
   imported_document_id?: string | null;
@@ -123,6 +166,12 @@ type GmailXmlTraceWrite = ReturnType<typeof getImportTrace> & {
   sync_attempts?: number;
   last_attempt_at?: string | null;
   gmail_labels_updated_at?: string | null;
+  sync_mode?: GmailXmlSyncMode;
+  date_from?: string | null;
+  date_to?: string | null;
+  gmail_query?: string | null;
+  batch_period?: string | null;
+  has_more_results?: boolean;
 };
 
 type GmailXmlSyncConnection = {
@@ -146,6 +195,7 @@ type GmailXmlSyncContext = {
   usePendingLabel: boolean;
   updateLabels: boolean;
   limit: number;
+  options?: GmailXmlRunOptions;
 };
 
 export type GmailXmlSyncSummary = {
@@ -307,6 +357,60 @@ function logGmailXmlSyncError(
   });
 }
 
+function isGmailXmlEnabledCompany(company: {
+  gmail_xml_enabled?: boolean | null;
+} | null) {
+  return company?.gmail_xml_enabled === true;
+}
+
+async function isGmailXmlEnabledContext(
+  supabase: SupabaseClient,
+  organizationId: string,
+  companyId: string | null,
+) {
+  if (!companyId) {
+    return false;
+  }
+
+  const { data: company, error: companyError } = await supabase
+    .from("companies")
+    .select("gmail_xml_enabled")
+    .eq("id", companyId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+
+  if (companyError) {
+    throw new Error(companyError.message);
+  }
+
+  return isGmailXmlEnabledCompany(company);
+}
+
+async function assertGmailXmlEnabledContext(
+  supabase: SupabaseClient,
+  activeContext: Awaited<ReturnType<typeof getActiveContext>>,
+) {
+  if (!activeContext.organization) {
+    throw new Error("Selecciona una organizacion activa antes de usar Gmail XML.");
+  }
+
+  if (!activeContext.activeCompany) {
+    throw new Error("Selecciona una empresa activa antes de usar Gmail XML.");
+  }
+
+  const allowed = await isGmailXmlEnabledContext(
+    supabase,
+    activeContext.organization.id,
+    activeContext.activeCompany.id,
+  );
+
+  if (!allowed) {
+    throw new Error(
+      "Gmail XML no esta habilitado para esta empresa.",
+    );
+  }
+}
+
 async function upsertGmailImportTrace(
   supabase: SupabaseClient,
   payload: GmailXmlTraceWrite,
@@ -315,7 +419,8 @@ async function upsertGmailImportTrace(
   const { data, error } = await supabase
     .from("gmail_xml_imports")
     .upsert(payload, {
-      onConflict: "organization_id,user_id,gmail_message_id,gmail_attachment_id",
+      onConflict:
+        "organization_id,company_id,user_id,gmail_message_id,gmail_attachment_id",
     })
     .select("id")
     .single();
@@ -427,6 +532,73 @@ function normalizeText(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function normalizeDateOnly(value: string | null | undefined) {
+  const clean = String(value ?? "").trim();
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(clean) ? clean : null;
+}
+
+function formatGmailQueryDate(value: string) {
+  return value.replaceAll("-", "/");
+}
+
+function normalizeGmailXmlRunOptions(
+  options?: GmailXmlRunOptions,
+): Required<GmailXmlRunOptions> {
+  const mode: GmailXmlSyncMode = options?.mode === "historical"
+    ? "historical"
+    : "daily";
+  const dateFrom = normalizeDateOnly(options?.dateFrom);
+  const dateTo = normalizeDateOnly(options?.dateTo);
+
+  if (mode === "historical") {
+    if (!dateFrom || !dateTo) {
+      throw new Error("Selecciona fecha desde y fecha hasta para la carga historica.");
+    }
+
+    if (dateFrom >= dateTo) {
+      throw new Error("La fecha desde debe ser menor que la fecha hasta.");
+    }
+  }
+
+  return {
+    mode,
+    dateFrom,
+    dateTo,
+    batchPeriod: options?.batchPeriod?.trim() || dateFrom?.slice(0, 7) || null,
+  };
+}
+
+function buildGmailXmlQuery(
+  options: Required<GmailXmlRunOptions>,
+  usePendingLabel: boolean,
+) {
+  if (options.mode === "historical") {
+    return [
+      `after:${formatGmailQueryDate(options.dateFrom ?? "")}`,
+      `before:${formatGmailQueryDate(options.dateTo ?? "")}`,
+      "has:attachment",
+      "filename:xml",
+    ].join(" ");
+  }
+
+  return usePendingLabel
+    ? `label:"${GMAIL_XML_PENDING_LABEL}" filename:xml has:attachment`
+    : "has:attachment filename:xml";
+}
+
+function getXmlTagValue(xmlText: string, tagName: string) {
+  const match = xmlText.match(
+    new RegExp(`<(?:[A-Za-z0-9_-]+:)?${tagName}[^>]*>([^<]+)<`, "i"),
+  );
+
+  return normalizeText(match?.[1]);
+}
+
+function getXmlClave(xmlText: string) {
+  return getXmlTagValue(xmlText, "Clave");
+}
+
 function isProcessedStatus(status: unknown) {
   return ["procesado", "duplicado", "omitido"].includes(String(status));
 }
@@ -511,47 +683,54 @@ async function getLatestDocumentExtraction(
   return (data as DocumentExtraction | null) ?? null;
 }
 
-async function hasDuplicateXmlClave({
+async function findDuplicateXmlClave({
   clave,
   documentId,
+  companyId,
   organizationId,
   supabaseClient,
 }: {
   clave: unknown;
-  documentId: string;
+  documentId?: string;
+  companyId: string;
   organizationId: string;
   supabaseClient?: SupabaseClient;
 }) {
   const cleanClave = normalizeText(clave);
 
   if (!cleanClave) {
-    return false;
+    return null;
   }
 
   const supabase =
     supabaseClient ?? (await getAuthenticatedSupabase()).supabase;
-  const { data, error } = await supabase
+  let query = supabase
     .from("document_extractions")
-    .select("id")
+    .select("document_id")
     .eq("organization_id", organizationId)
+    .eq("company_id", companyId)
     .eq("extraction_provider", "xml-parser-cr")
     .eq("extracted_data->>clave", cleanClave)
-    .neq("document_id", documentId)
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+
+  if (documentId) {
+    query = query.neq("document_id", documentId);
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return Boolean(data);
+  return data?.document_id ? String(data.document_id) : null;
 }
 
 async function getRecentGmailXmlImports() {
   const activeContext = await getActiveContext();
   const { supabase, user } = await getAuthenticatedSupabase();
 
-  if (!activeContext.organization) {
+  if (!activeContext.organization || !activeContext.activeCompany) {
     return [] as GmailXmlImportRecord[];
   }
 
@@ -559,6 +738,7 @@ async function getRecentGmailXmlImports() {
     .from("gmail_xml_imports")
     .select("*")
     .eq("organization_id", activeContext.organization.id)
+    .eq("company_id", activeContext.activeCompany.id)
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(20);
@@ -578,11 +758,11 @@ async function getGmailXmlMessagesWithAttachments(
   accessToken: string,
   limit = GMAIL_XML_DEFAULT_LIMIT,
   usePendingLabel = false,
+  options?: GmailXmlRunOptions,
 ): Promise<GmailXmlMessagePage> {
   const normalizedLimit = normalizeGmailXmlLimit(limit);
-  const query = usePendingLabel
-    ? `label:"${GMAIL_XML_PENDING_LABEL}" filename:xml has:attachment`
-    : "has:attachment filename:xml";
+  const normalizedOptions = normalizeGmailXmlRunOptions(options);
+  const query = buildGmailXmlQuery(normalizedOptions, usePendingLabel);
   const messages: Array<{
     message: GmailMessage;
     attachments: GmailXmlAttachmentCandidate[];
@@ -786,6 +966,107 @@ function getAttachmentCandidateKey(attachment: GmailXmlAttachmentCandidate) {
   return `${attachment.gmail_attachment_id}:${attachment.filename}`;
 }
 
+function getTraceRunMetadata(
+  options: Required<GmailXmlRunOptions>,
+  query: string,
+  hasMoreResults: boolean,
+) {
+  return {
+    sync_mode: options.mode,
+    date_from: options.dateFrom,
+    date_to: options.dateTo,
+    gmail_query: query,
+    batch_period: options.batchPeriod,
+    has_more_results: hasMoreResults,
+  };
+}
+
+async function getGmailXmlSyncPeriod(
+  supabase: SupabaseClient,
+  organizationId: string,
+  companyId: string,
+  options: Required<GmailXmlRunOptions>,
+) {
+  if (options.mode !== "historical" || !options.batchPeriod) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("gmail_xml_sync_periods")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .eq("company_id", companyId)
+    .eq("period_key", options.batchPeriod)
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === "42P01") {
+      return null;
+    }
+
+    throw new Error(error.message);
+  }
+
+  return (data as GmailXmlSyncPeriod | null) ?? null;
+}
+
+async function upsertGmailXmlSyncPeriod(
+  supabase: SupabaseClient,
+  payload: {
+    organization_id: string;
+    company_id: string;
+    period_key: string;
+    date_from: string;
+    date_to: string;
+    gmail_query: string;
+    status: string;
+    found_count: number;
+    processed_count?: number;
+    imported_count?: number;
+    duplicated_count?: number;
+    omitted_count?: number;
+    error_count?: number;
+    has_more_results: boolean;
+    last_synced_at?: string | null;
+  },
+) {
+  const { data, error } = await supabase
+    .from("gmail_xml_sync_periods")
+    .upsert(payload, {
+      onConflict: "organization_id,company_id,period_key",
+    })
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    if (error?.code === "42P01") {
+      return null;
+    }
+
+    throw new Error(error?.message ?? "No se pudo guardar el periodo Gmail XML.");
+  }
+
+  return data as GmailXmlSyncPeriod;
+}
+
+async function assertHistoricalPeriodIsOpen(
+  supabase: SupabaseClient,
+  organizationId: string,
+  companyId: string,
+  options: Required<GmailXmlRunOptions>,
+) {
+  const period = await getGmailXmlSyncPeriod(
+    supabase,
+    organizationId,
+    companyId,
+    options,
+  );
+
+  if (period?.status === "cerrado") {
+    throw new Error("Este periodo historico esta cerrado. Reabre el periodo antes de sincronizar.");
+  }
+}
+
 function uniqueAttachments(attachments: GmailXmlAttachmentCandidate[]) {
   const seen = new Set<string>();
 
@@ -869,14 +1150,17 @@ async function getActiveConnection() {
   const activeContext = await getActiveContext();
   const { supabase } = await getAuthenticatedSupabase();
 
-  if (!activeContext.organization) {
-    throw new Error("Selecciona una organizacion activa antes de usar Gmail.");
+  if (!activeContext.organization || !activeContext.activeCompany) {
+    throw new Error("Selecciona una empresa activa antes de usar Gmail.");
   }
+
+  await assertGmailXmlEnabledContext(supabase, activeContext);
 
   const { data: connection, error } = await supabase
     .from("gmail_xml_connections")
     .select("*")
     .eq("organization_id", activeContext.organization.id)
+    .eq("company_id", activeContext.activeCompany.id)
     .eq("user_id", currentUser.userId)
     .eq("active", true)
     .maybeSingle();
@@ -903,10 +1187,13 @@ async function getActiveConnection() {
 export async function getGmailConnectUrl() {
   const currentUser = await assertInternalUser();
   const activeContext = await getActiveContext();
+  const { supabase } = await getAuthenticatedSupabase();
 
-  if (!activeContext.organization) {
-    throw new Error("Selecciona una organizacion activa antes de conectar Gmail.");
+  if (!activeContext.organization || !activeContext.activeCompany) {
+    throw new Error("Selecciona una empresa activa antes de conectar Gmail.");
   }
+
+  await assertGmailXmlEnabledContext(supabase, activeContext);
 
   const env = getGmailEnv();
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -981,7 +1268,7 @@ export async function exchangeGmailOAuthCode(code: string, state: string) {
   const { error } = await supabase.from("gmail_xml_connections").upsert(
     {
       organization_id: stateData.organizationId,
-      company_id: stateData.companyId || null,
+      company_id: stateData.companyId,
       user_id: currentUser.userId,
       gmail_email: profile.email ?? null,
       access_token: token.access_token,
@@ -992,7 +1279,7 @@ export async function exchangeGmailOAuthCode(code: string, state: string) {
       active: true,
       updated_at: now,
     },
-    { onConflict: "organization_id,user_id" },
+    { onConflict: "organization_id,user_id,company_id" },
   );
 
   if (error) {
@@ -1032,10 +1319,17 @@ export async function testGmailConnection() {
 
 export async function listGmailXmlMessages(
   limit = GMAIL_XML_DEFAULT_LIMIT,
+  options?: GmailXmlRunOptions,
 ): Promise<GmailXmlMessagePage & { candidates: GmailXmlCandidate[] }> {
-  const { connection } = await getActiveConnection();
+  const { activeContext, connection } = await getActiveConnection();
+  const normalizedOptions = normalizeGmailXmlRunOptions(options);
   const accessToken = await getConnectionAccessToken(connection);
-  const page = await getGmailXmlMessagesWithAttachments(accessToken, limit);
+  const page = await getGmailXmlMessagesWithAttachments(
+    accessToken,
+    limit,
+    normalizedOptions.mode === "daily",
+    normalizedOptions,
+  );
   const candidates = page.messages.map(({ message, attachments }) => ({
       gmail_message_id: message.id,
       gmail_thread_id: message.threadId ?? null,
@@ -1057,6 +1351,31 @@ export async function listGmailXmlMessages(
     })
     .eq("id", connection.id);
 
+  if (
+    normalizedOptions.mode === "historical" &&
+    activeContext.organization &&
+    activeContext.activeCompany &&
+    normalizedOptions.batchPeriod
+  ) {
+    await upsertGmailXmlSyncPeriod(supabase, {
+      organization_id: activeContext.organization.id,
+      company_id: activeContext.activeCompany.id,
+      period_key: normalizedOptions.batchPeriod,
+      date_from: normalizedOptions.dateFrom ?? "",
+      date_to: normalizedOptions.dateTo ?? "",
+      gmail_query: page.query,
+      status: "buscado",
+      found_count: page.xmlAttachments,
+      processed_count: 0,
+      imported_count: 0,
+      duplicated_count: 0,
+      omitted_count: 0,
+      error_count: 0,
+      has_more_results: page.hasMoreResults,
+      last_synced_at: null,
+    });
+  }
+
   return {
     ...page,
     candidates,
@@ -1077,7 +1396,17 @@ async function syncGmailXmlConnection(
     usePendingLabel,
     updateLabels,
     limit,
+    options,
   } = context;
+  const normalizedOptions = normalizeGmailXmlRunOptions(options);
+  if (normalizedOptions.mode === "historical") {
+    await assertHistoricalPeriodIsOpen(
+      traceSupabase,
+      organizationId,
+      companyId,
+      normalizedOptions,
+    );
+  }
   const accessToken = await getConnectionAccessToken(connection, supabase);
   let labels: Awaited<ReturnType<typeof getOrCreateGmailLabels>> | null = null;
 
@@ -1099,6 +1428,12 @@ async function syncGmailXmlConnection(
     accessToken,
     limit,
     usePendingLabel && Boolean(labels),
+    normalizedOptions,
+  );
+  const traceRunMetadata = getTraceRunMetadata(
+    normalizedOptions,
+    gmailPage.query,
+    gmailPage.hasMoreResults,
   );
   const summary: GmailXmlSyncSummary = {
     totalFound: gmailPage.xmlAttachments,
@@ -1112,6 +1447,7 @@ async function syncGmailXmlConnection(
   };
   const baseLogContext = {
     organization_id: organizationId,
+    company_id: companyId,
     user_id: userId,
   };
 
@@ -1141,6 +1477,7 @@ async function syncGmailXmlConnection(
           .from("gmail_xml_imports")
           .select("id, import_status, sync_attempts")
           .eq("organization_id", organizationId)
+          .eq("company_id", companyId)
           .eq("user_id", userId)
           .eq("gmail_message_id", trace.gmail_message_id)
           .eq("gmail_attachment_id", trace.gmail_attachment_id)
@@ -1196,7 +1533,9 @@ async function syncGmailXmlConnection(
           traceSupabase,
           {
             ...trace,
+            ...traceRunMetadata,
             organization_id: organizationId,
+            company_id: companyId,
             user_id: userId,
             import_status: "pendiente",
             imported_document_id: null,
@@ -1220,6 +1559,7 @@ async function syncGmailXmlConnection(
             trace.attachment_filename,
             xmlText,
           );
+          const xmlClave = getXmlClave(xmlText);
 
           if (!classification.importable) {
             await updateGmailImportTrace(
@@ -1253,6 +1593,44 @@ async function syncGmailXmlConnection(
             continue;
           }
 
+          const existingDocumentId = await findDuplicateXmlClave({
+            clave: xmlClave,
+            companyId,
+            organizationId,
+            supabaseClient: traceSupabase,
+          });
+
+          if (existingDocumentId) {
+            await updateGmailImportTrace(
+              traceSupabase,
+              importRowId,
+              {
+                imported_document_id: existingDocumentId,
+                import_status: "duplicado",
+                error_message: "Duplicado fiscal protegido por clave XML existente.",
+                gmail_labels_updated_at: labels ? new Date().toISOString() : null,
+              },
+              "trace_duplicate_before_upload",
+            );
+            logGmailXmlSync("duplicate_before_upload", {
+              ...logContext,
+              imported_document_id: existingDocumentId,
+            });
+            summary.duplicates += 1;
+            if (
+              await tryUpdateGmailMessageLabels(
+                accessToken,
+                trace.gmail_message_id,
+                labels,
+                "duplicado",
+                logContext,
+              )
+            ) {
+              summary.labelsUpdated += 1;
+            }
+            continue;
+          }
+
           logGmailXmlSync("upload_pipeline", logContext);
           const uploadInput = {
             content,
@@ -1264,6 +1642,7 @@ async function syncGmailXmlConnection(
             metadata: {
               ...trace,
               organization_id: organizationId,
+              company_id: companyId,
               user_id: userId,
             },
           } as const;
@@ -1278,18 +1657,19 @@ async function syncGmailXmlConnection(
             traceSupabase,
           );
           const extractedData = getExtractionData(extraction);
-          const duplicateByClave =
-            extractionHasUsefulData(extraction) &&
-            (await hasDuplicateXmlClave({
-              clave: extractedData.clave,
-              documentId: result.document.id,
-              organizationId,
-              supabaseClient: traceSupabase,
-            }));
+          const duplicateDocumentId = extractionHasUsefulData(extraction)
+            ? await findDuplicateXmlClave({
+                clave: extractedData.clave,
+                documentId: result.document.id,
+                companyId,
+                organizationId,
+                supabaseClient: traceSupabase,
+              })
+            : null;
           const status: GmailXmlImportStatus =
             result.warningCode || extraction?.extraction_status === "error"
               ? "error"
-              : duplicateByClave
+              : duplicateDocumentId
                 ? "duplicado"
                 : "procesado";
           const errorMessage =
@@ -1301,7 +1681,7 @@ async function syncGmailXmlConnection(
             traceSupabase,
             importRowId,
             {
-              imported_document_id: result.document.id,
+              imported_document_id: duplicateDocumentId || result.document.id,
               import_status: status,
               error_message: errorMessage,
               gmail_labels_updated_at: labels ? new Date().toISOString() : null,
@@ -1311,7 +1691,7 @@ async function syncGmailXmlConnection(
           logGmailXmlSync("trace_import_result", {
             ...logContext,
             import_status: status,
-            imported_document_id: result.document.id,
+            imported_document_id: duplicateDocumentId || result.document.id,
           });
 
           if (status === "procesado") {
@@ -1367,7 +1747,9 @@ async function syncGmailXmlConnection(
           traceSupabase,
           {
             ...trace,
+            ...traceRunMetadata,
             organization_id: organizationId,
+            company_id: companyId,
             user_id: userId,
             import_status: "error",
             imported_document_id: null,
@@ -1405,11 +1787,33 @@ async function syncGmailXmlConnection(
     })
     .eq("id", connection.id);
 
+  if (normalizedOptions.mode === "historical" && normalizedOptions.batchPeriod) {
+    await upsertGmailXmlSyncPeriod(traceSupabase, {
+      organization_id: organizationId,
+      company_id: companyId,
+      period_key: normalizedOptions.batchPeriod,
+      date_from: normalizedOptions.dateFrom ?? "",
+      date_to: normalizedOptions.dateTo ?? "",
+      gmail_query: gmailPage.query,
+      status: summary.errors > 0 ? "pendiente_revision" : "importado",
+      found_count: summary.totalFound,
+      processed_count:
+        summary.imported + summary.duplicates + summary.omitted + summary.errors,
+      imported_count: summary.imported,
+      duplicated_count: summary.duplicates,
+      omitted_count: summary.omitted,
+      error_count: summary.errors,
+      has_more_results: summary.hasMoreResults,
+      last_synced_at: new Date().toISOString(),
+    });
+  }
+
   return summary;
 }
 
 export async function syncGmailXmlAttachments(
   limit = GMAIL_XML_DEFAULT_LIMIT,
+  options?: GmailXmlRunOptions,
 ): Promise<GmailXmlSyncSummary> {
   const { activeContext, connection } = await getActiveConnection();
   const { supabase, user } = await getAuthenticatedSupabase();
@@ -1417,6 +1821,18 @@ export async function syncGmailXmlAttachments(
 
   if (!activeContext.organization || !activeContext.activeCompany) {
     throw new Error("Selecciona una empresa activa antes de importar XML desde Gmail.");
+  }
+
+  if (
+    !(await isGmailXmlEnabledContext(
+      traceSupabase,
+      activeContext.organization.id,
+      activeContext.activeCompany.id,
+    ))
+  ) {
+    throw new Error(
+      "Gmail XML no esta habilitado para esta empresa.",
+    );
   }
 
   return syncGmailXmlConnection({
@@ -1431,10 +1847,11 @@ export async function syncGmailXmlAttachments(
     userId: user.id,
     supabase,
     traceSupabase,
-    system: false,
-    usePendingLabel: false,
+    system: true,
+    usePendingLabel: true,
     updateLabels: true,
     limit: normalizeGmailXmlLimit(limit),
+    options,
   });
 }
 
@@ -1487,6 +1904,7 @@ export async function runGmailXmlAutoSync(
     )
     .eq("active", true)
     .eq("auto_sync_enabled", true)
+    .not("company_id", "is", null)
     .order("last_sync_at", { ascending: true, nullsFirst: true })
     .limit(10);
 
@@ -1509,6 +1927,23 @@ export async function runGmailXmlAutoSync(
   for (const connection of (data ?? []) as GmailXmlSyncConnection[]) {
     try {
       const companyId = await getSyncCompanyId(supabase, connection);
+
+      if (
+        !(await isGmailXmlEnabledContext(
+          supabase,
+          connection.organization_id,
+          companyId,
+        ))
+      ) {
+        logGmailXmlSync("auto_sync_skipped_disabled_company", {
+          organization_id: connection.organization_id,
+          company_id: companyId,
+          user_id: connection.user_id,
+          connection_id: connection.id,
+        });
+        continue;
+      }
+
       const summary = await syncGmailXmlConnection({
         connection,
         organizationId: connection.organization_id,
@@ -1520,6 +1955,7 @@ export async function runGmailXmlAutoSync(
         usePendingLabel: true,
         updateLabels: true,
         limit: normalizedLimit,
+        options: { mode: "daily" },
       });
 
       mergeAutoSyncSummary(total, summary);
@@ -1553,6 +1989,7 @@ export async function runGmailXmlAutoSync(
 export async function getGmailXmlDashboard(
   shouldListMessages = false,
   limit = GMAIL_XML_DEFAULT_LIMIT,
+  options?: GmailXmlRunOptions,
 ): Promise<GmailXmlDashboard> {
   await assertInternalUser();
   const activeContext = await getActiveContext();
@@ -1564,6 +2001,8 @@ export async function getGmailXmlDashboard(
     return {
       activeContext,
       connection: null,
+      currentUserEmail: user.email ?? null,
+      gmailXmlEnabled: false,
       candidates: [],
       recentImports: [],
       lastSyncAt: null,
@@ -1572,37 +2011,70 @@ export async function getGmailXmlDashboard(
       listedXmlAttachments: 0,
       hasMoreResults: false,
       gmailQuery: null,
+      syncPeriod: null,
     };
   }
 
-  const { data: connection, error } = await supabase
-    .from("gmail_xml_connections")
-    .select(
-      "id, organization_id, company_id, user_id, gmail_email, connected_at, last_test_at, last_list_at, last_sync_at, last_sync_status, last_sync_error, auto_sync_enabled, active",
-    )
-    .eq("organization_id", activeContext.organization.id)
-    .eq("user_id", user.id)
-    .eq("active", true)
-    .maybeSingle();
+  let connection: GmailXmlConnection | null = null;
 
-  if (error) {
-    throw new Error(error.message);
+  if (activeContext.activeCompany) {
+    const { data: scopedConnection, error: connectionError } = await supabase
+      .from("gmail_xml_connections")
+      .select(
+        "id, organization_id, company_id, user_id, gmail_email, connected_at, last_test_at, last_list_at, last_sync_at, last_sync_status, last_sync_error, auto_sync_enabled, active",
+      )
+      .eq("organization_id", activeContext.organization.id)
+      .eq("company_id", activeContext.activeCompany.id)
+      .eq("user_id", user.id)
+      .eq("active", true)
+      .maybeSingle();
+
+    if (connectionError) {
+      throw new Error(connectionError.message);
+    }
+
+    connection = (scopedConnection as GmailXmlConnection | null) ?? null;
   }
 
-  const listPage = connection && shouldListMessages
-    ? await listGmailXmlMessages(normalizedLimit)
+  const gmailXmlEnabled = await isGmailXmlEnabledContext(
+    supabase,
+    activeContext.organization.id,
+    activeContext.activeCompany?.id ?? null,
+  );
+  const normalizedOptions = normalizeGmailXmlRunOptions(options);
+  const syncPeriod = activeContext.activeCompany
+    ? await getGmailXmlSyncPeriod(
+        supabase,
+        activeContext.organization.id,
+        activeContext.activeCompany.id,
+        normalizedOptions,
+      )
+    : null;
+
+  const listPage = connection && shouldListMessages && gmailXmlEnabled
+    ? await listGmailXmlMessages(normalizedLimit, normalizedOptions)
     : null;
 
   return {
     activeContext,
-    connection: (connection as GmailXmlConnection | null) ?? null,
+    connection,
+    currentUserEmail: user.email ?? null,
+    gmailXmlEnabled,
     candidates: listPage?.candidates ?? [],
     recentImports: await getRecentGmailXmlImports(),
-    lastSyncAt: (connection as GmailXmlConnection | null)?.last_sync_at ?? null,
+    lastSyncAt: connection?.last_sync_at ?? null,
     listLimit: normalizedLimit,
     listedMessages: listPage?.scannedMessages ?? 0,
     listedXmlAttachments: listPage?.xmlAttachments ?? 0,
     hasMoreResults: listPage?.hasMoreResults ?? false,
     gmailQuery: listPage?.query ?? null,
+    syncPeriod: listPage && activeContext.activeCompany && normalizedOptions.mode === "historical"
+      ? await getGmailXmlSyncPeriod(
+          supabase,
+          activeContext.organization.id,
+          activeContext.activeCompany.id,
+          normalizedOptions,
+        )
+      : syncPeriod,
   };
 }

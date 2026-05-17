@@ -112,7 +112,58 @@ function logUploadFailure(
     organization_id: context.organizationId ?? null,
     mime_type: context.mimeType ?? null,
     filename: context.filename ?? null,
-    error: error instanceof Error ? error.message : String(error),
+    error: getDetailedErrorMessage(error, "Error desconocido."),
+  });
+}
+
+function getDetailedErrorMessage(error: unknown, fallback: string) {
+  if (!error) {
+    return fallback;
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    const details = [
+      record.message,
+      record.error,
+      record.statusCode ? `status ${record.statusCode}` : null,
+      record.code ? `code ${record.code}` : null,
+      record.details,
+      record.hint,
+    ]
+      .filter(Boolean)
+      .map(String)
+      .join(" | ");
+
+    return details || JSON.stringify(record);
+  }
+
+  return String(error) || fallback;
+}
+
+function logUploadStage(
+  stage: string,
+  context: {
+    userId?: string;
+    companyId?: string;
+    organizationId?: string;
+    mimeType?: string;
+    filename?: string;
+    storagePath?: string;
+  },
+) {
+  console.info("[OM7 document upload]", {
+    stage,
+    user_id: context.userId ?? null,
+    company_id: context.companyId ?? null,
+    organization_id: context.organizationId ?? null,
+    mime_type: context.mimeType ?? null,
+    filename: context.filename ?? null,
+    storage_path: context.storagePath ?? null,
   });
 }
 
@@ -426,6 +477,10 @@ async function uploadDocumentContentWithClient(
   const fileBuffer = input.content;
   const xmlFile = isXmlDocumentPayload(filenameInput, mimeTypeInput);
   const contentType = mimeTypeInput || (xmlFile ? "application/xml" : undefined);
+  logUploadStage("before_storage_upload", {
+    ...baseLogContext,
+    storagePath,
+  });
   const { error: uploadError } = await supabase.storage
     .from(DOCUMENTS_BUCKET)
     .upload(storagePath, fileBuffer, {
@@ -435,9 +490,18 @@ async function uploadDocumentContentWithClient(
 
   if (uploadError) {
     logUploadFailure("storage_upload", baseLogContext, uploadError);
-    throw new Error("No se pudo guardar el archivo.");
+    throw new Error(
+      `No se pudo guardar el archivo en Storage: ${getDetailedErrorMessage(
+        uploadError,
+        "Error desconocido de Storage.",
+      )}`,
+    );
   }
 
+  logUploadStage("before_documents_insert", {
+    ...baseLogContext,
+    storagePath,
+  });
   const { data, error } = await supabase
     .from("documents")
     .insert({
@@ -463,7 +527,12 @@ async function uploadDocumentContentWithClient(
   if (error || !data) {
     await supabase.storage.from(DOCUMENTS_BUCKET).remove([storagePath]);
     logUploadFailure("documents_insert", baseLogContext, error);
-    throw new Error("No tiene permisos para registrar documentos en esta empresa.");
+    throw new Error(
+      `No se pudo insertar el documento: ${getDetailedErrorMessage(
+        error,
+        "No tiene permisos para registrar documentos en esta empresa.",
+      )}`,
+    );
   }
 
   const document = data as DocumentRecord;
@@ -475,6 +544,7 @@ async function uploadDocumentContentWithClient(
     try {
       const extractedData = parseCostaRicaInvoiceXml(xmlText);
 
+      logUploadStage("before_document_extraction_insert", baseLogContext);
       const { error: extractionError } = await supabase
         .from("document_extractions")
         .insert({
@@ -495,6 +565,7 @@ async function uploadDocumentContentWithClient(
         throw extractionError;
       }
 
+      logUploadStage("before_document_processed_update", baseLogContext);
       const { error: documentProcessingError } = await supabase
         .from("documents")
         .update({ processing_status: "processed" })
@@ -543,7 +614,12 @@ async function uploadDocumentContentWithClient(
         }
       } catch (extractionError) {
         logUploadFailure("document_extraction_insert", baseLogContext, extractionError);
-        throw new Error("El XML se subió, pero no se pudo procesar.");
+        throw new Error(
+          `El XML se subio, pero no se pudo procesar: ${getDetailedErrorMessage(
+            extractionError,
+            "Error desconocido al guardar la extraccion.",
+          )}`,
+        );
       }
     }
   }

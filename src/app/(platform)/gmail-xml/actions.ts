@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import {
   formatGmailXmlSyncNotice,
   getGmailConnectUrl,
+  type GmailXmlRunOptions,
   normalizeGmailXmlLimit,
   syncGmailXmlAttachments,
   testGmailConnection,
@@ -70,27 +71,72 @@ function getFormLimit(formData?: FormData) {
   return normalizeGmailXmlLimit(formData?.get("limit"));
 }
 
+function getFormValue(formData: FormData | undefined, key: string) {
+  return String(formData?.get(key) ?? "").trim();
+}
+
+function getRunOptions(formData?: FormData): GmailXmlRunOptions {
+  const mode = getFormValue(formData, "mode") === "historical"
+    ? "historical"
+    : "daily";
+
+  return {
+    mode,
+    dateFrom: getFormValue(formData, "dateFrom") || null,
+    dateTo: getFormValue(formData, "dateTo") || null,
+    batchPeriod: getFormValue(formData, "batchPeriod") || null,
+  };
+}
+
+function buildGmailXmlPath(options: GmailXmlRunOptions, limit: number, list = true) {
+  const search = new URLSearchParams({
+    mode: options.mode ?? "daily",
+    limit: String(limit),
+  });
+
+  if (list) {
+    search.set("list", "xml");
+  }
+
+  if (options.dateFrom) {
+    search.set("dateFrom", options.dateFrom);
+  }
+
+  if (options.dateTo) {
+    search.set("dateTo", options.dateTo);
+  }
+
+  if (options.batchPeriod) {
+    search.set("batchPeriod", options.batchPeriod);
+  }
+
+  return `/gmail-xml?${search.toString()}`;
+}
+
 export async function listGmailXmlMessagesAction(formData?: FormData) {
   const limit = getFormLimit(formData);
+  const options = getRunOptions(formData);
 
-  redirect(`/gmail-xml?list=xml&limit=${limit}`);
+  redirect(buildGmailXmlPath(options, limit));
 }
 
 export async function syncGmailXmlAttachmentsAction(formData?: FormData) {
   const limit = getFormLimit(formData);
-  let target = `/gmail-xml?list=xml&limit=${limit}`;
+  const options = getRunOptions(formData);
+  const basePath = buildGmailXmlPath(options, limit);
+  let target = basePath;
 
   try {
-    const summary = await syncGmailXmlAttachments(limit);
+    const summary = await syncGmailXmlAttachments(limit, options);
     target = redirectWithParam(
-      `/gmail-xml?list=xml&limit=${limit}`,
+      basePath,
       "notice",
       formatGmailXmlSyncNotice(summary),
     );
   } catch (error) {
     logGmailXmlActionError("syncGmailXmlAttachmentsAction", error);
     target = redirectWithParam(
-      `/gmail-xml?list=xml&limit=${limit}`,
+      basePath,
       "error",
       getErrorMessage(error, "No se pudo importar XML desde Gmail."),
     );
