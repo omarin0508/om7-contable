@@ -212,7 +212,7 @@ export function ManualAsientoForm({
   return (
     <form
       action={saveManualAsientoAction}
-      className="fixed inset-0 z-[9000] overflow-y-auto bg-slate-950/35 p-3 backdrop-blur-[2px] sm:p-6"
+      className="fixed inset-0 z-[9000] overflow-y-auto bg-slate-950/40 p-3 backdrop-blur-[1px] sm:p-6"
     >
       {asiento ? <input name="asientoId" type="hidden" value={asiento.id} /> : null}
       {template ? (
@@ -221,8 +221,8 @@ export function ManualAsientoForm({
       <input name="redirectTo" type="hidden" value={redirectTo} />
 
       <div className="mx-auto flex min-h-full max-w-6xl items-center justify-center">
-        <section className="flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-3xl border border-cyan-900/30 bg-[#050914]/94 shadow-2xl shadow-cyan-950/20">
-          <header className="flex flex-col gap-4 border-b border-white/10 bg-slate-900/30 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <section className="flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#050914]/95 shadow-2xl shadow-cyan-950/20 ring-1 ring-cyan-900/25">
+          <header className="flex flex-col gap-4 border-b border-white/10 bg-white/[0.035] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200/70">
                 Contabilidad
@@ -239,8 +239,8 @@ export function ManualAsientoForm({
             </Link>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
-            <section className="mb-4 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-950/[0.18] px-4 py-4 sm:px-5">
+            <section className="mb-4 rounded-2xl border border-white/10 bg-white/[0.025] p-4 shadow-inner shadow-white/[0.02]">
               <div className="grid gap-4 lg:grid-cols-[170px_minmax(0,1fr)_140px]">
                 <label className="grid gap-2">
                   <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -293,24 +293,29 @@ export function ManualAsientoForm({
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-2xl border border-slate-700/40 bg-slate-950/30">
+            <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/35 shadow-inner shadow-black/25">
+              <div className="border-b border-white/[0.06] bg-white/[0.018] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/70">
+                  Lineas del asiento
+                </p>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[900px] border-collapse text-sm">
                   <thead>
-                    <tr className="bg-slate-800/50 text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">
-                      <th className="w-12 border-r border-white/[0.05] px-3 py-3 text-center">
+                    <tr className="border-b border-white/[0.08] bg-white/[0.03] text-xs font-semibold uppercase tracking-[0.14em] text-white/80">
+                      <th className="w-12 border-r border-white/[0.06] px-3 py-3 text-center">
                         #
                       </th>
-                      <th className="border-r border-white/[0.05] px-3 py-3 text-left">
+                      <th className="border-r border-white/[0.06] px-3 py-3 text-left">
                         Cuenta
                       </th>
-                      <th className="border-r border-white/[0.05] px-3 py-3 text-left">
+                      <th className="border-r border-white/[0.06] px-3 py-3 text-left">
                         Detalle
                       </th>
-                      <th className="w-36 border-r border-white/[0.05] px-3 py-3 text-right">
+                      <th className="w-36 border-r border-white/[0.06] px-3 py-3 text-right">
                         Debe
                       </th>
-                      <th className="w-36 border-r border-white/[0.05] px-3 py-3 text-right">
+                      <th className="w-36 border-r border-white/[0.06] px-3 py-3 text-right">
                         Haber
                       </th>
                       <th className="w-16 px-3 py-3 text-center">Accion</th>
@@ -319,20 +324,20 @@ export function ManualAsientoForm({
                   <tbody>
                     {lines.map((line, index) => (
                       <tr
-                        className="border-t border-white/[0.05] odd:bg-white/[0.01] transition hover:bg-cyan-500/[0.03]"
+                        className="border-b border-white/[0.055] odd:bg-white/[0.01] transition last:border-b-0 hover:bg-cyan-500/[0.03]"
                         key={line.key}
                       >
-                        <td className="border-r border-white/[0.05] px-3 py-2 text-center align-middle text-xs font-semibold text-slate-500">
+                        <td className="border-r border-white/[0.055] bg-white/[0.012] px-3 py-2 text-center align-middle text-xs font-semibold text-slate-500">
                           {index + 1}
                         </td>
-                        <td className="border-r border-white/[0.05] p-2 align-top">
+                        <td className="border-r border-white/[0.055] p-1.5 align-top">
                           <input
                             name="lineAccountId"
                             type="hidden"
                             value={line.accountId}
                           />
                           <input
-                            className="w-full rounded-lg border border-white/[0.05] bg-slate-950/60 px-3 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400/40 focus:bg-white/[0.02] focus:ring-1 focus:ring-cyan-500/20"
+                            className="w-full rounded-md border border-transparent bg-white/[0.018] px-3 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 hover:border-white/[0.05] focus:border-cyan-400/40 focus:bg-slate-950/60 focus:ring-1 focus:ring-cyan-500/20"
                             disabled={disabled}
                             onBlur={closeSearchSoon}
                             onChange={(event) => {
@@ -352,9 +357,9 @@ export function ManualAsientoForm({
                             value={line.accountSearch}
                           />
                         </td>
-                        <td className="border-r border-white/[0.05] p-2 align-top">
+                        <td className="border-r border-white/[0.055] p-1.5 align-top">
                           <input
-                            className="w-full rounded-lg border border-white/[0.05] bg-slate-950/60 px-3 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400/40 focus:bg-white/[0.02] focus:ring-1 focus:ring-cyan-500/20"
+                            className="w-full rounded-md border border-transparent bg-white/[0.018] px-3 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 hover:border-white/[0.05] focus:border-cyan-400/40 focus:bg-slate-950/60 focus:ring-1 focus:ring-cyan-500/20"
                             disabled={disabled}
                             name="lineDescription"
                             onChange={(event) =>
@@ -364,9 +369,9 @@ export function ManualAsientoForm({
                             value={line.description}
                           />
                         </td>
-                        <td className="border-r border-white/[0.05] p-2 align-top">
+                        <td className="border-r border-white/[0.055] p-1.5 align-top">
                           <input
-                            className="w-full rounded-lg border border-white/[0.05] bg-slate-950/60 px-3 py-2.5 text-right text-sm tabular-nums text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400/40 focus:bg-white/[0.02] focus:ring-1 focus:ring-cyan-500/20"
+                            className="w-full rounded-md border border-transparent bg-white/[0.018] px-3 py-2.5 text-right text-sm tabular-nums text-slate-100 outline-none transition placeholder:text-slate-500 hover:border-white/[0.05] focus:border-cyan-400/40 focus:bg-slate-950/60 focus:ring-1 focus:ring-cyan-500/20"
                             disabled={disabled}
                             inputMode="decimal"
                             name="lineDebit"
@@ -380,9 +385,9 @@ export function ManualAsientoForm({
                             value={line.debit}
                           />
                         </td>
-                        <td className="border-r border-white/[0.05] p-2 align-top">
+                        <td className="border-r border-white/[0.055] p-1.5 align-top">
                           <input
-                            className="w-full rounded-lg border border-white/[0.05] bg-slate-950/60 px-3 py-2.5 text-right text-sm tabular-nums text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400/40 focus:bg-white/[0.02] focus:ring-1 focus:ring-cyan-500/20"
+                            className="w-full rounded-md border border-transparent bg-white/[0.018] px-3 py-2.5 text-right text-sm tabular-nums text-slate-100 outline-none transition placeholder:text-slate-500 hover:border-white/[0.05] focus:border-cyan-400/40 focus:bg-slate-950/60 focus:ring-1 focus:ring-cyan-500/20"
                             disabled={disabled}
                             inputMode="decimal"
                             name="lineCredit"
@@ -396,9 +401,9 @@ export function ManualAsientoForm({
                             value={line.credit}
                           />
                         </td>
-                        <td className="p-2 text-center align-top">
+                        <td className="p-1.5 text-center align-top">
                           <button
-                            className="h-10 w-10 rounded-lg border border-white/[0.05] bg-white/[0.02] text-sm font-semibold text-slate-500 transition hover:border-rose-300/25 hover:bg-rose-300/10 hover:text-rose-100 disabled:opacity-40"
+                            className="h-10 w-10 rounded-md border border-transparent bg-white/[0.015] text-sm font-semibold text-slate-500 transition hover:border-rose-300/25 hover:bg-rose-300/10 hover:text-rose-100 disabled:opacity-40"
                             disabled={disabled}
                             onClick={() => removeLine(index)}
                             type="button"
@@ -412,9 +417,9 @@ export function ManualAsientoForm({
                 </table>
               </div>
 
-              <div className="border-t border-white/[0.05] bg-slate-950/20 px-3 py-3">
+              <div className="border-t border-white/[0.08] bg-white/[0.015] px-2 py-2">
                 <button
-                  className="w-full rounded-xl border border-dashed border-cyan-300/25 bg-transparent px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/10"
+                  className="w-full rounded-lg border border-dashed border-cyan-300/25 bg-transparent px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:border-cyan-300/40 hover:bg-cyan-500/[0.08]"
                   disabled={disabled}
                   onClick={addLine}
                   type="button"
@@ -425,7 +430,7 @@ export function ManualAsientoForm({
             </section>
           </div>
 
-          <footer className="border-t border-white/[0.08] bg-slate-950/55 px-4 py-3 sm:px-5">
+          <footer className="border-t border-white/10 bg-white/[0.025] px-4 py-3 sm:px-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div className="grid gap-2 text-sm sm:grid-cols-3">
                 <div className="rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2.5">
