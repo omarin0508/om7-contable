@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { saveManualAsientoAction } from "@/app/(platform)/contabilidad/asientos/actions";
 import type { AsientoContable } from "@/lib/asientos-contables";
@@ -21,6 +21,14 @@ type FormLine = {
   debit: string;
   description: string;
 };
+
+type SearchOverlay = {
+  index: number;
+  left: number;
+  query: string;
+  top: number;
+  width: number;
+} | null;
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -95,6 +103,8 @@ export function ManualAsientoForm({
   const [lines, setLines] = useState<FormLine[]>(() =>
     buildInitialLines(accountsById, source),
   );
+  const [searchOverlay, setSearchOverlay] = useState<SearchOverlay>(null);
+  const searchInputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
   const totals = useMemo(
     () =>
@@ -131,7 +141,13 @@ export function ManualAsientoForm({
   }
 
   function addLine() {
-    setLines((current) => [...current, makeBlankLine(current.length)]);
+    setLines((current) => {
+      const next = [...current, makeBlankLine(current.length)];
+      window.requestAnimationFrame(() => {
+        searchInputRefs.current[next.length - 1]?.focus();
+      });
+      return next;
+    });
   }
 
   function removeLine(index: number) {
@@ -164,6 +180,34 @@ export function ManualAsientoForm({
           .includes(normalized),
       )
       .slice(0, 8);
+  }
+
+  const visibleSearchAccounts = searchOverlay
+    ? filteredAccounts(searchOverlay.query)
+    : [];
+
+  function openSearch(index: number, input: HTMLInputElement, query: string) {
+    const rect = input.getBoundingClientRect();
+
+    setSearchOverlay({
+      index,
+      left: rect.left,
+      query,
+      top: rect.bottom + 6,
+      width: rect.width,
+    });
+  }
+
+  function closeSearchSoon() {
+    window.setTimeout(() => setSearchOverlay(null), 120);
+  }
+
+  function selectAccount(index: number, account: CuentaContable) {
+    updateLine(index, {
+      accountId: account.id,
+      accountSearch: accountLabel(account),
+    });
+    setSearchOverlay(null);
   }
 
   return (
@@ -227,7 +271,7 @@ export function ManualAsientoForm({
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.035]">
+      <section className="rounded-2xl border border-white/[0.08] bg-white/[0.035]">
         <div className="overflow-x-auto">
           <div className="min-w-[760px]">
             <div className="grid grid-cols-[minmax(260px,1.35fr)_minmax(180px,0.95fr)_130px_130px_48px] gap-2 border-b border-white/[0.07] px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -239,98 +283,72 @@ export function ManualAsientoForm({
             </div>
 
             <div className="grid gap-2 p-3">
-              {lines.map((line, index) => {
-                const options = filteredAccounts(line.accountSearch);
-                const selectedAccount = line.accountId
-                  ? accountsById.get(line.accountId)
-                  : null;
-
-                return (
-                  <div
-                    className="grid grid-cols-[minmax(260px,1.35fr)_minmax(180px,0.95fr)_130px_130px_48px] gap-2 rounded-xl border border-white/[0.06] bg-black/15 p-2"
-                    key={line.key}
-                  >
-                <div className="relative">
-                  <input name="lineAccountId" type="hidden" value={line.accountId} />
+              {lines.map((line, index) => (
+                <div
+                  className="grid grid-cols-[minmax(260px,1.35fr)_minmax(180px,0.95fr)_130px_130px_48px] gap-2 rounded-xl border border-white/[0.06] bg-black/15 p-2"
+                  key={line.key}
+                >
+                  <div>
+                    <input name="lineAccountId" type="hidden" value={line.accountId} />
+                    <input
+                      className="om7-input w-full"
+                      disabled={disabled}
+                      onBlur={closeSearchSoon}
+                      onChange={(event) => {
+                        updateLine(index, {
+                          accountId: "",
+                          accountSearch: event.target.value,
+                        });
+                        openSearch(index, event.currentTarget, event.target.value);
+                      }}
+                      onFocus={(event) =>
+                        openSearch(index, event.currentTarget, line.accountSearch)
+                      }
+                      placeholder="Buscar por codigo o nombre"
+                      ref={(element) => {
+                        searchInputRefs.current[index] = element;
+                      }}
+                      value={line.accountSearch}
+                    />
+                  </div>
                   <input
-                    className="om7-input w-full"
+                    className="om7-input"
                     disabled={disabled}
+                    name="lineDescription"
+                    onChange={(event) =>
+                      updateLine(index, { description: event.target.value })
+                    }
+                    placeholder="Detalle"
+                    value={line.description}
+                  />
+                  <input
+                    className="om7-input text-right"
+                    disabled={disabled}
+                    inputMode="decimal"
+                    name="lineDebit"
                     onChange={(event) =>
                       updateLine(index, {
-                        accountId: "",
-                        accountSearch: event.target.value,
+                        credit: event.target.value ? "" : line.credit,
+                        debit: event.target.value,
                       })
                     }
-                    placeholder="Buscar por codigo o nombre"
-                    value={line.accountSearch}
+                    placeholder="0.00"
+                    value={line.debit}
                   />
-                  {!disabled && !selectedAccount && line.accountSearch ? (
-                    <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-white/[0.1] bg-slate-950 p-1 shadow-2xl">
-                      {options.length > 0 ? (
-                        options.map((account) => (
-                          <button
-                            className="block w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
-                            key={account.id}
-                            onClick={() =>
-                              updateLine(index, {
-                                accountId: account.id,
-                                accountSearch: accountLabel(account),
-                              })
-                            }
-                            type="button"
-                          >
-                            <span className="font-mono text-cyan-100">
-                              {account.codigo}
-                            </span>{" "}
-                            {account.nombre}
-                          </button>
-                        ))
-                      ) : (
-                        <div className="px-3 py-2 text-xs text-slate-500">
-                          Sin coincidencias
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-                <input
-                  className="om7-input"
-                  disabled={disabled}
-                  name="lineDescription"
-                  onChange={(event) =>
-                    updateLine(index, { description: event.target.value })
-                  }
-                  placeholder="Detalle"
-                  value={line.description}
-                />
-                <input
-                  className="om7-input text-right"
-                  disabled={disabled}
-                  inputMode="decimal"
-                  name="lineDebit"
-                  onChange={(event) =>
-                    updateLine(index, {
-                      credit: event.target.value ? "" : line.credit,
-                      debit: event.target.value,
-                    })
-                  }
-                  placeholder="0.00"
-                  value={line.debit}
-                />
-                <input
-                  className="om7-input text-right"
-                  disabled={disabled}
-                  inputMode="decimal"
-                  name="lineCredit"
-                  onChange={(event) =>
-                    updateLine(index, {
-                      credit: event.target.value,
-                      debit: event.target.value ? "" : line.debit,
-                    })
-                  }
-                  placeholder="0.00"
-                  value={line.credit}
-                />
+                  <input
+                    className="om7-input text-right"
+                    disabled={disabled}
+                    inputMode="decimal"
+                    name="lineCredit"
+                    onChange={(event) =>
+                      updateLine(index, {
+                        credit: event.target.value,
+                        debit: event.target.value ? "" : line.debit,
+                      })
+                    }
+                    placeholder="0.00"
+                    value={line.credit}
+                  />
                     <button
                       className="rounded-xl border border-white/[0.08] bg-white/[0.035] text-sm font-semibold text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
                       disabled={disabled}
@@ -340,13 +358,47 @@ export function ManualAsientoForm({
                       x
                     </button>
                   </div>
-                );
-              })}
+                ))}
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-white/[0.07] p-4 lg:flex-row lg:items-center lg:justify-between">
+        {!disabled && searchOverlay ? (
+          <div
+            className="fixed z-[10000] max-h-72 overflow-auto rounded-xl border border-cyan-200/20 bg-slate-950 p-1 shadow-2xl shadow-black/60"
+            style={{
+              left: searchOverlay.left,
+              top: searchOverlay.top,
+              width: searchOverlay.width,
+            }}
+          >
+            {visibleSearchAccounts.length > 0 ? (
+              visibleSearchAccounts.map((account) => (
+                <button
+                  className="block w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
+                  key={account.id}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    selectAccount(searchOverlay.index, account);
+                  }}
+                  type="button"
+                >
+                  <span className="font-mono text-cyan-100">{account.codigo}</span>{" "}
+                  {account.nombre}
+                  <span className="mt-1 block text-[11px] text-slate-500">
+                    {account.categoria} · {account.naturaleza}
+                  </span>
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-2 text-xs text-slate-500">
+                Sin coincidencias
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-3 border-t border-white/[0.07] bg-black/10 p-4 lg:flex-row lg:items-center lg:justify-between">
           <button
             className="om7-btn-ghost px-4 py-2.5"
             disabled={disabled}
