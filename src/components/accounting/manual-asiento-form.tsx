@@ -131,6 +131,9 @@ export function ManualAsientoForm({
     : template
       ? `/contabilidad/asientos/manual?templateId=${template.id}`
       : "/contabilidad/asientos/manual";
+  const visibleSearchAccounts = searchOverlay
+    ? filteredAccounts(searchOverlay.query)
+    : [];
 
   function updateLine(index: number, patch: Partial<FormLine>) {
     setLines((current) =>
@@ -182,10 +185,6 @@ export function ManualAsientoForm({
       .slice(0, 8);
   }
 
-  const visibleSearchAccounts = searchOverlay
-    ? filteredAccounts(searchOverlay.query)
-    : [];
-
   function openSearch(index: number, input: HTMLInputElement, query: string) {
     const rect = input.getBoundingClientRect();
 
@@ -211,252 +210,301 @@ export function ManualAsientoForm({
   }
 
   return (
-    <form action={saveManualAsientoAction} className="grid gap-4">
+    <form
+      action={saveManualAsientoAction}
+      className="fixed inset-0 z-[9000] overflow-y-auto bg-black/65 p-3 backdrop-blur-sm sm:p-6"
+    >
       {asiento ? <input name="asientoId" type="hidden" value={asiento.id} /> : null}
       {template ? (
         <input name="templateSourceId" type="hidden" value={template.id} />
       ) : null}
       <input name="redirectTo" type="hidden" value={redirectTo} />
 
-      <section className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-4 sm:p-5">
-        <div className="grid gap-4 lg:grid-cols-[170px_minmax(0,1fr)_140px]">
-          <label className="grid gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Fecha
-            </span>
-            <input
-              className="om7-input"
-              defaultValue={asiento?.fecha ?? todayISO()}
-              disabled={disabled}
-              name="fecha"
-              required
-              type="date"
-            />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Nombre
-            </span>
-            <input
-              className="om7-input"
-              defaultValue={
-                asiento?.descripcion ??
-                (template ? `${template.descripcion} - copia` : "")
-              }
-              disabled={disabled}
-              name="descripcion"
-              placeholder="Ajuste manual"
-              required
-            />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Moneda
-            </span>
-            <select
-              className="om7-input"
-              disabled={disabled}
-              name="moneda"
-              onChange={(event) => setCurrency(event.target.value)}
-              value={currency}
-            >
-              <option className="bg-slate-950" value="CRC">
-                CRC
-              </option>
-              <option className="bg-slate-950" value="USD">
-                USD
-              </option>
-            </select>
-          </label>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-white/[0.08] bg-white/[0.035]">
-        <div className="overflow-x-auto">
-          <div className="min-w-[760px]">
-            <div className="grid grid-cols-[minmax(260px,1.35fr)_minmax(180px,0.95fr)_130px_130px_48px] gap-2 border-b border-white/[0.07] px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              <span>Cuenta</span>
-              <span>Detalle</span>
-              <span>Debe</span>
-              <span>Haber</span>
-              <span />
+      <div className="mx-auto flex min-h-full max-w-6xl items-center justify-center">
+        <section className="flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-3xl border border-cyan-100/12 bg-[#050914]/98 shadow-2xl shadow-black/70">
+          <header className="flex flex-col gap-4 border-b border-white/[0.07] bg-white/[0.025] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200/70">
+                Contabilidad
+              </p>
+              <h2 className="mt-1 text-xl font-semibold text-white">
+                {isEditing ? "Editar asiento manual" : "Nuevo asiento manual"}
+              </h2>
             </div>
+            <Link className="om7-btn-ghost px-4 py-2.5" href="/contabilidad/asientos">
+              Cerrar
+            </Link>
+          </header>
 
-            <div className="grid gap-2 p-3">
-              {lines.map((line, index) => (
-                <div
-                  className="grid grid-cols-[minmax(260px,1.35fr)_minmax(180px,0.95fr)_130px_130px_48px] gap-2 rounded-xl border border-white/[0.06] bg-black/15 p-2"
-                  key={line.key}
-                >
-                  <div>
-                    <input name="lineAccountId" type="hidden" value={line.accountId} />
-                    <input
-                      className="om7-input w-full"
-                      disabled={disabled}
-                      onBlur={closeSearchSoon}
-                      onChange={(event) => {
-                        updateLine(index, {
-                          accountId: "",
-                          accountSearch: event.target.value,
-                        });
-                        openSearch(index, event.currentTarget, event.target.value);
-                      }}
-                      onFocus={(event) =>
-                        openSearch(index, event.currentTarget, line.accountSearch)
-                      }
-                      placeholder="Buscar por codigo o nombre"
-                      ref={(element) => {
-                        searchInputRefs.current[index] = element;
-                      }}
-                      value={line.accountSearch}
-                    />
-                  </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+            <section className="mb-4 rounded-2xl border border-white/[0.08] bg-white/[0.035] p-4">
+              <div className="grid gap-4 lg:grid-cols-[170px_minmax(0,1fr)_140px]">
+                <label className="grid gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Fecha
+                  </span>
                   <input
                     className="om7-input"
+                    defaultValue={asiento?.fecha ?? todayISO()}
                     disabled={disabled}
-                    name="lineDescription"
-                    onChange={(event) =>
-                      updateLine(index, { description: event.target.value })
-                    }
-                    placeholder="Detalle"
-                    value={line.description}
+                    name="fecha"
+                    required
+                    type="date"
                   />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Nombre
+                  </span>
                   <input
-                    className="om7-input text-right"
-                    disabled={disabled}
-                    inputMode="decimal"
-                    name="lineDebit"
-                    onChange={(event) =>
-                      updateLine(index, {
-                        credit: event.target.value ? "" : line.credit,
-                        debit: event.target.value,
-                      })
+                    className="om7-input"
+                    defaultValue={
+                      asiento?.descripcion ??
+                      (template ? `${template.descripcion} - copia` : "")
                     }
-                    placeholder="0.00"
-                    value={line.debit}
-                  />
-                  <input
-                    className="om7-input text-right"
                     disabled={disabled}
-                    inputMode="decimal"
-                    name="lineCredit"
-                    onChange={(event) =>
-                      updateLine(index, {
-                        credit: event.target.value,
-                        debit: event.target.value ? "" : line.debit,
-                      })
-                    }
-                    placeholder="0.00"
-                    value={line.credit}
+                    name="descripcion"
+                    placeholder="Ajuste manual"
+                    required
                   />
-                    <button
-                      className="rounded-xl border border-white/[0.08] bg-white/[0.035] text-sm font-semibold text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
-                      disabled={disabled}
-                      onClick={() => removeLine(index)}
-                      type="button"
-                    >
-                      x
-                    </button>
-                  </div>
-                ))}
-            </div>
-          </div>
-        </div>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Moneda
+                  </span>
+                  <select
+                    className="om7-input"
+                    disabled={disabled}
+                    name="moneda"
+                    onChange={(event) => setCurrency(event.target.value)}
+                    value={currency}
+                  >
+                    <option className="bg-slate-950" value="CRC">
+                      CRC
+                    </option>
+                    <option className="bg-slate-950" value="USD">
+                      USD
+                    </option>
+                  </select>
+                </label>
+              </div>
+            </section>
 
-        {!disabled && searchOverlay ? (
-          <div
-            className="fixed z-[10000] max-h-72 overflow-auto rounded-xl border border-cyan-200/20 bg-slate-950 p-1 shadow-2xl shadow-black/60"
-            style={{
-              left: searchOverlay.left,
-              top: searchOverlay.top,
-              width: searchOverlay.width,
-            }}
-          >
-            {visibleSearchAccounts.length > 0 ? (
-              visibleSearchAccounts.map((account) => (
+            <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03]">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[840px] border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-white/[0.045] text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                      <th className="border-r border-white/[0.055] px-3 py-3 text-left">
+                        Cuenta
+                      </th>
+                      <th className="border-r border-white/[0.055] px-3 py-3 text-left">
+                        Detalle
+                      </th>
+                      <th className="w-36 border-r border-white/[0.055] px-3 py-3 text-right">
+                        Debe
+                      </th>
+                      <th className="w-36 border-r border-white/[0.055] px-3 py-3 text-right">
+                        Haber
+                      </th>
+                      <th className="w-16 px-3 py-3 text-center">Accion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.map((line, index) => (
+                      <tr
+                        className="border-t border-white/[0.055] transition hover:bg-white/[0.025]"
+                        key={line.key}
+                      >
+                        <td className="border-r border-white/[0.04] p-2 align-top">
+                          <input
+                            name="lineAccountId"
+                            type="hidden"
+                            value={line.accountId}
+                          />
+                          <input
+                            className="w-full rounded-xl border border-transparent bg-black/20 px-3 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30"
+                            disabled={disabled}
+                            onBlur={closeSearchSoon}
+                            onChange={(event) => {
+                              updateLine(index, {
+                                accountId: "",
+                                accountSearch: event.target.value,
+                              });
+                              openSearch(index, event.currentTarget, event.target.value);
+                            }}
+                            onFocus={(event) =>
+                              openSearch(index, event.currentTarget, line.accountSearch)
+                            }
+                            placeholder="Buscar cuenta"
+                            ref={(element) => {
+                              searchInputRefs.current[index] = element;
+                            }}
+                            value={line.accountSearch}
+                          />
+                        </td>
+                        <td className="border-r border-white/[0.04] p-2 align-top">
+                          <input
+                            className="w-full rounded-xl border border-transparent bg-black/20 px-3 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30"
+                            disabled={disabled}
+                            name="lineDescription"
+                            onChange={(event) =>
+                              updateLine(index, { description: event.target.value })
+                            }
+                            placeholder="Detalle"
+                            value={line.description}
+                          />
+                        </td>
+                        <td className="border-r border-white/[0.04] p-2 align-top">
+                          <input
+                            className="w-full rounded-xl border border-transparent bg-black/20 px-3 py-2.5 text-right text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30"
+                            disabled={disabled}
+                            inputMode="decimal"
+                            name="lineDebit"
+                            onChange={(event) =>
+                              updateLine(index, {
+                                credit: event.target.value ? "" : line.credit,
+                                debit: event.target.value,
+                              })
+                            }
+                            placeholder="0.00"
+                            value={line.debit}
+                          />
+                        </td>
+                        <td className="border-r border-white/[0.04] p-2 align-top">
+                          <input
+                            className="w-full rounded-xl border border-transparent bg-black/20 px-3 py-2.5 text-right text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30"
+                            disabled={disabled}
+                            inputMode="decimal"
+                            name="lineCredit"
+                            onChange={(event) =>
+                              updateLine(index, {
+                                credit: event.target.value,
+                                debit: event.target.value ? "" : line.debit,
+                              })
+                            }
+                            placeholder="0.00"
+                            value={line.credit}
+                          />
+                        </td>
+                        <td className="p-2 text-center align-top">
+                          <button
+                            className="h-10 w-10 rounded-xl border border-white/[0.08] bg-white/[0.035] text-sm font-semibold text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
+                            disabled={disabled}
+                            onClick={() => removeLine(index)}
+                            type="button"
+                          >
+                            x
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="border-t border-white/[0.065] bg-black/10 px-3 py-3">
                 <button
-                  className="block w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
-                  key={account.id}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    selectAccount(searchOverlay.index, account);
-                  }}
+                  className="om7-btn-ghost px-4 py-2.5"
+                  disabled={disabled}
+                  onClick={addLine}
                   type="button"
                 >
-                  <span className="font-mono text-cyan-100">{account.codigo}</span>{" "}
-                  {account.nombre}
-                  <span className="mt-1 block text-[11px] text-slate-500">
-                    {account.categoria} · {account.naturaleza}
-                  </span>
+                  + Agregar linea
                 </button>
-              ))
-            ) : (
-              <div className="px-3 py-2 text-xs text-slate-500">
-                Sin coincidencias
               </div>
-            )}
+            </section>
           </div>
-        ) : null}
 
-        <div className="flex flex-col gap-3 border-t border-white/[0.07] bg-black/10 p-4 lg:flex-row lg:items-center lg:justify-between">
-          <button
-            className="om7-btn-ghost px-4 py-2.5"
-            disabled={disabled}
-            onClick={addLine}
-            type="button"
-          >
-            Agregar renglon
-          </button>
+          <footer className="border-t border-white/[0.07] bg-[#060b16] px-4 py-4 sm:px-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="grid gap-2 text-sm sm:grid-cols-3">
+                <div className="rounded-xl border border-white/[0.08] bg-black/20 px-4 py-3">
+                  <p className="text-xs text-slate-500">Debe</p>
+                  <p className="mt-1 font-semibold text-white">
+                    {formatCurrency(totals.debit, currency)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/[0.08] bg-black/20 px-4 py-3">
+                  <p className="text-xs text-slate-500">Haber</p>
+                  <p className="mt-1 font-semibold text-white">
+                    {formatCurrency(totals.credit, currency)}
+                  </p>
+                </div>
+                <div
+                  className={[
+                    "rounded-xl border px-4 py-3",
+                    isBalanced
+                      ? "border-white/[0.08] bg-black/20"
+                      : "border-amber-300/25 bg-amber-300/10",
+                  ].join(" ")}
+                >
+                  <p className="text-xs text-slate-500">Diferencia</p>
+                  <p className="mt-1 font-semibold text-white">
+                    {formatCurrency(Math.abs(difference), currency)}
+                  </p>
+                </div>
+              </div>
 
-          <div className="grid gap-2 text-sm sm:grid-cols-3">
-            <div className="rounded-xl border border-white/[0.08] bg-black/20 px-4 py-3">
-              <p className="text-xs text-slate-500">Debe</p>
-              <p className="mt-1 font-semibold text-white">
-                {formatCurrency(totals.debit, currency)}
-              </p>
+              {!disabled ? (
+                <div className="flex flex-col gap-2 sm:items-end">
+                  <p className="text-sm text-slate-500">
+                    {canSave
+                      ? "Partida doble balanceada."
+                      : "Debe y haber deben cuadrar para guardar."}
+                  </p>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Link
+                      className="om7-btn-ghost px-4 py-2.5"
+                      href="/contabilidad/asientos"
+                    >
+                      Cancelar
+                    </Link>
+                    <button
+                      className="om7-btn-primary px-4 py-2.5 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={!canSave}
+                      type="submit"
+                    >
+                      {isEditing ? "Guardar cambios" : "Guardar asiento"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
-            <div className="rounded-xl border border-white/[0.08] bg-black/20 px-4 py-3">
-              <p className="text-xs text-slate-500">Haber</p>
-              <p className="mt-1 font-semibold text-white">
-                {formatCurrency(totals.credit, currency)}
-              </p>
-            </div>
-            <div
-              className={[
-                "rounded-xl border px-4 py-3",
-                isBalanced
-                  ? "border-emerald-300/20 bg-emerald-300/10"
-                  : "border-amber-300/20 bg-amber-300/10",
-              ].join(" ")}
-            >
-              <p className="text-xs text-slate-500">Diferencia</p>
-              <p className="mt-1 font-semibold text-white">
-                {formatCurrency(Math.abs(difference), currency)}
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
+          </footer>
+        </section>
+      </div>
 
-      {!disabled ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-slate-500">
-            {canSave
-              ? "Partida doble balanceada."
-              : "Completa al menos dos lineas y cuadra debe contra haber."}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Link className="om7-btn-ghost px-4 py-2.5" href="/contabilidad/asientos">
-              Cancelar
-            </Link>
-            <button
-              className="om7-btn-primary px-4 py-2.5 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!canSave}
-              type="submit"
-            >
-              {isEditing ? "Guardar cambios" : "Guardar asiento"}
-            </button>
-          </div>
+      {!disabled && searchOverlay ? (
+        <div
+          className="fixed z-[10000] max-h-72 overflow-auto rounded-xl border border-cyan-200/20 bg-slate-950 p-1 shadow-2xl shadow-black/60"
+          style={{
+            left: searchOverlay.left,
+            top: searchOverlay.top,
+            width: searchOverlay.width,
+          }}
+        >
+          {visibleSearchAccounts.length > 0 ? (
+            visibleSearchAccounts.map((account) => (
+              <button
+                className="block w-full rounded-lg px-3 py-2 text-left text-xs text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
+                key={account.id}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  selectAccount(searchOverlay.index, account);
+                }}
+                type="button"
+              >
+                <span className="font-mono text-cyan-100">{account.codigo}</span>{" "}
+                {account.nombre}
+                <span className="mt-1 block text-[11px] text-slate-500">
+                  {account.categoria} / {account.naturaleza}
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-xs text-slate-500">Sin coincidencias</div>
+          )}
         </div>
       ) : null}
     </form>
