@@ -70,6 +70,12 @@ export default async function AsientosContablesPage() {
         action={
           <div className="flex flex-wrap gap-2">
             <BackLink href="/contabilidad" label="Volver a contabilidad" />
+            <Link
+              className="om7-btn-primary px-4 py-2.5"
+              href="/contabilidad/asientos/manual"
+            >
+              Asiento manual
+            </Link>
             <Link className="om7-btn-ghost px-4 py-2.5" href="/contabilidad/mayor">
               Mayor
             </Link>
@@ -181,12 +187,23 @@ export default async function AsientosContablesPage() {
                     <td>{formatCurrency(asiento.total_credito, asiento.moneda)}</td>
                     <td>{asiento.modulo_origen ?? "manual"}</td>
                     <td>
-                      <Link
-                        className="om7-btn-ghost px-3 py-2 text-xs"
-                        href={`/contabilidad/asientos/${asiento.id}`}
-                      >
-                        Ver detalle
-                      </Link>
+                      <div className="flex flex-wrap gap-2">
+                        <Link
+                          className="om7-btn-ghost px-3 py-2 text-xs"
+                          href={`/contabilidad/asientos/${asiento.id}`}
+                        >
+                          Ver detalle
+                        </Link>
+                        {asiento.estado === "borrador" &&
+                        (asiento.modulo_origen ?? "manual") === "manual" ? (
+                          <Link
+                            className="om7-btn-ghost px-3 py-2 text-xs"
+                            href={`/contabilidad/asientos/manual/${asiento.id}`}
+                          >
+                            Editar
+                          </Link>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))

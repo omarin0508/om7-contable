@@ -78,6 +78,15 @@ export type AddLineaAsientoPayload = {
   metadata?: Record<string, unknown>;
 };
 
+export type UpdateAsientoBorradorPayload = CreateAsientoBorradorPayload & {
+  id: string;
+};
+
+export type ReplaceLineasAsientoPayload = {
+  asiento_id: string;
+  lineas: Omit<AddLineaAsientoPayload, "asiento_id">[];
+};
+
 async function getAuthenticatedSupabase() {
   const supabase = await createClient();
 
@@ -244,6 +253,112 @@ export async function addLineaAsiento(payload: AddLineaAsientoPayload) {
   }
 
   return data as AsientoLinea;
+}
+
+export async function updateAsientoBorrador(
+  payload: UpdateAsientoBorradorPayload,
+) {
+  const { supabase } = await getAuthenticatedSupabase();
+  const { organization } = await getValidatedOrganization();
+  const { data, error } = await supabase
+    .from("asientos_contables")
+    .update({
+      descripcion: payload.descripcion,
+      documento_origen_id: payload.documento_origen_id ?? null,
+      fecha: payload.fecha,
+      metadata: payload.metadata ?? {},
+      modulo_origen: payload.modulo_origen ?? "manual",
+      moneda: payload.moneda ?? organization.base_currency ?? "CRC",
+      periodo: payload.periodo ?? null,
+      referencia: payload.referencia ?? null,
+      tipo_cambio: payload.tipo_cambio ?? null,
+    })
+    .eq("id", payload.id)
+    .eq("organization_id", organization.id)
+    .eq("estado", "borrador")
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "No se pudo actualizar el asiento.");
+  }
+
+  return data as AsientoContable;
+}
+
+export async function replaceLineasAsiento(payload: ReplaceLineasAsientoPayload) {
+  const { supabase } = await getAuthenticatedSupabase();
+  const { organization } = await getValidatedOrganization();
+  const { data: asiento, error: asientoError } = await supabase
+    .from("asientos_contables")
+    .select("id, estado, organization_id")
+    .eq("id", payload.asiento_id)
+    .eq("organization_id", organization.id)
+    .single();
+
+  if (asientoError || !asiento) {
+    throw new Error(asientoError?.message ?? "Asiento no encontrado.");
+  }
+
+  if (String(asiento.estado) !== "borrador") {
+    throw new Error("Solo se pueden editar lineas de asientos en borrador.");
+  }
+
+  const { error: deleteError } = await supabase
+    .from("asiento_lineas")
+    .delete()
+    .eq("asiento_id", payload.asiento_id)
+    .eq("organization_id", organization.id);
+
+  if (deleteError) {
+    throw new Error(deleteError.message);
+  }
+
+  if (payload.lineas.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("asiento_lineas")
+    .insert(
+      payload.lineas.map((linea) => ({
+        asiento_id: payload.asiento_id,
+        centro_costo_id: linea.centro_costo_id ?? null,
+        credito: linea.credito ?? 0,
+        cuenta_contable_id: linea.cuenta_contable_id,
+        debito: linea.debito ?? 0,
+        descripcion: linea.descripcion ?? null,
+        documento_origen_id: linea.documento_origen_id ?? null,
+        metadata: linea.metadata ?? {},
+        moneda: linea.moneda ?? organization.base_currency ?? "CRC",
+        organization_id: organization.id,
+        presupuesto_id: linea.presupuesto_id ?? null,
+        tercero_id: linea.tercero_id ?? null,
+        tipo_cambio: linea.tipo_cambio ?? null,
+      })),
+    )
+    .select("*");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []) as AsientoLinea[];
+}
+
+export async function deleteAsientoBorrador(id: string) {
+  const { supabase } = await getAuthenticatedSupabase();
+  const { organization } = await getValidatedOrganization();
+  const { error } = await supabase
+    .from("asientos_contables")
+    .delete()
+    .eq("id", id)
+    .eq("organization_id", organization.id)
+    .eq("estado", "borrador");
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 export async function contabilizarAsiento(id: string) {

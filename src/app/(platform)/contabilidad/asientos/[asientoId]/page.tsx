@@ -93,6 +93,15 @@ export default async function AsientoDetallePage({
         action={
           <div className="flex flex-wrap gap-2">
             <BackLink href="/contabilidad/asientos" label="Volver a asientos" />
+            {asiento.estado === "borrador" &&
+            (asiento.modulo_origen ?? "manual") === "manual" ? (
+              <Link
+                className="om7-btn-primary px-4 py-2.5"
+                href={`/contabilidad/asientos/manual/${asiento.id}`}
+              >
+                Editar manual
+              </Link>
+            ) : null}
             <Link className="om7-btn-ghost px-4 py-2.5" href="/contabilidad/mayor">
               Mayor
             </Link>
