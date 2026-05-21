@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import type { ReactNode } from "react";
 import {
   assignClientToCompanyAction,
   cancelClientInvitationAction,
@@ -7,7 +8,6 @@ import {
 } from "@/app/(platform)/empresas/actions";
 import { setActiveCompanyAction } from "@/app/(platform)/empresas/context-actions";
 import {
-  MetricCard,
   ModuleFrame,
   ModuleHeader,
   StatusBadge,
@@ -31,13 +31,6 @@ const clientStatusLabels: Record<string, string> = {
   cancelled: "Sin acceso",
 };
 
-function countByStatus(
-  companies: Awaited<ReturnType<typeof getCompaniesForActiveOrganization>>["companies"],
-  status: string,
-) {
-  return companies.filter((company) => company.status === status).length;
-}
-
 function formatDate(value: string | null) {
   if (!value) {
     return "Pendiente";
@@ -48,6 +41,45 @@ function formatDate(value: string | null) {
     month: "short",
     year: "numeric",
   }).format(new Date(value));
+}
+
+function CompaniesModal({
+  children,
+  id,
+  title,
+}: {
+  children: ReactNode;
+  id: string;
+  title: string;
+}) {
+  return (
+    <div
+      className="invisible fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-3 opacity-0 backdrop-blur-sm transition target:visible target:opacity-100 sm:p-6"
+      id={id}
+    >
+      <div className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/20 bg-[#07111f] shadow-2xl shadow-cyan-950/30">
+        <div className="flex items-center justify-between gap-4 border-b border-white/15 bg-[#06101c] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200/70">
+              OM7 Finance OS
+            </p>
+            <p className="mt-1 truncate text-xl font-semibold text-white">
+              {title}
+            </p>
+          </div>
+          <a
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-300 transition hover:border-cyan-300/30 hover:text-cyan-100"
+            href="#panel-principal"
+          >
+            Cerrar
+          </a>
+        </div>
+        <div className="min-h-0 overflow-y-auto p-5 om7-scrollbar">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default async function CompaniesPage() {
@@ -68,52 +100,78 @@ export default async function CompaniesPage() {
   );
   const companyClients = new Map(companyClientsEntries);
 
-  const metrics = [
-    {
-      label: "Empresas activas",
-      value: String(countByStatus(companies, "active")),
-      detail: "Operando dentro de la organizacion",
-    },
-    {
-      label: "Empresas en revision",
-      value: String(countByStatus(companies, "review")),
-      detail: "Pendientes de completar datos",
-    },
-    {
-      label: "Empresas inactivas",
-      value: String(countByStatus(companies, "inactive")),
-      detail: "Archivadas o pausadas",
-    },
-    {
-      label: "Total empresas",
-      value: String(companies.length),
-      detail: activeOrganization.name,
-    },
-  ];
+  const activeClientsCount = [...companyClients.values()].reduce(
+    (sum, clients) =>
+      sum + clients.filter((client) => client.status === "active").length,
+    0,
+  );
+  const pendingInvitationsCount = [...companyClients.values()].reduce(
+    (sum, clients) =>
+      sum + clients.filter((client) => client.status === "pending").length,
+    0,
+  );
 
   return (
     <ModuleFrame>
       <ModuleHeader
         title="Empresas y Clientes"
-        description="Administra empresas reales asociadas a tu organizacion activa, con aislamiento por RLS y base multiempresa."
+        description="Consola operativa para clientes, empresas, usuarios y permisos por organizacion."
         action={
-          <a
-            className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-2.5 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/15"
-            href="#nueva-empresa"
-          >
-            Nuevo cliente/empresa
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <a className="om7-btn-primary px-4 py-2.5" href="#modal-nueva-empresa">
+              Nueva empresa
+            </a>
+            <a className="om7-btn-ghost px-4 py-2.5" href="#modal-usuarios-permisos">
+              Asignar usuario
+            </a>
+          </div>
         }
       />
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => (
-          <MetricCard key={metric.label} {...metric} />
-        ))}
+      <section className="sticky top-[var(--om7-actions-sticky-top,12.5rem)] z-40 rounded-2xl border border-white/16 bg-[#06101c] p-2 shadow-2xl shadow-black/25 lg:top-[var(--om7-actions-sticky-top-lg,9.25rem)]">
+        <div className="flex min-w-0 items-center gap-2 overflow-x-auto om7-scrollbar">
+          {[
+            ["#modal-directorio-empresas", "Empresas"],
+            ["#modal-nueva-empresa", "Nueva empresa"],
+            ["#modal-usuarios-permisos", "Usuarios y permisos"],
+          ].map(([href, label]) => (
+            <a
+              className="grid h-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.035] px-3.5 text-sm font-semibold text-slate-300 transition hover:border-cyan-200/25 hover:bg-cyan-300/[0.08] hover:text-cyan-100"
+              href={href}
+              key={`${href}-${label}`}
+            >
+              {label}
+            </a>
+          ))}
+        </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-        <PremiumCard className="overflow-hidden">
+      <section
+        className="grid gap-3 lg:grid-cols-3"
+        id="panel-principal"
+      >
+        <WorkspaceLauncher
+          action="Abrir"
+          detail={`${companies.length} empresas`}
+          href="#modal-directorio-empresas"
+          title="Empresas"
+        />
+        <WorkspaceLauncher
+          action="Crear"
+          detail="Alta controlada"
+          href="#modal-nueva-empresa"
+          title="Nueva empresa"
+        />
+        <WorkspaceLauncher
+          action="Gestionar"
+          detail={`${activeClientsCount} activos / ${pendingInvitationsCount} pendientes`}
+          href="#modal-usuarios-permisos"
+          title="Usuarios y permisos"
+        />
+      </section>
+
+      <CompaniesModal id="modal-directorio-empresas" title="Directorio empresarial">
+        <PremiumCard className="overflow-hidden border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] shadow-2xl shadow-black/25 ring-1 ring-cyan-300/[0.04]">
           <div className="flex items-center justify-between border-b border-white/[0.07] px-5 py-4">
             <div>
               <p className="text-sm font-medium text-white">
@@ -209,10 +267,12 @@ export default async function CompaniesPage() {
             </table>
           </div>
         </PremiumCard>
+      </CompaniesModal>
 
-        <div id="nueva-empresa">
+      <CompaniesModal id="modal-nueva-empresa" title="Nueva empresa">
+        <div>
           <div className="flex flex-col gap-5">
-          <PremiumCard className="p-5">
+          <PremiumCard className="border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-5 shadow-2xl shadow-black/25 ring-1 ring-cyan-300/[0.04]">
             <p className="text-sm font-medium text-white">Nuevo cliente/empresa</p>
             <p className="mt-1 text-xs leading-5 text-slate-500">
               Crea una empresa o cliente dentro de la organizacion activa.
@@ -304,9 +364,10 @@ export default async function CompaniesPage() {
           </PremiumCard>
           </div>
         </div>
-      </section>
+      </CompaniesModal>
 
-      <section className="grid gap-5 xl:grid-cols-2">
+      <CompaniesModal id="modal-usuarios-permisos" title="Usuarios y permisos">
+      <section className="grid max-h-[62vh] gap-4 overflow-y-auto om7-scrollbar xl:grid-cols-2">
         {companies.map((company) => {
           const clients = companyClients.get(company.id) ?? [];
 
@@ -438,6 +499,34 @@ export default async function CompaniesPage() {
           );
         })}
       </section>
+      </CompaniesModal>
     </ModuleFrame>
+  );
+}
+
+function WorkspaceLauncher({
+  action,
+  detail,
+  href,
+  title,
+}: {
+  action: string;
+  detail: string;
+  href: string;
+  title: string;
+}) {
+  return (
+    <a
+      className="group rounded-2xl border border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-4 shadow-xl shadow-black/20 ring-1 ring-cyan-300/[0.04] transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-cyan-300/[0.055]"
+      href={href}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-base font-semibold text-white">{title}</p>
+        <span className="rounded-full border border-white/[0.1] bg-white/[0.045] px-2.5 py-1 text-xs font-semibold text-slate-300">
+          {action}
+        </span>
+      </div>
+      <p className="mt-4 text-sm text-slate-400">{detail}</p>
+    </a>
   );
 }

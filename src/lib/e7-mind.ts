@@ -18,7 +18,11 @@ import {
   type DocumentRecord,
 } from "@/lib/storage";
 import { normalizeCurrencyCode } from "@/lib/currency";
-import { createInvoiceForActiveCompany, type Invoice } from "@/lib/invoices";
+import {
+  assertInvoiceIssuerMatchesCompany,
+  createInvoiceForActiveCompany,
+  type Invoice,
+} from "@/lib/invoices";
 import { createPurchase, type Purchase } from "@/lib/purchases";
 import { createClient } from "@/lib/supabase/server";
 
@@ -883,8 +887,9 @@ export async function approveAndSyncE7Distribution(
     throw new Error("No hay lineas de distribucion para aprobar.");
   }
 
+  const activeContext = await getActiveContext();
   const recordType = inferRecordType({
-    activeCompanyTaxId: (await getActiveContext()).activeCompany?.tax_id,
+    activeCompanyTaxId: activeContext.activeCompany?.tax_id,
     classification,
     data: extraction.extracted_data,
     document,
@@ -918,6 +923,13 @@ export async function approveAndSyncE7Distribution(
     recordType,
   });
   const data = extraction.extracted_data ?? {};
+
+  if (recordType === "invoice") {
+    assertInvoiceIssuerMatchesCompany({
+      company: activeContext.activeCompany,
+      data,
+    });
+  }
 
   if (existing) {
     await updateConvertedRecordFromE7({

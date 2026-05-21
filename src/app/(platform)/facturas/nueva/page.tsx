@@ -7,6 +7,7 @@ import {
 } from "@/components/modules/shared";
 import { PremiumCard } from "@/components/ui/premium-card";
 import { getActiveContext } from "@/lib/active-context";
+import { getInvoiceIssuerCompanyLabel } from "@/lib/invoices";
 
 type NewInvoicePageProps = {
   searchParams?: Promise<{
@@ -23,15 +24,16 @@ export default async function NewInvoicePage({
   const activeCompany = activeContext.activeCompany;
   const organization = activeContext.organization;
   const currency = activeCompany?.base_currency ?? organization?.base_currency ?? "CRC";
+  const issuerCompanyLabel = getInvoiceIssuerCompanyLabel(activeCompany);
 
   return (
     <ModuleFrame>
       <ModuleHeader
-        title="Nueva factura manual"
-        description="Un espacio dedicado para registrar facturas cuando no vienen desde XML, PDF o foto."
+        title="Nueva venta manual"
+        description="Un espacio dedicado para registrar ventas cuando no vienen desde XML, PDF o foto."
         action={
           <div className="flex flex-wrap gap-2">
-            <BackLink href="/facturas" label="Volver a facturas" />
+            <BackLink href="/facturas" label="Volver a ventas" />
           </div>
         }
       />
@@ -39,7 +41,7 @@ export default async function NewInvoicePage({
       {actionError ? (
         <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
           <p className="text-sm font-semibold text-amber-100">
-            No se pudo guardar la factura
+            No se pudo guardar la venta
           </p>
           <p className="mt-2 text-sm leading-6 text-amber-100/75">
             {actionError}
@@ -53,7 +55,7 @@ export default async function NewInvoicePage({
             Selecciona una empresa activa
           </p>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-100/75">
-            Las facturas manuales deben registrarse bajo una empresa cliente.
+            Las ventas manuales deben registrarse bajo una empresa cliente.
             Defini una empresa activa antes de continuar.
           </p>
           <Link
@@ -69,11 +71,11 @@ export default async function NewInvoicePage({
         <PremiumCard className="p-5 sm:p-6">
           <div className="flex flex-col gap-2 border-b border-white/[0.07] pb-5">
             <p className="text-base font-semibold text-white">
-              Datos de la factura
+              Datos de la venta
             </p>
             <p className="text-sm leading-6 text-slate-400">
               {activeCompany
-                ? `Se guardara en ${activeCompany.name}.`
+                ? `Emisor de la venta: ${issuerCompanyLabel}.`
                 : "Selecciona una empresa activa antes de registrar."}
             </p>
           </div>
@@ -126,7 +128,7 @@ export default async function NewInvoicePage({
 
             <label className="block">
               <span className="text-sm font-medium text-slate-300">
-                Cliente / contraparte
+                Cliente / receptor
               </span>
               <input
                 className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
@@ -228,7 +230,7 @@ export default async function NewInvoicePage({
                 disabled={!activeCompany}
                 type="submit"
               >
-                Guardar factura
+                Guardar venta
               </button>
             </div>
           </form>
@@ -240,23 +242,23 @@ export default async function NewInvoicePage({
               Flujo recomendado
             </p>
             <div className="mt-4 grid gap-3 text-sm text-slate-300">
-              <p>1. Registras la factura manual.</p>
-              <p>2. Volves a facturas y marcas como revisada.</p>
-              <p>3. Aprobada la factura, OM7 habilita asiento y cobro.</p>
+              <p>1. Registras la venta manual.</p>
+              <p>2. Volves a ventas y marcas como revisada.</p>
+              <p>3. Aprobada la venta, OM7 habilita asiento y cobro.</p>
             </div>
           </PremiumCard>
 
           <PremiumCard className="p-5">
             <p className="text-sm font-semibold text-white">Tip OM7</p>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Si tenes XML, PDF o foto, es mejor subirlo por Documentos para
-              conservar trazabilidad automatica.
+              Si tenes XML, PDF o foto, es mejor ingresarlo por Bandeja para
+              clasificarlo y conservar trazabilidad automatica.
             </p>
             <Link
               className="mt-4 inline-flex rounded-xl border border-cyan-200/20 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
-              href="/documentos"
+              href="/bandeja"
             >
-              Ir a documentos
+              Ir a bandeja
             </Link>
           </PremiumCard>
         </div>

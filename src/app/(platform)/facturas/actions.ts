@@ -10,6 +10,7 @@ import { generarAsientoMovimientoCaja } from "@/lib/contabilizacion-caja";
 import { normalizeCurrencyCode } from "@/lib/currency";
 import {
   createInvoiceForActiveCompany,
+  updateInvoiceAccountingFields,
   updateInvoiceReviewStatus,
 } from "@/lib/invoices";
 import { registerInvoiceCollection } from "@/lib/payments";
@@ -17,6 +18,15 @@ import { registerInvoiceCollection } from "@/lib/payments";
 function parseAmount(value: FormDataEntryValue | null) {
   const parsed = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseOptionalUuid(value: FormDataEntryValue | null) {
+  const text = String(value ?? "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    text,
+  )
+    ? text
+    : "";
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -44,7 +54,7 @@ export async function createInvoiceAction(formData: FormData) {
 
   try {
     if (!proveedor) {
-      throw new Error("El proveedor es requerido.");
+      throw new Error("El cliente receptor es requerido.");
     }
 
     await createInvoiceForActiveCompany({
@@ -63,7 +73,7 @@ export async function createInvoiceAction(formData: FormData) {
     logActionError("createInvoiceAction", error);
     target = redirectWithError(
       errorRedirectTo,
-      getErrorMessage(error, "No se pudo crear la factura."),
+      getErrorMessage(error, "No se pudo crear la venta."),
     );
   }
 
@@ -91,7 +101,7 @@ export async function updateInvoiceReviewStatusAction(formData: FormData) {
     logActionError("updateInvoiceReviewStatusAction", error);
     target = redirectWithError(
       redirectTo,
-      getErrorMessage(error, "No se pudo actualizar la revision de la factura."),
+      getErrorMessage(error, "No se pudo actualizar la revision de la venta."),
     );
   }
 
@@ -122,6 +132,45 @@ export async function generateInvoiceAccountingEntryAction(formData: FormData) {
   redirect(target);
 }
 
+export async function updateInvoiceAccountingFieldsAction(formData: FormData) {
+  const redirectTo = String(formData.get("redirectTo") ?? "/facturas");
+  let target = redirectTo;
+
+  try {
+    const invoice = await updateInvoiceAccountingFields({
+      fecha: String(formData.get("fecha") ?? "").trim(),
+      impuesto: parseAmount(formData.get("impuesto")),
+      invoiceId: String(formData.get("invoiceId") ?? ""),
+      notas: String(formData.get("notas") ?? "").trim(),
+      numeroDocumento: String(formData.get("numeroDocumento") ?? "").trim(),
+      proveedor: String(formData.get("proveedor") ?? "").trim(),
+      subtotal: parseAmount(formData.get("subtotal")),
+      suggestedAccount: String(formData.get("suggestedAccount") ?? "").trim(),
+      suggestedCostCenterId: parseOptionalUuid(formData.get("suggestedCostCenterId")),
+      tipoDocumento: String(formData.get("tipoDocumento") ?? "").trim(),
+      total: parseAmount(formData.get("total")),
+    });
+
+    if (String(formData.get("reprocess") ?? "") === "true") {
+      await generarAsientoFactura(invoice.id);
+    }
+  } catch (error) {
+    logActionError("updateInvoiceAccountingFieldsAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo corregir la venta."),
+    );
+  }
+
+  revalidatePath("/facturas");
+  revalidatePath("/contabilidad/asientos");
+  revalidatePath("/contabilidad/mayor");
+  revalidatePath("/contabilidad/balance-comprobacion");
+  revalidatePath("/contabilidad/balance-general");
+  revalidatePath("/contabilidad/estado-resultados");
+  redirect(target);
+}
+
 export async function revertInvoiceAccountingEntryAction(formData: FormData) {
   const redirectTo = String(formData.get("redirectTo") ?? "/facturas");
   let target = redirectTo;
@@ -129,7 +178,7 @@ export async function revertInvoiceAccountingEntryAction(formData: FormData) {
   try {
     await revertirAsientoFactura(
       String(formData.get("invoiceId") ?? ""),
-      String(formData.get("motivo") ?? "Reversion contable de factura").trim(),
+      String(formData.get("motivo") ?? "Reversion contable de venta").trim(),
     );
   } catch (error) {
     logActionError("revertInvoiceAccountingEntryAction", error);

@@ -7,7 +7,6 @@ import {
 } from "@/app/(platform)/periodos/actions";
 import {
   BackLink,
-  MetricCard,
   ModuleFrame,
   ModuleHeader,
 } from "@/components/modules/shared";
@@ -148,6 +147,72 @@ function PeriodActionForm({
         {children}
       </button>
     </form>
+  );
+}
+
+function PeriodsModal({
+  children,
+  id,
+  title,
+}: {
+  children: ReactNode;
+  id: string;
+  title: string;
+}) {
+  return (
+    <div
+      className="invisible fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-3 opacity-0 backdrop-blur-sm transition target:visible target:opacity-100 sm:p-6"
+      id={id}
+    >
+      <div className="flex max-h-[88vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl border border-white/20 bg-[#07111f] shadow-2xl shadow-cyan-950/30">
+        <div className="flex items-center justify-between gap-4 border-b border-white/15 bg-[#06101c] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200/70">
+              OM7 Finance OS
+            </p>
+            <p className="mt-1 truncate text-xl font-semibold text-white">
+              {title}
+            </p>
+          </div>
+          <a
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-300 transition hover:border-cyan-300/30 hover:text-cyan-100"
+            href="#panel-periodos"
+          >
+            Cerrar
+          </a>
+        </div>
+        <div className="min-h-0 overflow-y-auto p-5 om7-scrollbar">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PeriodLauncher({
+  action,
+  detail,
+  href,
+  title,
+}: {
+  action: string;
+  detail: string;
+  href: string;
+  title: string;
+}) {
+  return (
+    <a
+      className="group rounded-2xl border border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-4 shadow-xl shadow-black/20 ring-1 ring-cyan-300/[0.04] transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-cyan-300/[0.055]"
+      href={href}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-base font-semibold text-white">{title}</p>
+        <span className="rounded-full border border-white/[0.1] bg-white/[0.045] px-2.5 py-1 text-xs font-semibold text-slate-300">
+          {action}
+        </span>
+      </div>
+      <p className="mt-4 text-sm text-slate-400">{detail}</p>
+    </a>
   );
 }
 
@@ -351,6 +416,24 @@ export default async function AccountingPeriodsPage({
         action={<BackLink />}
       />
 
+      <section className="sticky top-[var(--om7-actions-sticky-top,12.5rem)] z-40 rounded-2xl border border-white/16 bg-[#06101c] p-2 shadow-2xl shadow-black/25 lg:top-[var(--om7-actions-sticky-top-lg,9.25rem)]">
+        <div className="flex min-w-0 items-center gap-2 overflow-x-auto om7-scrollbar">
+          {[
+            ["#modal-periodos", "Periodos"],
+            ["#modal-cierre-actual", "Cierre actual"],
+            ["#modal-tributario", "Tributario"],
+          ].map(([href, label]) => (
+            <a
+              className="grid h-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.035] px-3.5 text-sm font-semibold text-slate-300 transition hover:border-cyan-200/25 hover:bg-cyan-300/[0.08] hover:text-cyan-100"
+              href={href}
+              key={href}
+            >
+              {label}
+            </a>
+          ))}
+        </div>
+      </section>
+
       {actionError ? (
         <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
           <p className="text-sm font-semibold text-amber-100">
@@ -379,33 +462,36 @@ export default async function AccountingPeriodsPage({
         </PremiumCard>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          detail={activeCompany?.name ?? "Sin cliente activo"}
-          label="Periodo actual"
-          value={
+      <section className="grid gap-3 lg:grid-cols-3" id="panel-periodos">
+        <PeriodLauncher
+          action="Abrir"
+          detail={
             currentSummary
-              ? getPeriodLabel(currentSummary.year, currentSummary.month)
-              : "Sin periodo"
+              ? `${getPeriodLabel(currentSummary.year, currentSummary.month)} - ${activeCompany?.name ?? "sin cliente"}`
+              : "Sin periodo activo"
           }
+          href="#modal-periodos"
+          title="Periodos"
         />
-        <MetricCard
-          detail="Registros del mes"
-          label="Pendientes"
-          value={String(currentSummary?.pendingCount ?? 0)}
+        <PeriodLauncher
+          action="Gestionar"
+          detail={`${currentSummary?.pendingCount ?? 0} pendientes / ${currentSummary?.observedCount ?? 0} observados`}
+          href="#modal-cierre-actual"
+          title="Cierre actual"
         />
-        <MetricCard
-          detail="Bloquean el cierre"
-          label="Observados"
-          value={String(currentSummary?.observedCount ?? 0)}
-        />
-        <MetricCard
-          detail="Estado del mes"
-          label="Cierre"
-          value={getPeriodStatusLabel(currentSummary?.period?.status)}
+        <PeriodLauncher
+          action="Abrir"
+          detail={
+            currentSummary && taxCenterData
+              ? `${taxCenterData.alerts.length} alertas / score ${taxCenterData.e7Mind.score}`
+              : "Centro tributario del periodo"
+          }
+          href="#modal-tributario"
+          title="Tributario"
         />
       </section>
 
+      <PeriodsModal id="modal-tributario" title="Centro tributario">
       {currentSummary && taxCenterData ? (
         <PremiumCard className="border-cyan-300/14 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.1),transparent_34%),rgba(255,255,255,0.035)] p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -452,8 +538,38 @@ export default async function AccountingPeriodsPage({
             </Link>
           </div>
         </PremiumCard>
-      ) : null}
+      ) : (
+        <PremiumCard className="border-white/[0.12] bg-white/[0.035] p-8 text-center">
+          <p className="text-base font-semibold text-white">
+            Centro tributario no disponible
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            Selecciona una empresa activa o revisa la conexion tributaria.
+          </p>
+        </PremiumCard>
+      )}
+      </PeriodsModal>
 
+      <PeriodsModal id="modal-cierre-actual" title="Cierre actual">
+      {activeCompany && currentSummary ? (
+        <PeriodCard
+          companyId={activeCompany.id}
+          currency={currency}
+          summary={currentSummary}
+        />
+      ) : (
+        <PremiumCard className="border-dashed border-white/[0.12] bg-white/[0.025] p-10 text-center">
+          <p className="text-base font-semibold text-white">
+            No hay cliente/empresa activa.
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            Selecciona un cliente/empresa para revisar su cierre.
+          </p>
+        </PremiumCard>
+      )}
+      </PeriodsModal>
+
+      <PeriodsModal id="modal-periodos" title="Periodos mensuales">
       <PremiumCard className="overflow-hidden">
         <div className="border-b border-white/[0.07] p-5">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
@@ -496,6 +612,7 @@ export default async function AccountingPeriodsPage({
           </div>
         </div>
       </PremiumCard>
+      </PeriodsModal>
     </ModuleFrame>
   );
 }

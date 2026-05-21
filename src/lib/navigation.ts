@@ -3,11 +3,11 @@ import type { NavItem } from "@/types/navigation";
 export const navigationItems: NavItem[] = [
   { group: "Principal", label: "Dashboard", href: "/dashboard", icon: "dashboard" },
   { group: "Principal", label: "Bandeja diaria", href: "/bandeja", icon: "inbox" },
-  { group: "Principal", label: "Documentos", href: "/documentos", icon: "documents" },
+  { group: "Principal", label: "Consulta documentos", href: "/documentos", icon: "documents" },
   { group: "Principal", label: "Gmail XML", href: "/gmail-xml", icon: "inbox" },
   { group: "Principal", label: "Observados", href: "/observados", icon: "inbox" },
   { group: "Operacion", label: "Compras", href: "/compras", icon: "expenses" },
-  { group: "Operacion", label: "Facturas", href: "/facturas", icon: "invoice" },
+  { group: "Operacion", label: "Ventas", href: "/facturas", icon: "invoice" },
   { group: "Operacion", label: "Proveedores/Clientes", href: "/contrapartes", icon: "companies" },
   { group: "Operacion", label: "Clientes/Empresas", href: "/empresas", icon: "companies" },
   { group: "Control mensual", label: "Periodos", href: "/periodos", icon: "reports" },

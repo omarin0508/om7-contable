@@ -34,15 +34,15 @@ const toneClasses: Record<
     icon: "border-rose-200/20 bg-rose-300/[0.08] text-rose-100",
   },
   slate: {
-    badge: "border-white/[0.1] bg-white/[0.045] text-slate-200",
-    card: "border-white/[0.09] bg-[radial-gradient(circle_at_top_right,rgba(148,163,184,0.08),transparent_34%),rgba(255,255,255,0.032)]",
-    icon: "border-white/[0.12] bg-white/[0.055] text-slate-200",
+    badge: "border-white/[0.14] bg-white/[0.055] text-slate-200",
+    card: "border-white/[0.15] bg-[radial-gradient(circle_at_top_right,rgba(148,163,184,0.1),transparent_34%),rgba(255,255,255,0.04)] shadow-xl shadow-black/20",
+    icon: "border-white/[0.16] bg-white/[0.065] text-slate-200",
   },
 };
 
 export function WorkspaceLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-4 sm:gap-5">
+    <div className="mx-auto flex min-h-[calc(100dvh-7rem)] w-full min-w-0 max-w-7xl flex-col gap-3.5 sm:gap-4">
       {children}
     </div>
   );
@@ -78,8 +78,8 @@ export function DashboardHero({
   title: string;
 }) {
   return (
-    <section className="om7-card om7-panel-safe rounded-3xl border-white/[0.09] bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.12),transparent_34%),rgba(255,255,255,0.035)] p-4 shadow-2xl shadow-black/20 sm:p-6 lg:p-7">
-      <div className="flex min-w-0 flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+    <section className="om7-card om7-panel-safe relative isolate overflow-hidden rounded-3xl border-white/20 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.12),transparent_30%),linear-gradient(135deg,#071120,#0a1728_58%,#0b1828)] p-3 shadow-2xl shadow-black/30 sm:p-4 lg:p-5">
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 max-w-3xl">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200/80 sm:text-xs sm:tracking-[0.24em]">
@@ -87,15 +87,15 @@ export function DashboardHero({
             </p>
             {badge}
           </div>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-white sm:mt-4 sm:text-3xl lg:text-4xl">
+          <h1 className="mt-2 break-words text-xl font-semibold tracking-tight text-white sm:text-2xl lg:text-3xl">
             {title}
           </h1>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
             {description}
           </p>
         </div>
         {action ? (
-          <div className="flex w-full min-w-0 flex-wrap gap-2 [&>a]:max-w-full [&>a]:whitespace-nowrap [&>button]:max-w-full [&>button]:whitespace-nowrap lg:w-auto lg:flex-none lg:justify-end">
+          <div className="flex w-full min-w-0 items-center gap-2 overflow-x-auto om7-scrollbar [&>*]:shrink-0 [&_a]:min-w-fit [&_a]:shrink-0 [&_a]:whitespace-nowrap [&_button]:min-w-fit [&_button]:shrink-0 [&_button]:whitespace-nowrap [&_div]:flex-nowrap lg:w-auto lg:flex-none lg:justify-end">
             {action}
           </div>
         ) : null}
@@ -146,7 +146,7 @@ export function KPIStatCard({
   value: string;
 }) {
   return (
-    <WorkspacePanel className="p-4 transition hover:-translate-y-0.5 hover:bg-white/[0.045] sm:p-5" tone={tone}>
+    <WorkspacePanel className="border-white/[0.14] p-4 shadow-xl shadow-black/20 ring-1 ring-white/[0.035] transition hover:-translate-y-0.5 hover:bg-white/[0.05] sm:p-5" tone={tone}>
       <p className="text-sm text-slate-300">{label}</p>
       <p className="mt-3 break-words text-xl font-semibold tracking-tight text-white sm:text-2xl">{value}</p>
       <p className="mt-4 text-xs leading-5 text-slate-500">{detail}</p>
@@ -253,7 +253,7 @@ export function EmptyStateOM7({
 
 export function QuickActionsBar({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.035] p-2 sm:flex-row sm:flex-wrap">
+    <div className="sticky top-[var(--om7-actions-sticky-top,12.5rem)] z-30 flex flex-col gap-2 rounded-2xl border border-white/[0.16] bg-[#071120] p-2 shadow-xl shadow-black/25 sm:flex-row sm:flex-wrap lg:top-[var(--om7-actions-sticky-top-lg,9.25rem)]">
       {children}
     </div>
   );

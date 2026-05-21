@@ -208,27 +208,27 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
               </Link>
             </div>
             <p className="text-xs font-semibold uppercase tracking-[0.26em] text-cyan-200/75">
-              Centro operativo documental
+              Consulta documental
             </p>
             <h1 className="mt-3 max-w-3xl text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-4xl">
-              Inbox financiero para revisar, aprobar y convertir documentos.
+              Consulta de documentos ingresados.
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-              Priorice XML, PDFs e imagenes desde una sola bandeja. Abra un
-              documento solo cuando necesite revisarlo o convertirlo.
+              Archivo de evidencia para ver XML, PDF, imagenes y trazabilidad.
+              El trabajo diario inicia y sale desde Bandeja.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               <a
                 className="om7-btn-primary px-4 py-3"
                 href="#subir-documento"
               >
-                Subir documento
+                Ingresar documento
               </a>
               <Link
                 className="om7-btn-ghost px-4 py-3"
                 href="/bandeja"
               >
-                Ir a bandeja diaria
+                Trabajar bandeja
               </Link>
             </div>
           </div>
@@ -288,7 +288,7 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
             <form action="/documentos" className="space-y-4">
               <label className="block">
                 <span className="text-sm font-medium text-slate-300">
-                  Buscar documentos
+                  Buscar documentos ingresados
                 </span>
                 <input
                   className="mt-2 h-14 w-full rounded-2xl border border-white/[0.08] bg-black/20 px-4 text-base text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10"
@@ -425,17 +425,18 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-white">
-                  Subir documento
+                  Ingresar documento a bandeja
                 </p>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Cargue XML, PDF o imagen sin salir de la bandeja.
+                  Cargue XML, PDF o imagen. El documento queda pendiente en
+                  Bandeja para clasificarlo y darle salida.
                 </p>
               </div>
               <span className="om7-chip om7-chip-cyan">Carga</span>
             </div>
               <form action={uploadDocumentAction} className="mt-5 space-y-4">
-                <input name="redirectTo" type="hidden" value="/documentos" />
-                <input name="relatedType" type="hidden" value="general" />
+                <input name="redirectTo" type="hidden" value="/bandeja" />
+                <input name="relatedType" type="hidden" value="client_upload" />
 
                 <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-cyan-200/20 bg-cyan-200/[0.04] px-4 py-6 text-center transition hover:border-cyan-200/35 hover:bg-cyan-200/[0.07]">
                   <span className="text-sm font-medium text-cyan-100">
@@ -481,26 +482,26 @@ export default async function DocumentsPage({ searchParams }: DocumentsPageProps
                   disabled={!activeCompany}
                   type="submit"
                 >
-                  Subir
+                  Enviar a bandeja
                 </button>
               </form>
           </PremiumCard>
           </div>
 
           <PremiumCard className="p-5">
-            <p className="text-sm font-semibold text-white">Qué sigue</p>
+            <p className="text-sm font-semibold text-white">Que sigue</p>
             <div className="mt-4 space-y-3 text-sm text-slate-400">
               <p>
-                <span className="font-semibold text-cyan-100">1.</span> Suba o
-                reciba documentos.
+                <span className="font-semibold text-cyan-100">1.</span> Ingrese
+                o reciba documentos.
               </p>
               <p>
-                <span className="font-semibold text-cyan-100">2.</span> Abra el
-                workspace del documento.
+                <span className="font-semibold text-cyan-100">2.</span> Vaya a
+                Bandeja para clasificar.
               </p>
               <p>
-                <span className="font-semibold text-cyan-100">3.</span> Revise
-                y convierta en compra o factura.
+                <span className="font-semibold text-cyan-100">3.</span> La
+                salida continua en Compras o Facturas.
               </p>
             </div>
           </PremiumCard>

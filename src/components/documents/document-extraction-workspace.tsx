@@ -31,7 +31,7 @@ type DocumentExtractionWorkspaceProps = {
   signedUrl?: string | null;
 };
 
-const workflowSteps = ["Subido", "Procesado", "Revisado", "Convertido"];
+const workflowSteps = ["Entrada", "Extraido", "Clasificado", "Salida"];
 
 function formatProcessedAt(value: string | null) {
   if (!value) {
@@ -176,8 +176,8 @@ function getNextActionCopy(
 
   if (extraction.extraction_status === "reviewed") {
     return {
-      detail: "Los datos ya fueron aprobados. Puede convertirlos en compra o factura.",
-      title: "Listo para convertir",
+      detail: "Los datos ya fueron aprobados. Dele salida como compra o venta.",
+      title: "Listo para salida",
       tone: "cyan",
     };
   }
@@ -191,8 +191,8 @@ function getNextActionCopy(
   }
 
   return {
-    detail: "Confirme proveedor, fecha, líneas y totales antes de crear registros.",
-    title: "Revisión humana requerida",
+    detail: "Confirme proveedor, fecha, lineas y totales antes de dar salida.",
+    title: "Clasificacion requerida",
     tone: "amber",
   };
 }
@@ -317,7 +317,7 @@ export function DocumentExtractionWorkspace({
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">
-              Documento en revision
+              Documento en Bandeja
             </p>
             <p className="mt-2 break-words text-lg font-semibold text-white">
               {documentName}
@@ -377,7 +377,7 @@ export function DocumentExtractionWorkspace({
                 ["Receptor", getValue(data, ["receptor_nombre", "customer_name"])],
                 ["Fecha", getValue(data, ["fecha_emision", "date"])],
                 ["Consecutivo", getValue(data, ["numero_consecutivo", "document_number"])],
-                ["Tipo documento", getValue(data, ["document_kind"], documentType)],
+                ["Tipo recibido", getValue(data, ["document_kind"], documentType)],
                 ["Total", getMoney(data)],
               ].map(([label, value]) => (
                 <div
@@ -400,7 +400,7 @@ export function DocumentExtractionWorkspace({
             ) : null}
 
             <div className="rounded-3xl border border-white/[0.08] bg-black/20 p-4">
-              <p className="text-sm font-semibold text-white">Acción principal</p>
+              <p className="text-sm font-semibold text-white">Salida desde Bandeja</p>
               {isConverted ? (
                 <div className="mt-4 space-y-3">
                   <p className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs leading-5 text-emerald-100">
@@ -459,7 +459,7 @@ export function DocumentExtractionWorkspace({
                         className="om7-btn-secondary h-14 w-full px-4 text-sm"
                         type="submit"
                       >
-                        Crear compra
+                        Enviar a Compras
                       </button>
                     </form>
                     <form action={createInvoiceFromXmlAction}>
@@ -472,7 +472,7 @@ export function DocumentExtractionWorkspace({
                         className="om7-btn-secondary h-14 w-full px-4 text-sm"
                         type="submit"
                       >
-                        Crear factura
+                        Enviar a Facturas
                       </button>
                     </form>
                   </div>

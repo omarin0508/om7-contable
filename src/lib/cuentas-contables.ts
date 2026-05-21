@@ -41,9 +41,19 @@ export type CatalogoContableStats = {
   movimientos: number;
   bg: number;
   er: number;
+  activas: number;
+  inactivas: number;
+  copiadas: number;
+  personalizadas: number;
 };
 
 export type CatalogoContableSource = "organization" | "global";
+
+export type CuentaContableUsage = Record<string, number>;
+
+export type CatalogoContableWorkspace = Awaited<
+  ReturnType<typeof listCatalogoContableWorkspace>
+>;
 
 async function getAuthenticatedSupabase() {
   const supabase = await createClient();
@@ -123,14 +133,30 @@ export function getCatalogoContableStats(accounts: CuentaContable[]) {
         stats.er += 1;
       }
 
+      if (account.activa) {
+        stats.activas += 1;
+      } else {
+        stats.inactivas += 1;
+      }
+
+      if (typeof account.metadata?.copied_from_global_account_id === "string") {
+        stats.copiadas += 1;
+      } else if (account.organization_id) {
+        stats.personalizadas += 1;
+      }
+
       return stats;
     },
     {
       acumulativa: 0,
+      activas: 0,
       bg: 0,
+      copiadas: 0,
       detalle: 0,
       er: 0,
+      inactivas: 0,
       movimientos: 0,
+      personalizadas: 0,
       total: 0,
     },
   );
@@ -180,6 +206,68 @@ export async function listCuentasContables() {
     source,
     stats: getCatalogoContableStats(accounts),
     tree: buildCuentaContableTree(accounts),
+  };
+}
+
+async function getAccountUsageByOrganization(organizationId: string) {
+  const supabase = await getAuthenticatedSupabase();
+  const { data, error } = await supabase
+    .from("asiento_lineas")
+    .select("cuenta_contable_id")
+    .eq("organization_id", organizationId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as Array<{ cuenta_contable_id: string | null }>).reduce(
+    (usage, line) => {
+      if (line.cuenta_contable_id) {
+        usage[line.cuenta_contable_id] = (usage[line.cuenta_contable_id] ?? 0) + 1;
+      }
+
+      return usage;
+    },
+    {} as CuentaContableUsage,
+  );
+}
+
+export async function listCatalogoContableWorkspace() {
+  const currentUser = await assertInternalUser();
+  const canEditMaster = currentUser.membershipRoles.some((role) =>
+    ["owner", "platform_owner", "org_owner", "admin"].includes(role),
+  );
+
+  const activeContext = await getActiveContext();
+  const organization = activeContext.organization;
+
+  if (!organization) {
+    throw new Error("Selecciona una organizacion activa.");
+  }
+
+  const [organizationAccounts, globalAccounts, usageByAccountId] =
+    await Promise.all([
+      fetchCuentasContablesByOrganization(organization.id),
+      fetchCuentasContablesByOrganization(null),
+      getAccountUsageByOrganization(organization.id),
+    ]);
+
+  const accounts =
+    organizationAccounts.length > 0 ? organizationAccounts : globalAccounts;
+  const source: CatalogoContableSource =
+    organizationAccounts.length > 0 ? "organization" : "global";
+
+  return {
+    accounts,
+    activeCompany: activeContext.activeCompany ?? activeContext.suggestedCompany,
+    globalAccounts,
+    organization,
+    organizationAccounts,
+    source,
+    stats: getCatalogoContableStats(accounts),
+    tree: buildCuentaContableTree(accounts),
+    usageByAccountId,
+    canEditMaster,
   };
 }
 

@@ -5,11 +5,12 @@ import {
   generatePurchaseAccountingEntryAction,
   registerPurchasePaymentAction,
   revertPurchaseAccountingEntryAction,
+  updatePurchaseAccountingFieldsAction,
   updatePurchaseReviewStatusAction,
 } from "@/app/(platform)/compras/actions";
+import { AccountingAmountCalculator } from "@/components/accounting/accounting-amount-calculator";
 import {
   BackLink,
-  MetricCard,
   ModuleFrame,
   ModuleHeader,
 } from "@/components/modules/shared";
@@ -45,6 +46,10 @@ import {
   getConversionMetadataValue,
   hasE7MindTrace,
 } from "@/lib/document-ui";
+import {
+  getAccountingCorrectionOptions,
+  type AccountingCorrectionOptions,
+} from "@/lib/accounting-correction-options";
 import {
   getMovementStatusBadgeClass,
   getPaymentStatusKey,
@@ -389,6 +394,7 @@ function PurchasePaymentForm({
 
 function PurchaseCard({
   journalEntry,
+  options,
   paymentMethods,
   paymentSummary,
   period,
@@ -396,6 +402,7 @@ function PurchaseCard({
   redirectTo,
 }: {
   journalEntry: JournalEntry | null;
+  options: AccountingCorrectionOptions;
   paymentMethods: PaymentMethod[];
   paymentSummary: PaymentSummary | null;
   period: AccountingPeriod | null;
@@ -604,6 +611,139 @@ function PurchaseCard({
         </div>
       </div>
 
+      {accountingStatus !== "contabilizado" ? (
+        <details
+          className={`mt-4 rounded-2xl border p-4 ${
+            accountingStatus === "error"
+              ? "border-rose-300/20 bg-rose-300/[0.045]"
+              : "border-white/[0.07] bg-black/15"
+          }`}
+          open={accountingStatus === "error"}
+        >
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/75">
+            Corregir para contabilizar
+          </summary>
+          <p className="mt-3 text-sm leading-6 text-slate-400">
+            Ajusta los datos que usa la regla contable. Al guardar se limpia el
+            error y el registro vuelve a quedar listo para generar asiento.
+          </p>
+          <form
+            action={updatePurchaseAccountingFieldsAction}
+            className="mt-4 grid gap-3 md:grid-cols-3"
+          >
+            <input name="purchaseId" type="hidden" value={purchase.id} />
+            <input name="redirectTo" type="hidden" value={redirectTo} />
+            <label className="block md:col-span-2">
+              <span className="text-xs text-slate-300">Proveedor</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
+                defaultValue={purchase.supplier_name ?? ""}
+                name="supplierName"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-300">Documento</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
+                defaultValue={purchase.document_number ?? ""}
+                name="documentNumber"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-300">Fecha</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
+                defaultValue={purchase.purchase_date ?? ""}
+                name="purchaseDate"
+                type="date"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-300">Categoria contable</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
+                defaultValue={purchase.category ?? ""}
+                list={`purchase-accounting-categories-${purchase.id}`}
+                name="category"
+                placeholder="Servicios profesionales"
+                required
+              />
+            </label>
+            <datalist id={`purchase-accounting-categories-${purchase.id}`}>
+              {options.purchaseCategories.map((category) => (
+                <option key={category.value} label={category.label} value={category.value} />
+              ))}
+            </datalist>
+            <label className="block">
+              <span className="text-xs text-slate-300">Cuenta sugerida</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
+                defaultValue={purchase.suggested_account ?? ""}
+                list={`purchase-accounting-accounts-${purchase.id}`}
+                name="suggestedAccount"
+                placeholder="Gasto operativo"
+              />
+            </label>
+            <datalist id={`purchase-accounting-accounts-${purchase.id}`}>
+              {options.accounts.map((account) => (
+                <option key={account.value} label={account.label} value={account.value} />
+              ))}
+            </datalist>
+            <AccountingAmountCalculator
+              subtotal={purchase.subtotal}
+              tax={purchase.tax}
+              taxFieldName="tax"
+              taxName="Impuesto"
+              total={purchase.total}
+            />
+            <label className="block">
+              <span className="text-xs text-slate-300">Centro de costo</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
+                defaultValue={purchase.suggested_cost_center_id ?? ""}
+                list={`purchase-cost-centers-${purchase.id}`}
+                name="suggestedCostCenterId"
+                placeholder="Opcional"
+              />
+            </label>
+            <datalist id={`purchase-cost-centers-${purchase.id}`}>
+              {options.centrosCosto.map((centro) => (
+                <option key={centro.value} label={centro.label} value={centro.value} />
+              ))}
+            </datalist>
+            <label className="block md:col-span-2">
+              <span className="text-xs text-slate-300">Descripcion</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
+                defaultValue={purchase.description ?? ""}
+                name="description"
+              />
+            </label>
+            <label className="block md:col-span-3">
+              <span className="text-xs text-slate-300">Notas</span>
+              <textarea
+                className="mt-1 min-h-20 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10"
+                defaultValue={purchase.notes ?? ""}
+                name="notes"
+              />
+            </label>
+            <div className="flex flex-wrap gap-2 md:col-span-3">
+              <button className="om7-btn-secondary px-3 py-2 text-xs" type="submit">
+                Guardar correccion
+              </button>
+              <button
+                className="om7-btn-primary px-3 py-2 text-xs"
+                name="reprocess"
+                type="submit"
+                value="true"
+              >
+                Guardar y recontabilizar
+              </button>
+            </div>
+          </form>
+        </details>
+      ) : null}
+
       <details className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">
         <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/75">
           Trazabilidad OM7
@@ -750,6 +890,140 @@ function PurchaseCard({
   );
 }
 
+function PurchaseConsoleStat({
+  detail,
+  label,
+  value,
+}: {
+  detail: string;
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/[0.14] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-4 shadow-xl shadow-black/20 ring-1 ring-white/[0.035]">
+      <p className="text-sm text-slate-300">{label}</p>
+      <p className="mt-3 break-words text-2xl font-semibold tracking-tight text-white">
+        {value}
+      </p>
+      <p className="mt-3 text-xs leading-5 text-slate-500">{detail}</p>
+    </div>
+  );
+}
+
+function PurchasesModal({
+  children,
+  id,
+  title,
+}: {
+  children: ReactNode;
+  id: string;
+  title: string;
+}) {
+  return (
+    <div
+      className="invisible fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-3 opacity-0 backdrop-blur-sm transition target:visible target:opacity-100 sm:p-6"
+      id={id}
+    >
+      <div className="flex max-h-[88vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl border border-white/20 bg-[#07111f] shadow-2xl shadow-cyan-950/30">
+        <div className="flex items-center justify-between gap-4 border-b border-white/15 bg-[#06101c] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200/70">
+              OM7 Finance OS
+            </p>
+            <p className="mt-1 truncate text-xl font-semibold text-white">
+              {title}
+            </p>
+          </div>
+          <a
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-300 transition hover:border-cyan-300/30 hover:text-cyan-100"
+            href="#panel-compras"
+          >
+            Cerrar
+          </a>
+        </div>
+        <div className="min-h-0 overflow-y-auto p-5 om7-scrollbar">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PurchaseWorkspaceLauncher({
+  action,
+  detail,
+  href,
+  title,
+}: {
+  action: string;
+  detail: string;
+  href: string;
+  title: string;
+}) {
+  return (
+    <a
+      className="group rounded-2xl border border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-4 shadow-xl shadow-black/20 ring-1 ring-cyan-300/[0.04] transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-cyan-300/[0.055]"
+      href={href}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-base font-semibold text-white">{title}</p>
+        <span className="rounded-full border border-white/[0.1] bg-white/[0.045] px-2.5 py-1 text-xs font-semibold text-slate-300">
+          {action}
+        </span>
+      </div>
+      <p className="mt-4 text-sm text-slate-400">{detail}</p>
+    </a>
+  );
+}
+
+function PurchasesWorkspace({
+  emptyText = "Ajusta los filtros o crea una compra desde un documento revisado.",
+  journalEntries,
+  options,
+  paymentMethods,
+  paymentSummaries,
+  periods,
+  purchases,
+  redirectTo,
+}: {
+  emptyText?: string;
+  journalEntries: Map<string, JournalEntry>;
+  options: AccountingCorrectionOptions;
+  paymentMethods: PaymentMethod[];
+  paymentSummaries: Map<string, PaymentSummary>;
+  periods: AccountingPeriod[];
+  purchases: Purchase[];
+  redirectTo: string;
+}) {
+  return (
+    <div className="max-h-[62vh] overflow-y-auto rounded-2xl border border-white/15 p-3 om7-scrollbar sm:p-5">
+      <div className="grid gap-4">
+        {purchases.length > 0 ? (
+          purchases.map((purchase) => (
+            <PurchaseCard
+              journalEntry={journalEntries.get(purchase.id) ?? null}
+              key={purchase.id}
+              options={options}
+              paymentMethods={paymentMethods}
+              paymentSummary={paymentSummaries.get(purchase.id) ?? null}
+              period={getPurchasePeriod(purchase, periods)}
+              purchase={purchase}
+              redirectTo={redirectTo}
+            />
+          ))
+        ) : (
+          <div className="rounded-3xl border border-dashed border-white/[0.12] bg-white/[0.025] p-10 text-center">
+            <p className="text-base font-semibold text-white">
+              Sin compras para esta vista
+            </p>
+            <p className="mt-2 text-sm text-slate-500">{emptyText}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default async function PurchasesPage({
   searchParams,
 }: PurchasesPageProps) {
@@ -772,6 +1046,7 @@ export default async function PurchasesPage({
     { activeContext, purchases },
     periodsResult,
     paymentMethodsResult,
+    correctionOptions,
   ] = await Promise.all([
     listPurchases(),
     listAccountingPeriods().catch(() => ({
@@ -779,6 +1054,12 @@ export default async function PurchasesPage({
     })),
     listPaymentMethods().catch(() => ({
       methods: [] as PaymentMethod[],
+    })),
+    getAccountingCorrectionOptions().catch(() => ({
+      accounts: [],
+      centrosCosto: [],
+      purchaseCategories: categoryOptions.map((value) => ({ label: value, value })),
+      saleTypes: [],
     })),
   ]);
   const periods = periodsResult.periods;
@@ -800,10 +1081,6 @@ export default async function PurchasesPage({
     activeFilter,
     searchTerm,
   );
-  const totalPurchases = purchases.reduce(
-    (sum, purchase) => sum + Number(purchase.total ?? 0),
-    0,
-  );
   const fromDocumentCount = purchases.filter(
     (purchase) => purchase.source_document_id,
   ).length;
@@ -813,16 +1090,31 @@ export default async function PurchasesPage({
   const pendingReviewCount = purchases.filter((purchase) =>
     hasAccountingStatus(purchase, "pending"),
   ).length;
+  const approvedCount = purchases.filter((purchase) =>
+    hasAccountingStatus(purchase, "approved"),
+  ).length;
+  const observedCount = purchases.filter((purchase) =>
+    hasAccountingStatus(purchase, "observed"),
+  ).length;
+  const pendingPurchases = purchases.filter((purchase) =>
+    hasAccountingStatus(purchase, "pending"),
+  );
+  const approvedPurchases = purchases.filter((purchase) =>
+    hasAccountingStatus(purchase, "approved"),
+  );
+  const observedPurchases = purchases.filter((purchase) =>
+    hasAccountingStatus(purchase, "observed"),
+  );
 
   return (
     <ModuleFrame>
       <ModuleHeader
         title="Compras"
-        description="Control operativo de gastos, proveedores y documentos convertidos."
+        description="Consola operativa para revisar gastos, proveedores, pagos y trazabilidad."
         action={
           <div className="flex flex-wrap gap-2">
             <BackLink href={returnTo} label={returnLabel} />
-            <a className="om7-btn-primary px-4 py-2.5" href="#nueva-compra">
+            <a className="om7-btn-primary px-4 py-2.5" href="#modal-nueva-compra">
               Nueva compra
             </a>
           </div>
@@ -858,37 +1150,238 @@ export default async function PurchasesPage({
         </PremiumCard>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
+      <section className="sticky top-[var(--om7-actions-sticky-top,12.5rem)] z-40 rounded-2xl border border-white/16 bg-[#06101c] p-2 shadow-2xl shadow-black/25 lg:top-[var(--om7-actions-sticky-top-lg,9.25rem)]">
+        <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center">
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto om7-scrollbar">
+            {[
+              ["#modal-compras", "Compras"],
+              ["#modal-pendientes", "Pendientes"],
+              ["#modal-aprobadas", "Aprobadas"],
+              ["#modal-observadas", "Observadas"],
+            ].map(([href, label]) => (
+              <a
+                className="grid h-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.035] px-3.5 text-sm font-semibold text-slate-300 transition hover:border-cyan-200/25 hover:bg-cyan-300/[0.08] hover:text-cyan-100"
+                href={href}
+                key={href}
+              >
+                {label}
+              </a>
+            ))}
+          </div>
+          <form
+            action="/compras#modal-compras"
+            className="flex min-w-0 shrink-0 gap-2 xl:ml-auto xl:w-[min(420px,40vw)]"
+            method="get"
+          >
+            <input
+              className="h-10 min-w-0 flex-1 rounded-xl border border-white/[0.1] bg-white/[0.055] px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/45"
+              defaultValue={searchTerm}
+              name="q"
+              placeholder="Buscar compra..."
+            />
+            <input name="filter" type="hidden" value={activeFilter} />
+            <button className="om7-btn-secondary h-10 shrink-0 px-4" type="submit">
+              Buscar
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <PurchaseConsoleStat
           detail={activeCompany?.name ?? "Sin empresa activa"}
-          label="Total compras"
-          value={String(purchases.length)}
+          label="Compras"
+          value={purchases.length}
         />
-        <MetricCard
-          detail={currency}
-          label="Monto total"
-          value={formatMoney(totalPurchases, currency)}
+        <PurchaseConsoleStat
+          detail={`${observedCount} observadas`}
+          label="Aprobadas"
+          value={approvedCount}
         />
-        <MetricCard
+        <PurchaseConsoleStat
           detail="Tienen documento origen"
-          label="Desde documento"
-          value={String(fromDocumentCount)}
+          label="Desde XML"
+          value={fromDocumentCount}
         />
-        <MetricCard
+        <PurchaseConsoleStat
           detail={`Por completar ${missingTraceCount}`}
           label="Por revisar"
-          value={String(pendingReviewCount)}
+          value={pendingReviewCount}
         />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-        <PremiumCard className="overflow-hidden">
+      <section className="grid gap-3 lg:grid-cols-4" id="panel-compras">
+        <PurchaseWorkspaceLauncher
+          action="Abrir"
+          detail={`${purchases.length} registros`}
+          href="#modal-compras"
+          title="Compras"
+        />
+        <PurchaseWorkspaceLauncher
+          action="Revisar"
+          detail={`${pendingReviewCount} pendientes`}
+          href="#modal-pendientes"
+          title="Pendientes"
+        />
+        <PurchaseWorkspaceLauncher
+          action="Validar"
+          detail={`${approvedCount} aprobadas`}
+          href="#modal-aprobadas"
+          title="Aprobadas"
+        />
+        <PurchaseWorkspaceLauncher
+          action="Corregir"
+          detail={`${observedCount} observadas`}
+          href="#modal-observadas"
+          title="Observadas"
+        />
+      </section>
+
+      <PurchasesModal id="modal-compras" title="Workspace de compras">
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-white">Bandeja operativa</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Revision, pago y trazabilidad en una sola vista.
+            </p>
+          </div>
+          <span className="text-sm text-slate-500">
+            {filteredPurchases.length} de {purchases.length} visibles
+          </span>
+        </div>
+        <PurchasesWorkspace
+            journalEntries={purchaseEntryMap}
+            options={correctionOptions}
+            paymentMethods={paymentMethods}
+          paymentSummaries={purchasePaymentMap}
+          periods={periods}
+          purchases={filteredPurchases}
+          redirectTo={redirectTo}
+        />
+      </PurchasesModal>
+
+      <PurchasesModal id="modal-pendientes" title="Compras pendientes">
+        <PurchasesWorkspace
+            journalEntries={purchaseEntryMap}
+            options={correctionOptions}
+            paymentMethods={paymentMethods}
+          paymentSummaries={purchasePaymentMap}
+          periods={periods}
+          purchases={pendingPurchases}
+          redirectTo="/compras#modal-pendientes"
+        />
+      </PurchasesModal>
+
+      <PurchasesModal id="modal-aprobadas" title="Compras aprobadas">
+        <PurchasesWorkspace
+            journalEntries={purchaseEntryMap}
+            options={correctionOptions}
+            paymentMethods={paymentMethods}
+          paymentSummaries={purchasePaymentMap}
+          periods={periods}
+          purchases={approvedPurchases}
+          redirectTo="/compras#modal-aprobadas"
+        />
+      </PurchasesModal>
+
+      <PurchasesModal id="modal-observadas" title="Compras observadas">
+        <PurchasesWorkspace
+            journalEntries={purchaseEntryMap}
+            options={correctionOptions}
+            paymentMethods={paymentMethods}
+          paymentSummaries={purchasePaymentMap}
+          periods={periods}
+          purchases={observedPurchases}
+          redirectTo="/compras#modal-observadas"
+        />
+      </PurchasesModal>
+
+      <PurchasesModal id="modal-nueva-compra" title="Nueva compra manual">
+        <PremiumCard className="border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-5 shadow-2xl shadow-black/25 ring-1 ring-cyan-300/[0.04]">
+          <p className="text-sm font-semibold text-white">Nueva compra manual</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            {activeCompany
+              ? `Se guardara en ${activeCompany.name}.`
+              : "Selecciona una empresa activa antes de registrar."}
+          </p>
+          <form action={createPurchaseAction} className="mt-5 space-y-4">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-300">Proveedor</span>
+              <input
+                className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+                disabled={!activeCompany}
+                name="supplierName"
+                placeholder="Proveedor S.A."
+              />
+            </label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-medium text-slate-300">Documento</span>
+                <input
+                  className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+                  disabled={!activeCompany}
+                  name="documentNumber"
+                  placeholder="OC-1001"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-300">Fecha</span>
+                <input
+                  className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+                  disabled={!activeCompany}
+                  name="purchaseDate"
+                  type="date"
+                />
+              </label>
+            </div>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-300">Descripcion</span>
+              <input
+                className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+                disabled={!activeCompany}
+                name="description"
+                placeholder="Servicios, equipos, suscripcion..."
+              />
+            </label>
+            <div className="grid gap-4 sm:grid-cols-3">
+              {["subtotal", "tax", "total"].map((name) => (
+                <label className="block" key={name}>
+                  <span className="text-sm font-medium text-slate-300">
+                    {name === "tax" ? "Impuesto" : name === "total" ? "Total" : "Subtotal"}
+                  </span>
+                  <input
+                    className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/35 focus:bg-black/30 focus:ring-4 focus:ring-cyan-300/10 disabled:opacity-50"
+                    disabled={!activeCompany}
+                    min="0"
+                    name={name}
+                    placeholder="0.00"
+                    step="0.01"
+                    type="number"
+                  />
+                </label>
+              ))}
+            </div>
+            <input name="currency" type="hidden" value={currency} />
+            <input name="status" type="hidden" value="registrada" />
+            <button
+              className="om7-btn-primary h-12 w-full px-4 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!activeCompany}
+              type="submit"
+            >
+              Guardar compra
+            </button>
+          </form>
+        </PremiumCard>
+      </PurchasesModal>
+
+      <section className="hidden">
+        <PremiumCard className="overflow-hidden border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] shadow-2xl shadow-black/25 ring-1 ring-cyan-300/[0.04]">
           <div className="border-b border-white/[0.07] p-5">
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <p className="text-base font-semibold text-white">
-                    Bandeja de compras
+                    Workspace de compras
                   </p>
                   <p className="mt-1 text-sm text-slate-500">
                     Revisión, pago y trazabilidad en una sola bandeja.
@@ -899,7 +1392,7 @@ export default async function PurchasesPage({
                 </span>
               </div>
 
-              <form className="grid gap-2 lg:grid-cols-[1fr_auto]" method="get">
+              <form className="hidden" method="get">
                 <input
                   className="h-12 min-w-0 rounded-2xl border border-white/[0.1] bg-white/[0.06] px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/45 focus:ring-4 focus:ring-cyan-300/10"
                   defaultValue={searchTerm}
@@ -912,7 +1405,7 @@ export default async function PurchasesPage({
                 </button>
               </form>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="hidden">
                 {Object.entries(filterLabels).map(([filter, label]) => (
                   <Link
                     className={[
@@ -933,13 +1426,14 @@ export default async function PurchasesPage({
             </div>
           </div>
 
-          <div className="p-3 sm:p-5">
+          <div className="max-h-[58vh] overflow-y-auto p-3 om7-scrollbar sm:p-5">
             <div className="grid gap-4">
             {filteredPurchases.length > 0 ? (
               filteredPurchases.map((purchase) => (
                 <PurchaseCard
                   journalEntry={purchaseEntryMap.get(purchase.id) ?? null}
                   key={purchase.id}
+                  options={correctionOptions}
                   paymentMethods={paymentMethods}
                   paymentSummary={purchasePaymentMap.get(purchase.id) ?? null}
                   period={getPurchasePeriod(purchase, periods)}
@@ -963,15 +1457,25 @@ export default async function PurchasesPage({
         </PremiumCard>
 
         <div id="nueva-compra">
-          <PremiumCard className="p-5">
-            <p className="text-sm font-semibold text-white">Nueva compra manual</p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              {activeCompany
-                ? `Se guardara en ${activeCompany.name}.`
-                : "Selecciona una empresa activa antes de registrar."}
-            </p>
+          <PremiumCard className="border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-0 shadow-2xl shadow-black/25 ring-1 ring-cyan-300/[0.04]">
+            <details>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 border-b border-white/[0.1] p-5">
+                <div>
+                  <p className="text-sm font-semibold text-white">
+                    Nueva compra manual
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    {activeCompany
+                      ? `Se guardara en ${activeCompany.name}.`
+                      : "Selecciona una empresa activa antes de registrar."}
+                  </p>
+                </div>
+                <span className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.08] px-3 py-2 text-xs font-semibold text-cyan-100">
+                  Abrir
+                </span>
+              </summary>
 
-            <form action={createPurchaseAction} className="mt-5 space-y-4">
+            <form action={createPurchaseAction} className="space-y-4 p-5">
               <label className="block">
                 <span className="text-sm font-medium text-slate-300">
                   Proveedor
@@ -1140,6 +1644,7 @@ export default async function PurchasesPage({
                 Guardar compra
               </button>
             </form>
+            </details>
           </PremiumCard>
         </div>
       </section>

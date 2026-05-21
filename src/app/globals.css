@@ -4,12 +4,12 @@
   color-scheme: dark;
   --background: #03050a;
   --foreground: #f8fafc;
-  --card: rgba(255, 255, 255, 0.045);
-  --card-strong: rgba(255, 255, 255, 0.07);
-  --surface: rgba(255, 255, 255, 0.04);
-  --surface-strong: rgba(255, 255, 255, 0.08);
-  --border: rgba(255, 255, 255, 0.09);
-  --border-strong: rgba(255, 255, 255, 0.16);
+  --card: rgba(255, 255, 255, 0.055);
+  --card-strong: rgba(255, 255, 255, 0.085);
+  --surface: rgba(255, 255, 255, 0.045);
+  --surface-strong: rgba(255, 255, 255, 0.095);
+  --border: rgba(255, 255, 255, 0.13);
+  --border-strong: rgba(255, 255, 255, 0.2);
   --muted: #94a3b8;
   --muted-strong: #64748b;
   --primary: #67e8f9;
@@ -23,7 +23,7 @@
   --sidebar-foreground: #e2e8f0;
   --topbar: rgba(7, 10, 18, 0.72);
   --input: rgba(0, 0, 0, 0.24);
-  --shadow-soft: 0 22px 70px rgba(0, 0, 0, 0.24);
+  --shadow-soft: 0 22px 70px rgba(0, 0, 0, 0.34);
   --shadow-strong: 0 30px 95px rgba(0, 0, 0, 0.52);
   --app-radial-a: rgba(34, 211, 238, 0.14);
   --app-radial-b: rgba(16, 185, 129, 0.09);
@@ -130,12 +130,25 @@ a {
 
 @layer components {
   .om7-card {
+    position: relative;
     border: 1px solid var(--border);
     background:
-      radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 8%, transparent), transparent 36%),
+      radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 9%, transparent), transparent 34%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.03)),
       var(--card);
-    box-shadow: var(--shadow-soft);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      var(--shadow-soft);
     backdrop-filter: blur(18px);
+  }
+
+  .om7-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
   }
 
   .om7-card,
@@ -167,7 +180,9 @@ a {
     color: var(--primary-foreground);
     font-size: 0.875rem;
     font-weight: 800;
-    box-shadow: 0 16px 40px rgba(8, 145, 178, 0.18);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.34),
+      0 16px 40px rgba(8, 145, 178, 0.18);
     transition:
       transform 160ms ease,
       background 160ms ease,
@@ -193,8 +208,10 @@ a {
     min-height: 2.5rem;
     place-items: center;
     border-radius: 0.85rem;
-    border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
-    background: var(--primary-soft);
+    border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent);
+    background:
+      linear-gradient(180deg, rgba(103, 232, 249, 0.13), rgba(103, 232, 249, 0.075)),
+      var(--primary-soft);
     color: color-mix(in srgb, var(--primary) 75%, var(--foreground));
     font-size: 0.8125rem;
     font-weight: 700;
@@ -216,7 +233,9 @@ a {
     place-items: center;
     border-radius: 0.85rem;
     border: 1px solid var(--border);
-    background: var(--surface);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.026)),
+      var(--surface);
     color: var(--muted);
     font-size: 0.8125rem;
     font-weight: 650;
@@ -237,7 +256,9 @@ a {
     align-items: center;
     border-radius: 999px;
     border: 1px solid var(--border);
-    background: var(--surface);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025)),
+      var(--surface);
     padding: 0.2rem 0.55rem;
     color: var(--muted);
     font-size: 0.6875rem;
@@ -254,9 +275,15 @@ a {
     max-width: 100%;
     min-width: 0;
     overflow-x: auto;
+    overflow-y: auto;
     overscroll-behavior-inline: contain;
     scrollbar-color: rgba(103, 232, 249, 0.18) transparent;
     scrollbar-width: thin;
+  }
+
+  .om7-responsive-table,
+  table {
+    border-color: rgba(255, 255, 255, 0.13);
   }
 
   .om7-responsive-table table {
@@ -266,6 +293,33 @@ a {
   .om7-responsive-table th,
   .om7-responsive-table td {
     white-space: nowrap;
+  }
+
+  .om7-responsive-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .om7-responsive-table th {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+    background: #0b1728;
+    color: rgba(255, 255, 255, 0.86);
+    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.32);
+  }
+
+  .om7-responsive-table td,
+  .om7-responsive-table th {
+    border-right: 1px solid rgba(255, 255, 255, 0.055);
+  }
+
+  .om7-responsive-table td:last-child,
+  .om7-responsive-table th:last-child {
+    border-right: 0;
+  }
+
+  .om7-workspace-table {
+    max-height: min(62vh, 720px);
   }
 
   .om7-app-shell {
@@ -286,6 +340,25 @@ a {
       linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
     background-size: 64px 64px;
     opacity: 0.3;
+  }
+
+  .om7-modal-backdrop {
+    background:
+      radial-gradient(circle at 16% 10%, rgba(34, 211, 238, 0.2), transparent 34%),
+      radial-gradient(circle at 84% 16%, rgba(59, 130, 246, 0.15), transparent 32%),
+      linear-gradient(180deg, rgba(15, 23, 42, 0.42), rgba(2, 6, 23, 0.66));
+  }
+
+  .om7-modal-backdrop::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.026) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.026) 1px, transparent 1px);
+    background-size: 64px 64px;
+    opacity: 0.24;
   }
 
   .om7-sidebar {
@@ -372,6 +445,30 @@ a {
 
   .om7-scrollbar:hover::-webkit-scrollbar-thumb {
     background: rgba(103, 232, 249, 0.2);
+  }
+
+  .om7-panel-safe > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .om7-card :is(header, thead, summary) {
+    border-color: rgba(255, 255, 255, 0.13);
+  }
+
+  .om7-card :is(input, select, textarea) {
+    border-color: rgba(255, 255, 255, 0.11);
+    background-color: rgba(2, 6, 23, 0.32);
+  }
+
+  .om7-card :is(input, select, textarea):focus {
+    border-color: rgba(103, 232, 249, 0.46);
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.08);
+  }
+
+  .om7-card :is(table) {
+    border-collapse: separate;
+    border-spacing: 0;
   }
 }
 

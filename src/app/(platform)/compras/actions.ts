@@ -9,11 +9,24 @@ import {
 import { generarAsientoMovimientoCaja } from "@/lib/contabilizacion-caja";
 import { normalizeCurrencyCode } from "@/lib/currency";
 import { registerPurchasePayment } from "@/lib/payments";
-import { createPurchase, updatePurchaseReviewStatus } from "@/lib/purchases";
+import {
+  createPurchase,
+  updatePurchaseAccountingFields,
+  updatePurchaseReviewStatus,
+} from "@/lib/purchases";
 
 function parseAmount(value: FormDataEntryValue | null) {
   const parsed = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseOptionalUuid(value: FormDataEntryValue | null) {
+  const text = String(value ?? "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    text,
+  )
+    ? text
+    : "";
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -103,6 +116,46 @@ export async function generatePurchaseAccountingEntryAction(formData: FormData) 
     target = redirectWithError(
       redirectTo,
       getErrorMessage(error, "No se pudo generar el asiento contable."),
+    );
+  }
+
+  revalidatePath("/compras");
+  revalidatePath("/contabilidad/asientos");
+  revalidatePath("/contabilidad/mayor");
+  revalidatePath("/contabilidad/balance-comprobacion");
+  revalidatePath("/contabilidad/balance-general");
+  revalidatePath("/contabilidad/estado-resultados");
+  redirect(target);
+}
+
+export async function updatePurchaseAccountingFieldsAction(formData: FormData) {
+  const redirectTo = String(formData.get("redirectTo") ?? "/compras");
+  let target = redirectTo;
+
+  try {
+    const purchase = await updatePurchaseAccountingFields({
+      category: String(formData.get("category") ?? "").trim(),
+      description: String(formData.get("description") ?? "").trim(),
+      documentNumber: String(formData.get("documentNumber") ?? "").trim(),
+      notes: String(formData.get("notes") ?? "").trim(),
+      purchaseDate: String(formData.get("purchaseDate") ?? "").trim(),
+      purchaseId: String(formData.get("purchaseId") ?? ""),
+      subtotal: parseAmount(formData.get("subtotal")),
+      suggestedAccount: String(formData.get("suggestedAccount") ?? "").trim(),
+      suggestedCostCenterId: parseOptionalUuid(formData.get("suggestedCostCenterId")),
+      supplierName: String(formData.get("supplierName") ?? "").trim(),
+      tax: parseAmount(formData.get("tax")),
+      total: parseAmount(formData.get("total")),
+    });
+
+    if (String(formData.get("reprocess") ?? "") === "true") {
+      await generarAsientoCompra(purchase.id);
+    }
+  } catch (error) {
+    logActionError("updatePurchaseAccountingFieldsAction", error);
+    target = redirectWithError(
+      redirectTo,
+      getErrorMessage(error, "No se pudo corregir la compra."),
     );
   }
 

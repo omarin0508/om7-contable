@@ -6,24 +6,13 @@ import {
   ModuleHeader,
   StatusBadge,
 } from "@/components/modules/shared";
-import { JournalEntryCard } from "@/components/accounting/journal-entry-card";
 import { PremiumCard } from "@/components/ui/premium-card";
-import {
-  getJournalTotals,
-  listJournalEntriesForActiveCompany,
-} from "@/lib/accounting-entries";
-import {
-  getPeriodLabel,
-  listAccountingPeriods,
-  normalizePeriodStatus,
-  type AccountingPeriod,
-} from "@/lib/accounting-periods";
+import { listJournalEntriesForActiveCompany } from "@/lib/accounting-entries";
 import { formatCurrencyAmount, normalizeCurrencyCode } from "@/lib/currency";
 import {
   getAlertasContables,
   getDashboardContableEjecutivo,
 } from "@/lib/dashboard-contable";
-import { getInvoicesForActiveCompany } from "@/lib/invoices";
 import { listPurchases } from "@/lib/purchases";
 
 type AccountingPageProps = {
@@ -32,40 +21,19 @@ type AccountingPageProps = {
   }>;
 };
 
-function getEntryStatusLabel(status: string | null | undefined) {
-  if (status === "posted") {
-    return "Contabilizado";
-  }
-
-  if (status === "reviewed") {
-    return "Revisado";
-  }
-
-  if (status === "observed") {
-    return "Observado";
-  }
-
-  return "Sugerido";
-}
-
 export default async function AccountingPage({
   searchParams,
 }: AccountingPageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const actionError = resolvedSearchParams.error ?? null;
-  const [entriesResult, periodsResult, purchasesResult, invoicesResult] =
-    await Promise.all([
-      listJournalEntriesForActiveCompany().catch(() => ({
-        company: null,
-        entries: [],
-        organization: null,
-      })),
-      listAccountingPeriods().catch(() => ({
-        periods: [] as AccountingPeriod[],
-      })),
-      listPurchases(),
-      getInvoicesForActiveCompany(),
-    ]);
+  const [entriesResult, purchasesResult] = await Promise.all([
+    listJournalEntriesForActiveCompany().catch(() => ({
+      company: null,
+      entries: [],
+      organization: null,
+    })),
+    listPurchases(),
+  ]);
   const [dashboardContableResult, alertasContablesResult] = await Promise.all([
     getDashboardContableEjecutivo().catch((error: unknown) => ({
       error:
@@ -85,7 +53,6 @@ export default async function AccountingPage({
     activeCompany?.base_currency ?? organization?.base_currency ?? "CRC",
   );
   const entries = entriesResult.entries;
-  const periods = periodsResult.periods;
   const suggestedCount = entries.filter(
     (entry) => entry.status === "suggested",
   ).length;
@@ -94,88 +61,42 @@ export default async function AccountingPage({
   ).length;
   const postedCount = entries.filter((entry) => entry.status === "posted").length;
   const pendingCount = entries.filter((entry) => entry.status !== "posted").length;
-  const sourceTitles = new Map<string, string>([
-    ...purchasesResult.purchases.map(
-      (purchase) =>
-        [
-          `purchase-${purchase.id}`,
-          purchase.counterparty?.name ?? purchase.supplier_name ?? "Compra",
-        ] as const,
-    ),
-    ...invoicesResult.invoices.map(
-      (invoice) =>
-        [
-          `invoice-${invoice.id}`,
-          invoice.counterparty?.name ?? invoice.proveedor ?? "Factura",
-        ] as const,
-    ),
-  ]);
   const dashboardContable =
     "error" in dashboardContableResult ? null : dashboardContableResult.resumen;
   const dashboardContableError =
     "error" in dashboardContableResult ? dashboardContableResult.error : null;
   const alertasContables = alertasContablesResult.alertas;
-  const accountingStatusRows = dashboardContable
-    ? [
-        {
-          errors: dashboardContable.compras_errores_contables,
-          href: "/compras",
-          label: "Compras",
-          pending: dashboardContable.compras_pendientes_contables,
-          posted: dashboardContable.compras_contabilizadas_contables,
-        },
-        {
-          errors: dashboardContable.facturas_errores_contables,
-          href: "/facturas",
-          label: "Facturas",
-          pending: dashboardContable.facturas_pendientes_contables,
-          posted: dashboardContable.facturas_contabilizadas_contables,
-        },
-        {
-          errors: dashboardContable.caja_errores_contable,
-          href: "/movimientos",
-          label: "Caja/Bancos",
-          pending: dashboardContable.caja_pendiente_contable,
-          posted: dashboardContable.caja_contabilizada_contable,
-        },
-        {
-          errors: dashboardContable.planillas_errores_contables,
-          href: "/planillas",
-          label: "Planillas",
-          pending: dashboardContable.planillas_pendientes_contables,
-          posted: dashboardContable.planillas_contabilizadas_contables,
-        },
-        {
-          errors: dashboardContable.subcontratos_errores_contables,
-          href: "/subcontratos",
-          label: "Subcontratos",
-          pending: dashboardContable.subcontratos_pendientes_contables,
-          posted: dashboardContable.subcontratos_contabilizados_contables,
-        },
-      ]
-    : [];
-  const accountingNavItems = [
-    { href: "/contabilidad/asientos", label: "Asientos reales" },
-    { href: "/contabilidad/mayor", label: "Mayor" },
-    { href: "/contabilidad/balance-comprobacion", label: "Balance" },
-    { href: "/contabilidad/estados-financieros", label: "Estados financieros" },
-    { href: "/contabilidad/reportes", label: "Reportes" },
-    { href: "/contabilidad/flujo-efectivo", label: "Flujo efectivo" },
-    { href: "/contabilidad/cierres", label: "Cierres" },
-    { href: "/contabilidad/presupuesto-vs-real", label: "Presupuesto vs real" },
-    { href: "/contabilidad/reglas", label: "Reglas" },
-  ];
+  const totalModuleErrors = dashboardContable
+    ? dashboardContable.compras_errores_contables +
+      dashboardContable.facturas_errores_contables +
+      dashboardContable.caja_errores_contable +
+      dashboardContable.planillas_errores_contables +
+      dashboardContable.subcontratos_errores_contables
+    : 0;
+  const totalModulePending = dashboardContable
+    ? dashboardContable.compras_pendientes_contables +
+      dashboardContable.facturas_pendientes_contables +
+      dashboardContable.caja_pendiente_contable +
+      dashboardContable.planillas_pendientes_contables +
+      dashboardContable.subcontratos_pendientes_contables
+    : pendingCount;
 
   return (
     <ModuleFrame>
       <ModuleHeader
         title="Contabilidad asistida"
-        description="Asientos sugeridos por OM7 para revisar, observar y contabilizar sin crear registros desde cero."
+        description="Consola ejecutiva para entrar rapido a asientos, reportes, catalogo y cierre."
         action={
           <div className="flex flex-wrap gap-2">
             <BackLink />
             <Link
               className="om7-btn-primary px-4 py-2.5"
+              href="/contabilidad/asientos/manual"
+            >
+              Nuevo asiento
+            </Link>
+            <Link
+              className="om7-btn-ghost px-4 py-2.5"
               href="/contabilidad/catalogo"
             >
               Catalogo de cuentas
@@ -184,314 +105,217 @@ export default async function AccountingPage({
         }
       />
 
-      <nav
-        aria-label="Navegacion contable"
-        className="flex flex-wrap gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.035] p-2"
-      >
-        {accountingNavItems.map((item) => (
-          <Link
-            className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-200/25 hover:bg-cyan-300/[0.08] hover:text-cyan-100"
-            href={item.href}
-            key={item.href}
-          >
-            {item.label}
-          </Link>
-        ))}
-      </nav>
-
       {actionError ? (
-        <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
+        <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-4">
           <p className="text-sm font-semibold text-amber-100">
             No se pudo completar la accion
           </p>
-          <p className="mt-2 text-sm leading-6 text-amber-100/75">
+          <p className="mt-1 text-sm leading-6 text-amber-100/75">
             {actionError}
           </p>
         </PremiumCard>
       ) : null}
 
       {!activeCompany ? (
-        <PremiumCard className="border-amber-300/15 bg-amber-300/10 p-5">
-          <p className="text-sm font-medium text-amber-100">
-            Selecciona un cliente/empresa
-          </p>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-100/75">
-            La contabilidad asistida se calcula para el cliente/empresa activo.
-          </p>
-          <Link
-            className="mt-4 inline-flex rounded-xl border border-amber-200/20 bg-black/15 px-4 py-2 text-sm font-medium text-amber-100 transition hover:bg-black/25"
-            href="/empresas"
-          >
-            Ir a clientes/empresas
-          </Link>
+        <PremiumCard className="border-amber-300/15 bg-amber-300/10 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-amber-100">
+                Selecciona un cliente/empresa
+              </p>
+              <p className="mt-1 text-sm text-amber-100/70">
+                La consola contable trabaja sobre el cliente activo.
+              </p>
+            </div>
+            <Link className="om7-btn-ghost px-4 py-2.5" href="/empresas">
+              Ir a clientes
+            </Link>
+          </div>
         </PremiumCard>
       ) : null}
 
       {dashboardContableError ? (
-        <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
+        <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-4">
           <p className="text-sm font-semibold text-amber-100">
             Dashboard contable no disponible
           </p>
-          <p className="mt-2 text-sm leading-6 text-amber-100/75">
+          <p className="mt-1 text-sm leading-6 text-amber-100/75">
             {dashboardContableError}
           </p>
         </PremiumCard>
       ) : null}
 
       {dashboardContable ? (
-        <>
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-            <MetricCard
-              detail="get_resumen_financiero"
-              label="Utilidad neta"
-              value={formatCurrencyAmount(dashboardContable.utilidad_neta, currency)}
-            />
-            <MetricCard
-              detail="get_resumen_flujo_efectivo"
-              label="Flujo neto"
-              value={formatCurrencyAmount(dashboardContable.flujo_neto, currency)}
-            />
-            <MetricCard
-              detail="Caja/Bancos oficiales"
-              label="Saldo efectivo"
-              value={formatCurrencyAmount(
-                dashboardContable.saldo_final_efectivo,
-                currency,
-              )}
-            />
-            <MetricCard
-              detail={dashboardContable.balance_cuadra ? "OK" : "Atencion"}
-              label="Balance"
-              value={
-                dashboardContable.balance_cuadra
-                  ? "Cuadra"
-                  : formatCurrencyAmount(
-                      dashboardContable.diferencia_balance,
-                      currency,
-                    )
-              }
-            />
-            <MetricCard
-              detail="SQL estado_contable"
-              label="Pendientes"
-              value={String(dashboardContable.total_pendientes_contables)}
-            />
-            <MetricCard
-              detail="get_alertas_contables"
-              label="Alertas"
-              value={String(dashboardContable.alertas_count)}
-            />
-          </section>
-
-          <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-            <PremiumCard className="overflow-hidden">
-              <div className="border-b border-white/[0.07] p-5">
-                <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <p className="text-base font-semibold text-white">
-                      Estado contable OM7
-                    </p>
-                    <p className="mt-1 text-sm leading-6 text-slate-500">
-                      Contabilizados, pendientes y errores provienen de
-                      `get_dashboard_contable_ejecutivo`.
-                    </p>
-                  </div>
-                  <StatusBadge>SQL/RPC</StatusBadge>
-                </div>
-              </div>
-              <div className="om7-responsive-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Modulo</th>
-                      <th>Contabilizados</th>
-                      <th>Pendientes</th>
-                      <th>Errores</th>
-                      <th>Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {accountingStatusRows.map((row) => (
-                      <tr key={row.label}>
-                        <td>
-                          <Link className="font-semibold text-cyan-100" href={row.href}>
-                            {row.label}
-                          </Link>
-                        </td>
-                        <td>{row.posted}</td>
-                        <td>{row.pending}</td>
-                        <td>{row.errors}</td>
-                        <td>
-                          <StatusBadge>
-                            {row.errors > 0
-                              ? "Error"
-                              : row.pending > 0
-                                ? "Pendiente"
-                                : "OK"}
-                          </StatusBadge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </PremiumCard>
-
-            <PremiumCard className="p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-base font-semibold text-white">
-                    Alertas contables
-                  </p>
-                  <p className="mt-1 text-sm leading-6 text-slate-500">
-                    Alertas oficiales desde backend.
-                  </p>
-                </div>
-                <StatusBadge>{alertasContables.length}</StatusBadge>
-              </div>
-              <div className="mt-5 grid gap-3">
-                {alertasContables.length > 0 ? (
-                  alertasContables.slice(0, 4).map((alerta) => (
-                    <div
-                      className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-4"
-                      key={alerta.alerta_tipo}
-                    >
-                      <p className="text-sm font-semibold text-white">
-                        {alerta.titulo}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-slate-400">
-                        {alerta.descripcion}
-                      </p>
-                      <p className="mt-3 text-xs font-semibold text-slate-300">
-                        Cantidad: {alerta.cantidad}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm leading-6 text-slate-400">
-                    Sin alertas contables para el periodo actual.
-                  </p>
-                )}
-              </div>
-            </PremiumCard>
-          </section>
-        </>
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            detail="Periodo activo"
+            label="Utilidad neta"
+            value={formatCurrencyAmount(dashboardContable.utilidad_neta, currency)}
+          />
+          <MetricCard
+            detail="Caja/Bancos"
+            label="Efectivo"
+            value={formatCurrencyAmount(
+              dashboardContable.saldo_final_efectivo,
+              currency,
+            )}
+          />
+          <MetricCard
+            detail={totalModuleErrors > 0 ? `${totalModuleErrors} errores` : "Operativo"}
+            label="Pendientes"
+            value={String(totalModulePending)}
+          />
+          <MetricCard
+            detail={dashboardContable.balance_cuadra ? "OK" : "Revisar"}
+            label="Balance"
+            value={
+              dashboardContable.balance_cuadra
+                ? "Cuadra"
+                : formatCurrencyAmount(dashboardContable.diferencia_balance, currency)
+            }
+          />
+        </section>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          detail="OM7 preparo propuesta Debe/Haber"
-          label="Asientos sugeridos"
-          value={String(suggestedCount)}
-        />
-        <MetricCard
-          detail="Necesitan correccion"
-          label="Observados"
-          value={String(observedCount)}
-        />
-        <MetricCard
-          detail="Ya fueron contabilizados"
-          label="Contabilizados"
-          value={String(postedCount)}
-        />
-        <MetricCard
-          detail="Sugeridos, revisados u observados"
-          label="Pendientes"
-          value={String(pendingCount)}
-        />
-      </section>
-
-      <section>
-        <PremiumCard className="overflow-hidden">
-          <div className="border-b border-white/[0.07] p-5">
-            <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <p className="text-base font-semibold text-white">
-                  Ultimos asientos
-                </p>
-                <p className="mt-1 text-sm leading-6 text-slate-500">
-                  Propuestas generadas desde compras y facturas aprobadas.
-                </p>
-              </div>
-              <StatusBadge>{entries.length} asientos</StatusBadge>
+      <section className="grid gap-3 xl:grid-cols-4">
+        <PremiumCard className="border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-0 shadow-2xl shadow-black/25 ring-1 ring-cyan-300/[0.04]">
+          <div className="flex items-start justify-between gap-3 border-b border-white/[0.1] p-4">
+            <div>
+              <p className="text-base font-semibold text-white">Asientos</p>
+              <p className="mt-1 text-sm text-slate-500">Trabajo contable.</p>
             </div>
+            <StatusBadge>{entries.length} total</StatusBadge>
           </div>
-          <div className="p-3 sm:p-5">
-            <div className="grid gap-4">
-              {entries.length > 0 ? (
-                entries.map((entry) => {
-                  const totals = getJournalTotals(entry);
-                  const entryPeriod = periods.find(
-                    (period) =>
-                      period.period_year === entry.period_year &&
-                      period.period_month === entry.period_month,
-                  );
-                  const entryLocked =
-                    normalizePeriodStatus(entryPeriod?.status) === "closed";
+          <div className="grid grid-cols-2 gap-2 p-4 text-sm">
+            <CompactValue label="Sugeridos" value={suggestedCount} />
+            <CompactValue label="Pendientes" value={pendingCount} />
+            <CompactValue label="Observados" value={observedCount} />
+            <CompactValue label="Contabilizados" value={postedCount} />
+          </div>
+          <div className="flex gap-2 border-t border-white/[0.1] p-4 pt-3">
+            <Link className="om7-btn-primary flex-1 px-3 py-2" href="/contabilidad/asientos">
+              Abrir
+            </Link>
+            <Link
+              className="om7-btn-ghost flex-1 px-3 py-2"
+              href="/contabilidad/asientos/manual"
+            >
+              Nuevo
+            </Link>
+          </div>
+        </PremiumCard>
 
-                  return (
-                    <div
-                      className="rounded-3xl border border-white/[0.08] bg-white/[0.025] p-4"
-                      key={entry.id}
-                    >
-                      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="om7-chip om7-chip-cyan">
-                              {entry.source_type === "purchase" ? "Compra" : "Factura"}
-                            </span>
-                            <span className="om7-chip text-slate-300">
-                              {getEntryStatusLabel(entry.status)}
-                            </span>
-                          </div>
-                          <p className="mt-3 text-sm font-semibold text-white">
-                            {sourceTitles.get(
-                              `${entry.source_type}-${entry.source_id}`,
-                            ) ?? "Registro origen"}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {getPeriodLabel(entry.period_year, entry.period_month)}
-                          </p>
-                        </div>
-                        <div className="text-sm font-semibold text-white">
-                          {totals.isBalanced ? "Cuadra" : "Con diferencia"}
-                        </div>
-                      </div>
-                      <JournalEntryCard
-                        currency={currency}
-                        entry={entry}
-                        locked={entryLocked}
-                        lockedReason="Periodo cerrado. El asiento queda solo lectura."
-                        redirectTo="/contabilidad"
-                        sourceId={entry.source_id}
-                        sourceType={
-                          entry.source_type === "invoice" ? "invoice" : "purchase"
-                        }
-                      />
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="rounded-3xl border border-dashed border-white/[0.12] bg-white/[0.025] p-10 text-center">
-                  <p className="text-base font-semibold text-white">
-                    Aun no hay asientos sugeridos.
-                  </p>
-                  <p className="mt-2 text-sm text-slate-500">
-                    Aprueba una compra o factura y genera el asiento sugerido
-                    desde su card.
-                  </p>
-                  <Link
-                    className="mt-5 inline-flex rounded-xl border border-cyan-200/20 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/15"
-                    href="/contabilidad/catalogo"
-                  >
-                    Revisar catalogo de cuentas
-                  </Link>
-                </div>
-              )}
+        <PremiumCard className="border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-0 shadow-2xl shadow-black/25 ring-1 ring-cyan-300/[0.04]">
+          <div className="flex items-start justify-between gap-3 border-b border-white/[0.1] p-4">
+            <div>
+              <p className="text-base font-semibold text-white">Notificaciones</p>
+              <p className="mt-1 text-sm text-slate-500">Avisos compactos.</p>
             </div>
+            <StatusBadge>{alertasContables.length}</StatusBadge>
+          </div>
+          <details className="m-4 rounded-2xl border border-white/[0.14] bg-white/[0.045] p-3 shadow-inner shadow-black/20 transition hover:border-cyan-200/20 hover:bg-cyan-300/[0.055]">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-white">
+              <span>
+                {alertasContables.length > 0
+                  ? `${alertasContables.length} avisos`
+                  : "Sin avisos"}
+              </span>
+              <span className="text-cyan-100">Ver</span>
+            </summary>
+            <div className="mt-3 grid gap-2">
+              {alertasContables.length > 0 ? (
+                alertasContables.slice(0, 3).map((alerta) => (
+                  <div
+                    className="rounded-xl border border-white/[0.08] bg-black/15 p-2"
+                    key={alerta.alerta_tipo}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-white">
+                        {alerta.titulo}
+                      </p>
+                      <span className="text-xs text-cyan-100">
+                        {alerta.cantidad}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Todo en orden para el periodo.
+                </p>
+              )}
+              <Link className="om7-btn-ghost px-3 py-2" href="/contabilidad/reportes">
+                Revisar
+              </Link>
+            </div>
+          </details>
+        </PremiumCard>
+
+        <PremiumCard className="border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-0 shadow-2xl shadow-black/25 ring-1 ring-cyan-300/[0.04]">
+          <div className="flex items-start justify-between gap-3 border-b border-white/[0.1] p-4">
+            <div>
+              <p className="text-base font-semibold text-white">Cierre mensual</p>
+              <p className="mt-1 text-sm text-slate-500">Control del periodo.</p>
+            </div>
+            <StatusBadge>
+              {dashboardContable?.balance_cuadra ? "Listo" : "Revisar"}
+            </StatusBadge>
+          </div>
+          <div className="m-4 rounded-2xl border border-white/[0.14] bg-white/[0.045] p-3 shadow-inner shadow-black/20">
+            <p className="text-xs text-slate-500">Balance</p>
+            <p className="mt-2 text-lg font-semibold text-white">
+              {dashboardContable?.balance_cuadra
+                ? "Cuadra"
+                : dashboardContable
+                  ? formatCurrencyAmount(dashboardContable.diferencia_balance, currency)
+              : "No disponible"}
+            </p>
+          </div>
+          <div className="flex gap-2 border-t border-white/[0.1] p-4 pt-3">
+            <Link className="om7-btn-primary flex-1 px-3 py-2" href="/contabilidad/cierres">
+              Cierres
+            </Link>
+            <Link className="om7-btn-ghost flex-1 px-3 py-2" href="/contabilidad/reportes">
+              Reportes
+            </Link>
+          </div>
+        </PremiumCard>
+
+        <PremiumCard className="border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-0 shadow-2xl shadow-black/25 ring-1 ring-cyan-300/[0.04]">
+          <div className="flex items-start justify-between gap-3 border-b border-white/[0.1] p-4">
+            <div>
+              <p className="text-base font-semibold text-white">Workspaces</p>
+              <p className="mt-1 text-sm text-slate-500">Acceso directo.</p>
+            </div>
+            <StatusBadge>ERP</StatusBadge>
+          </div>
+          <div className="grid gap-2 p-4">
+            {[
+              ["Catalogo", "/contabilidad/catalogo"],
+              ["Mayor", "/contabilidad/mayor"],
+              ["Balance", "/contabilidad/balance-comprobacion"],
+              ["Estados", "/contabilidad/estados-financieros"],
+            ].map(([label, href]) => (
+              <Link
+                className="rounded-xl border border-white/[0.12] bg-white/[0.045] px-3 py-2 text-sm font-semibold text-slate-200 shadow-sm shadow-black/10 transition hover:border-cyan-200/25 hover:bg-cyan-300/[0.07]"
+                href={href}
+                key={href}
+              >
+                {label}
+              </Link>
+            ))}
           </div>
         </PremiumCard>
       </section>
     </ModuleFrame>
+  );
+}
+
+function CompactValue({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-white/[0.13] bg-white/[0.045] p-3 shadow-inner shadow-black/15">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-2 text-xl font-semibold text-white">{value}</p>
+    </div>
   );
 }

@@ -57,11 +57,9 @@ export default async function AsientosContablesPage() {
     (asiento) => asiento.estado === "contabilizado",
   );
   const anulados = asientos.filter((asiento) => asiento.estado === "anulado");
-  const totalDebito = asientos.reduce(
-    (sum, asiento) => sum + Number(asiento.total_debito ?? 0),
-    0,
+  const manuales = asientos.filter(
+    (asiento) => (asiento.modulo_origen ?? "manual") === "manual",
   );
-
   return (
     <ModuleFrame>
       <ModuleHeader
@@ -138,17 +136,17 @@ export default async function AsientosContablesPage() {
                 Libro operativo de asientos
               </p>
               <p className="mt-1 text-sm leading-6 text-slate-500">
-                Vista inicial del nucleo contable transaccional. La creacion
-                automatica desde compras y facturas se conectara en una fase posterior.
+                Selecciona un asiento manual existente para usarlo como plantilla,
+                modificarlo y guardar una nueva version independiente.
               </p>
             </div>
             <StatusBadge tone="cyan">
-              Debito total {formatCurrency(totalDebito)}
+              {manuales.length} plantillas disponibles
             </StatusBadge>
           </div>
         </div>
 
-        <div className="om7-responsive-table">
+        <div className="om7-responsive-table om7-workspace-table">
           <table>
             <thead>
               <tr>
@@ -194,6 +192,14 @@ export default async function AsientosContablesPage() {
                         >
                           Ver detalle
                         </Link>
+                        {(asiento.modulo_origen ?? "manual") === "manual" ? (
+                          <Link
+                            className="om7-btn-ghost px-3 py-2 text-xs"
+                            href={`/contabilidad/asientos/manual?templateId=${asiento.id}`}
+                          >
+                            Usar plantilla
+                          </Link>
+                        ) : null}
                         {asiento.estado === "borrador" &&
                         (asiento.modulo_origen ?? "manual") === "manual" ? (
                           <Link

@@ -4,11 +4,12 @@ import {
   generateInvoiceAccountingEntryAction,
   registerInvoiceCollectionAction,
   revertInvoiceAccountingEntryAction,
+  updateInvoiceAccountingFieldsAction,
   updateInvoiceReviewStatusAction,
 } from "@/app/(platform)/facturas/actions";
+import { AccountingAmountCalculator } from "@/components/accounting/accounting-amount-calculator";
 import {
   BackLink,
-  MetricCard,
   ModuleFrame,
   ModuleHeader,
   StatusBadge,
@@ -45,7 +46,15 @@ import {
   getConversionMetadataValue,
   hasE7MindTrace,
 } from "@/lib/document-ui";
-import { getInvoicesForActiveCompany, type Invoice } from "@/lib/invoices";
+import {
+  getAccountingCorrectionOptions,
+  type AccountingCorrectionOptions,
+} from "@/lib/accounting-correction-options";
+import {
+  getInvoiceIssuerCompanyLabel,
+  getInvoicesForActiveCompany,
+  type Invoice,
+} from "@/lib/invoices";
 import {
   getCollectionStatusKey,
   getCollectionStatusLabel,
@@ -73,6 +82,15 @@ const statusLabels: Record<string, string> = {
   revision: "Revision",
   validada: "Validada",
 };
+
+const invoiceTypeOptions = [
+  "factura",
+  "venta",
+  "recibo",
+  "tiquete",
+  "nota_credito",
+  "nota_debito",
+];
 
 const filterLabels: Record<string, string> = {
   all: "Todas",
@@ -376,14 +394,18 @@ function InvoiceCollectionForm({
 function InvoiceCard({
   collectionSummary,
   invoice,
+  issuerCompanyLabel,
   journalEntry,
+  options,
   paymentMethods,
   period,
   redirectTo,
 }: {
   collectionSummary: CollectionSummary | null;
   invoice: Invoice;
+  issuerCompanyLabel: string;
   journalEntry: JournalEntry | null;
+  options: AccountingCorrectionOptions;
   paymentMethods: PaymentMethod[];
   period: AccountingPeriod | null;
   redirectTo: string;
@@ -464,6 +486,12 @@ function InvoiceCard({
           <h3 className="mt-4 break-words text-lg font-semibold text-white">
             {title}
           </h3>
+          <p className="mt-2 break-words text-sm text-slate-400">
+            Emisor: {issuerCompanyLabel}
+          </p>
+          <p className="mt-1 break-words text-sm text-slate-500">
+            Cliente / receptor: {title}
+          </p>
           <p className="mt-1 break-words text-sm text-slate-500">
             {invoice.numero_documento ?? "Sin numero"} ·{" "}
             {invoice.fecha ?? "Sin fecha"}
@@ -542,7 +570,7 @@ function InvoiceCard({
               {actualAsiento ? ` - Asiento #${actualAsiento.numero_asiento}` : ""}
             </p>
             <p className="mt-1 text-sm leading-6 text-slate-500">
-              El asiento real se genera desde reglas contables de facturas y
+              El asiento real se genera desde reglas contables de ventas y
               alimenta mayor, balance y estados financieros.
             </p>
             {invoice.contabilizacion_error ? (
@@ -577,7 +605,7 @@ function InvoiceCard({
                 action={revertInvoiceAccountingEntryAction}
                 className="om7-btn-ghost px-3 py-2 text-xs"
                 invoiceId={invoice.id}
-                motivo="Reversion de borrador contable de factura"
+                motivo="Reversion de borrador contable de venta"
                 redirectTo={redirectTo}
               >
                 Anular borrador
@@ -586,6 +614,135 @@ function InvoiceCard({
           </div>
         </div>
       </div>
+
+      {accountingStatus !== "contabilizado" ? (
+        <details
+          className={`mt-4 rounded-2xl border p-4 ${
+            accountingStatus === "error"
+              ? "border-rose-300/20 bg-rose-300/[0.045]"
+              : "border-white/[0.07] bg-black/15"
+          }`}
+          open={accountingStatus === "error"}
+        >
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/75">
+            Corregir para contabilizar
+          </summary>
+          <p className="mt-3 text-sm leading-6 text-slate-400">
+            Ajusta el tipo, cliente receptor, montos y cuenta sugerida que
+            alimentan la regla contable. El emisor siempre es la empresa activa.
+            Al guardar se limpia el error para poder continuar.
+          </p>
+          <form
+            action={updateInvoiceAccountingFieldsAction}
+            className="mt-4 grid gap-3 md:grid-cols-3"
+          >
+            <input name="invoiceId" type="hidden" value={invoice.id} />
+            <input name="redirectTo" type="hidden" value={redirectTo} />
+            <label className="block md:col-span-2">
+              <span className="text-xs text-slate-300">Cliente / receptor</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-emerald-300/35 focus:ring-4 focus:ring-emerald-300/10"
+                defaultValue={invoice.proveedor ?? ""}
+                name="proveedor"
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-300">Numero</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-emerald-300/35 focus:ring-4 focus:ring-emerald-300/10"
+                defaultValue={invoice.numero_documento ?? ""}
+                name="numeroDocumento"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-300">Fecha</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-emerald-300/35 focus:ring-4 focus:ring-emerald-300/10"
+                defaultValue={invoice.fecha ?? ""}
+                name="fecha"
+                type="date"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-300">Tipo contable</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-emerald-300/35 focus:ring-4 focus:ring-emerald-300/10"
+                defaultValue={invoice.tipo_documento ?? "factura"}
+                list={`invoice-accounting-types-${invoice.id}`}
+                name="tipoDocumento"
+                required
+              />
+            </label>
+            <datalist id={`invoice-accounting-types-${invoice.id}`}>
+              {(options.saleTypes.length > 0
+                ? options.saleTypes
+                : invoiceTypeOptions.map((value) => ({ label: value, value }))
+              ).map((type) => (
+                <option key={type.value} label={type.label} value={type.value} />
+              ))}
+            </datalist>
+            <label className="block">
+              <span className="text-xs text-slate-300">Cuenta sugerida</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-emerald-300/35 focus:ring-4 focus:ring-emerald-300/10"
+                defaultValue={invoice.suggested_account ?? ""}
+                list={`invoice-accounting-accounts-${invoice.id}`}
+                name="suggestedAccount"
+                placeholder="Ingreso operativo"
+              />
+            </label>
+            <datalist id={`invoice-accounting-accounts-${invoice.id}`}>
+              {options.accounts.map((account) => (
+                <option key={account.value} label={account.label} value={account.value} />
+              ))}
+            </datalist>
+            <AccountingAmountCalculator
+              subtotal={invoice.subtotal}
+              tax={invoice.impuesto}
+              taxFieldName="impuesto"
+              taxName="Impuesto"
+              total={invoice.total}
+            />
+            <label className="block">
+              <span className="text-xs text-slate-300">Centro de costo</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-emerald-300/35 focus:ring-4 focus:ring-emerald-300/10"
+                defaultValue={invoice.suggested_cost_center_id ?? ""}
+                list={`invoice-cost-centers-${invoice.id}`}
+                name="suggestedCostCenterId"
+                placeholder="Opcional"
+              />
+            </label>
+            <datalist id={`invoice-cost-centers-${invoice.id}`}>
+              {options.centrosCosto.map((centro) => (
+                <option key={centro.value} label={centro.label} value={centro.value} />
+              ))}
+            </datalist>
+            <label className="block md:col-span-3">
+              <span className="text-xs text-slate-300">Notas</span>
+              <textarea
+                className="mt-1 min-h-20 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-600 focus:border-emerald-300/35 focus:ring-4 focus:ring-emerald-300/10"
+                defaultValue={invoice.notas ?? ""}
+                name="notas"
+              />
+            </label>
+            <div className="flex flex-wrap gap-2 md:col-span-3">
+              <button className="om7-btn-secondary px-3 py-2 text-xs" type="submit">
+                Guardar correccion
+              </button>
+              <button
+                className="om7-btn-primary px-3 py-2 text-xs"
+                name="reprocess"
+                type="submit"
+                value="true"
+              >
+                Guardar y recontabilizar
+              </button>
+            </div>
+          </form>
+        </details>
+      ) : null}
 
       <details className="mt-4 rounded-2xl border border-white/[0.07] bg-black/15 p-4">
         <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/75">
@@ -733,6 +890,26 @@ function InvoiceCard({
   );
 }
 
+function InvoiceConsoleStat({
+  detail,
+  label,
+  value,
+}: {
+  detail: string;
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/[0.14] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-4 shadow-xl shadow-black/20 ring-1 ring-white/[0.035]">
+      <p className="text-sm text-slate-300">{label}</p>
+      <p className="mt-3 break-words text-2xl font-semibold tracking-tight text-white">
+        {value}
+      </p>
+      <p className="mt-3 text-xs leading-5 text-slate-500">{detail}</p>
+    </div>
+  );
+}
+
 export default async function InvoicesPage({
   searchParams,
 }: InvoicesPageProps) {
@@ -755,6 +932,7 @@ export default async function InvoicesPage({
     { activeContext, invoices },
     periodsResult,
     paymentMethodsResult,
+    correctionOptions,
   ] = await Promise.all([
     getInvoicesForActiveCompany(),
     listAccountingPeriods().catch(() => ({
@@ -762,6 +940,12 @@ export default async function InvoicesPage({
     })),
     listPaymentMethods().catch(() => ({
       methods: [] as PaymentMethod[],
+    })),
+    getAccountingCorrectionOptions().catch(() => ({
+      accounts: [],
+      centrosCosto: [],
+      purchaseCategories: [],
+      saleTypes: invoiceTypeOptions.map((value) => ({ label: value, value })),
     })),
   ]);
   const periods = periodsResult.periods;
@@ -774,17 +958,18 @@ export default async function InvoicesPage({
     invoices.map((invoice) => invoice.id),
   ).catch(() => new Map<string, JournalEntry>());
   const activeCompany = activeContext.activeCompany;
-  const organization = activeContext.organization;
-  const currency = activeCompany?.base_currency ?? organization?.base_currency ?? "CRC";
+  const issuerCompanyLabel = getInvoiceIssuerCompanyLabel(activeCompany);
   const filteredInvoices = filterInvoices(invoices, activeFilter, searchTerm);
-  const totalAmount = invoices.reduce(
-    (sum, invoice) => sum + Number(invoice.total ?? 0),
-    0,
-  );
   const fromDocumentCount = invoices.filter(
     (invoice) => invoice.source_document_id,
   ).length;
   const pendingCount = invoices.filter(isPending).length;
+  const approvedCount = invoices.filter((invoice) =>
+    hasAccountingStatus(invoice, "approved"),
+  ).length;
+  const observedCount = invoices.filter((invoice) =>
+    hasAccountingStatus(invoice, "observed"),
+  ).length;
   const missingTraceCount = invoices.filter(
     (invoice) => !invoice.counterparty_id || !invoice.source_document_id,
   ).length;
@@ -795,13 +980,13 @@ export default async function InvoicesPage({
   return (
     <ModuleFrame>
       <ModuleHeader
-        title="Facturas"
-        description="Control operativo de ingresos, clientes y documentos convertidos."
+        title="Ventas"
+        description="Consola operativa para revisar ingresos, clientes, cobros y trazabilidad."
         action={
-            <div className="flex flex-wrap gap-2">
-              <BackLink href={returnTo} label={returnLabel} />
+          <div className="flex flex-wrap gap-2">
+            <BackLink href={returnTo} label={returnLabel} />
             <Link className="om7-btn-primary px-4 py-2.5" href="/facturas/nueva">
-              Nueva factura
+              Nueva venta
             </Link>
           </div>
         }
@@ -824,7 +1009,7 @@ export default async function InvoicesPage({
             Selecciona una empresa activa
           </p>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-100/75">
-            Las facturas deben registrarse bajo una empresa. Ve a Empresas y
+            Las ventas deben registrarse bajo una empresa. Ve a Empresas y
             usa el boton Usar como activa para definir el contexto de trabajo.
           </p>
           <Link
@@ -836,37 +1021,82 @@ export default async function InvoicesPage({
         </PremiumCard>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
+      <section className="sticky top-[var(--om7-actions-sticky-top,12.5rem)] z-40 rounded-2xl border border-white/16 bg-[#06101c] p-2 shadow-2xl shadow-black/25 lg:top-[var(--om7-actions-sticky-top-lg,9.25rem)]">
+        <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center">
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto om7-scrollbar">
+            {[
+              ["all", "Resumen"],
+              ["accounting_pending", "Pendientes"],
+              ["accounting_approved", "Aprobadas"],
+              ["accounting_observed", "Observadas"],
+              ["document", "Desde XML"],
+              ["missing_counterparty", "Por completar"],
+            ].map(([filter, label]) => (
+              <Link
+                className={[
+                  "grid h-10 shrink-0 place-items-center rounded-xl border px-3.5 text-sm font-semibold transition",
+                  activeFilter === filter
+                    ? "border-cyan-300/35 bg-cyan-300/12 text-cyan-50"
+                    : "border-white/10 bg-white/[0.035] text-slate-300 hover:border-cyan-200/25 hover:bg-cyan-300/[0.08] hover:text-cyan-100",
+                ].join(" ")}
+                href={`/facturas?filter=${filter}${
+                  searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""
+                }${returnQuery}`}
+                key={filter}
+              >
+                {label}
+              </Link>
+            ))}
+          </div>
+          <form
+            className="flex min-w-0 shrink-0 gap-2 xl:ml-auto xl:w-[min(420px,40vw)]"
+            method="get"
+          >
+            <input
+              className="h-10 min-w-0 flex-1 rounded-xl border border-white/[0.1] bg-white/[0.055] px-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/45"
+              defaultValue={searchTerm}
+              name="q"
+              placeholder="Buscar venta..."
+            />
+            <input name="filter" type="hidden" value={activeFilter} />
+            <button className="om7-btn-secondary h-10 shrink-0 px-4" type="submit">
+              Buscar
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <InvoiceConsoleStat
           detail={activeCompany?.name ?? "Sin empresa activa"}
-          label="Total facturas"
-          value={String(invoices.length)}
+          label="Ventas"
+          value={invoices.length}
         />
-        <MetricCard
-          detail={currency}
-          label="Monto total"
-          value={formatMoney(totalAmount, currency)}
+        <InvoiceConsoleStat
+          detail={`${observedCount} observadas`}
+          label="Aprobadas"
+          value={approvedCount}
         />
-        <MetricCard
+        <InvoiceConsoleStat
           detail="Tienen documento origen"
           label="Desde documento"
-          value={String(fromDocumentCount)}
+          value={fromDocumentCount}
         />
-        <MetricCard
+        <InvoiceConsoleStat
           detail={`Pendientes ${pendingCount} · por completar ${missingTraceCount}`}
           label="Por revisar"
-          value={String(pendingReviewCount)}
+          value={pendingReviewCount}
         />
       </section>
 
       <section>
-        <PremiumCard className="overflow-hidden">
+        <PremiumCard className="overflow-hidden border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] shadow-2xl shadow-black/25 ring-1 ring-cyan-300/[0.04]">
           <div className="border-b border-white/[0.07] p-5">
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <p className="text-base font-semibold text-white">
-                    Bandeja de facturas
+                    Workspace de ventas
                   </p>
                   <p className="mt-1 text-sm text-slate-500">
                     Revisión, cobro y trazabilidad en una sola bandeja.
@@ -877,7 +1107,7 @@ export default async function InvoicesPage({
                 </span>
               </div>
 
-              <form className="grid gap-2 lg:grid-cols-[1fr_auto]" method="get">
+              <form className="hidden" method="get">
                 <input
                   className="h-12 min-w-0 rounded-2xl border border-white/[0.1] bg-white/[0.06] px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/45 focus:ring-4 focus:ring-cyan-300/10"
                   defaultValue={searchTerm}
@@ -890,7 +1120,7 @@ export default async function InvoicesPage({
                 </button>
               </form>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="hidden">
                 {Object.entries(filterLabels).map(([filter, label]) => (
                   <Link
                     className={[
@@ -911,15 +1141,17 @@ export default async function InvoicesPage({
             </div>
           </div>
 
-          <div className="p-3 sm:p-5">
+          <div className="max-h-[58vh] overflow-y-auto p-3 om7-scrollbar sm:p-5">
             <div className="grid gap-4">
             {filteredInvoices.length > 0 ? (
               filteredInvoices.map((invoice) => (
                 <InvoiceCard
                   collectionSummary={invoiceCollectionMap.get(invoice.id) ?? null}
                   invoice={invoice}
+                  issuerCompanyLabel={issuerCompanyLabel}
                   journalEntry={invoiceEntryMap.get(invoice.id) ?? null}
                   key={invoice.id}
+                  options={correctionOptions}
                   paymentMethods={paymentMethods}
                   period={getInvoicePeriod(invoice, periods)}
                   redirectTo={redirectTo}
@@ -927,11 +1159,11 @@ export default async function InvoicesPage({
               ))
             ) : (
               <div className="rounded-3xl border border-dashed border-white/[0.12] bg-white/[0.025] p-10 text-center">
-                <p className="text-base font-semibold text-white">
-                  Sin facturas para esta vista
+              <p className="text-base font-semibold text-white">
+                  Sin ventas para esta vista
                 </p>
                 <p className="mt-2 text-sm text-slate-500">
-                  Ajusta los filtros o crea una factura desde un documento
+                  Ajusta los filtros o crea una venta desde un documento
                   revisado.
                 </p>
               </div>

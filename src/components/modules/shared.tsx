@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { AccountingWorkspaceNav } from "@/components/accounting/accounting-workspace-nav";
 import Link from "next/link";
 import {
   DashboardHero,
@@ -31,12 +32,17 @@ export function ModuleHeader({
   action,
 }: ModuleHeaderProps) {
   return (
-    <DashboardHero
-      action={action}
-      description={description}
-      eyebrow={eyebrow}
-      title={title}
-    />
+    <div className="sticky top-16 z-[80] -mt-4 overflow-hidden rounded-b-3xl border-b border-white/10 bg-[#06101c] p-2 shadow-2xl shadow-black/30 sm:p-3">
+      <DashboardHero
+        action={action}
+        description={description}
+        eyebrow={eyebrow}
+        title={title}
+      />
+      <div className="mt-2">
+        <AccountingWorkspaceNav />
+      </div>
+    </div>
   );
 }
 

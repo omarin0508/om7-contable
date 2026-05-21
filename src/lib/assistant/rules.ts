@@ -29,11 +29,11 @@ function plural(value: number, singular: string, pluralLabel = `${singular}s`) {
 
 function getModuleLabel(pathname: string) {
   if (pathname.startsWith("/documentos/")) {
-    return "Workspace documental";
+    return "Workspace de bandeja";
   }
 
   if (pathname.startsWith("/documentos")) {
-    return "Documentos";
+    return "Consulta de documentos";
   }
 
   if (pathname.startsWith("/compras")) {
@@ -41,7 +41,7 @@ function getModuleLabel(pathname: string) {
   }
 
   if (pathname.startsWith("/facturas")) {
-    return "Facturas";
+    return "Ventas";
   }
 
   if (pathname.startsWith("/periodos")) {
@@ -88,7 +88,7 @@ function buildChecklist(snapshot: AssistantSnapshot): AssistantChecklistItem[] {
       completed:
         snapshot.documents.requiresReview === 0 &&
         snapshot.documents.readyToConvert === 0,
-      label: "Documentos al dia",
+      label: "Bandeja al dia",
       value:
         snapshot.documents.requiresReview + snapshot.documents.readyToConvert === 0
           ? "Sin pendientes"
@@ -181,35 +181,35 @@ export function buildAssistantGuidance(
     { href: "/observados", label: "Ver observados" },
   ];
   let context =
-    "Estas viendo el sistema operativo financiero. OM7 resume el trabajo diario, documentos, registros y cierre mensual.";
+    "Estas viendo el sistema operativo financiero. OM7 resume el trabajo diario, la bandeja, registros y cierre mensual.";
   let nextStep =
     pendingDocuments > 0
-      ? "Empeza por la bandeja diaria para revisar y convertir documentos pendientes."
+      ? "Empeza por la bandeja diaria para clasificar y dar salida a documentos pendientes."
       : "Revisa los registros pendientes y continua hacia contabilidad o cierre mensual.";
   let actions = baseActions;
 
   if (pathname.startsWith("/documentos/")) {
     context =
-      "Estas en el workspace de un documento. Aqui se revisa la extraccion, se confirma la sugerencia OM7 y se convierte en compra o factura.";
+      "Estas en el workspace de Bandeja. Aqui se revisa la extraccion, se confirma la sugerencia OM7 y se da salida a Compra o Venta.";
     nextStep =
       snapshot.documents.readyToConvert > 0
-        ? "Si los datos ya estan revisados, el siguiente paso es convertir el documento evitando duplicados."
-        : "Confirma proveedor, cliente, totales y clasificacion antes de convertir.";
+        ? "Si los datos ya estan revisados, el siguiente paso es dar salida evitando duplicados."
+        : "Confirma proveedor, cliente, totales y clasificacion antes de dar salida.";
     actions = [
       { href: "__close", label: "Seguir revisando", tone: "primary" },
-      { href: "/documentos", label: "Volver a documentos" },
-      { href: "/bandeja", label: "Abrir bandeja" },
+      { href: "/bandeja", label: "Volver a bandeja" },
+      { href: "/documentos", label: "Consulta documentos" },
     ];
   } else if (pathname.startsWith("/documentos")) {
     context =
-      "Esta es la bandeja documental: aqui entran XML, PDF e imagenes antes de convertirse en registros operativos.";
+      "Esta es la consulta de documentos ingresados: aqui se ve el original, trazabilidad y relacion con compras o ventas.";
     nextStep =
       pendingDocuments > 0
-        ? "Abri el documento mas urgente y completa revision o conversion."
-        : "No hay documentos criticos; podes revisar compras, facturas o periodo.";
+        ? "Volvi a Bandeja para completar clasificacion y salida."
+        : "No hay documentos criticos; podes revisar compras, ventas o periodo.";
     actions = [
-      { href: "__close", label: "Seguir en documentos", tone: "primary" },
-      { href: "/bandeja", label: "Ver cola diaria" },
+      { href: "__close", label: "Seguir consultando", tone: "primary" },
+      { href: "/bandeja", label: "Trabajar bandeja" },
       { href: "/compras", label: "Compras" },
     ];
   } else if (pathname.startsWith("/compras")) {
@@ -228,15 +228,15 @@ export function buildAssistantGuidance(
     ];
   } else if (pathname.startsWith("/facturas")) {
     context =
-      "Estas en facturas: OM7 controla revision, cobro, trazabilidad documental y asiento sugerido.";
+      "Estas en ventas: OM7 controla revision, cobro, trazabilidad documental y asiento sugerido.";
     nextStep =
       snapshot.invoices.observed > 0
-        ? "Atende las facturas observadas antes de cerrar el mes."
+        ? "Atende las ventas observadas antes de cerrar el mes."
         : snapshot.invoices.pendingReview > 0
-          ? "Marca como revisadas las facturas pendientes; luego aprobalas para habilitar cobro, asiento y cierre."
-          : "Revisa cobros y genera los asientos de las facturas aprobadas.";
+          ? "Marca como revisadas las ventas pendientes; luego aprobalas para habilitar cobro, asiento y cierre."
+          : "Revisa cobros y genera los asientos de las ventas aprobadas.";
     actions = [
-      { href: "/facturas?filter=accounting_pending", label: "Facturas pendientes", tone: "primary" },
+      { href: "/facturas?filter=accounting_pending", label: "Ventas pendientes", tone: "primary" },
       { href: "/facturas?filter=accounting_approved", label: "Aprobadas" },
       { href: "/movimientos/cobrar", label: "Cuentas por cobrar" },
     ];
@@ -244,7 +244,7 @@ export function buildAssistantGuidance(
     context =
       "Estas en cuentas por cobrar. OM7 prioriza que revises saldos, vencidos y cobros sin salir de este workspace.";
     nextStep =
-      "Primero trabaja aqui: confirma pendientes, registra cobros desde facturas y vuelve a este workspace para continuar.";
+      "Primero trabaja aqui: confirma pendientes, registra cobros desde ventas y vuelve a este workspace para continuar.";
     actions = [
       { href: "__close", label: "Seguir aqui", tone: "primary" },
       { href: "/movimientos/cobrar?filter=overdue", label: "Ver vencidas" },
@@ -300,7 +300,7 @@ export function buildAssistantGuidance(
     ];
   } else if (pathname.startsWith("/contabilidad")) {
     context =
-      "Estas en contabilidad asistida: OM7 propone asientos Debe/Haber desde compras y facturas aprobadas.";
+      "Estas en contabilidad asistida: OM7 propone asientos Debe/Haber desde compras y ventas aprobadas.";
     nextStep =
       snapshot.accounting.pendingToPost > 0
         ? "Revisa y contabiliza los asientos pendientes que cuadren."
@@ -312,14 +312,14 @@ export function buildAssistantGuidance(
     ];
   } else if (pathname.startsWith("/dashboard")) {
     context =
-      "Estas en la portada ejecutiva. El dashboard orienta; el trabajo profundo vive en bandeja, compras, facturas, contabilidad y periodos.";
+      "Estas en la portada ejecutiva. El dashboard orienta; el trabajo profundo vive en bandeja, compras, ventas, contabilidad y periodos.";
     nextStep =
       observedRecords > 0
         ? "Atende observados primero: son bloqueos reales para cierre."
         : pendingDocuments > 0
           ? "Entra a bandeja diaria para convertir lo que ya llego."
           : pendingRecords > 0
-            ? "Revisa compras y facturas pendientes."
+            ? "Revisa compras y ventas pendientes."
             : "Avanza a contabilidad o reportes.";
     actions = baseActions;
   }

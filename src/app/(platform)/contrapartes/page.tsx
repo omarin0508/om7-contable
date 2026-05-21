@@ -1,12 +1,11 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { createCounterpartyAction } from "@/app/(platform)/contrapartes/actions";
 import {
-  MetricCard,
   ModuleFrame,
   ModuleHeader,
   StatusBadge,
 } from "@/components/modules/shared";
-import { PremiumCard } from "@/components/ui/premium-card";
 import {
   listCounterparties,
   type CounterpartyFilters,
@@ -64,16 +63,76 @@ function formatDate(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
-function CounterpartyForm() {
+function CounterpartyLauncher({
+  action,
+  detail,
+  href,
+  kicker,
+  title,
+}: {
+  action: string;
+  detail: string;
+  href: string;
+  kicker: string;
+  title: string;
+}) {
   return (
-    <div id="nueva-contraparte">
-    <PremiumCard className="p-5">
-      <p className="text-sm font-semibold text-white">Nueva contraparte</p>
-      <p className="mt-1 text-xs leading-5 text-slate-500">
-        Alimenta el motor documental con proveedores y clientes conocidos.
-      </p>
+    <a
+      className="group rounded-2xl border border-white/15 bg-[#07111f] p-4 shadow-lg shadow-black/20 transition hover:border-cyan-300/30 hover:bg-cyan-500/[0.04]"
+      href={href}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-200/65">
+            {kicker}
+          </p>
+          <p className="mt-2 text-base font-semibold text-white">{title}</p>
+        </div>
+        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-white/70 transition group-hover:border-cyan-300/30 group-hover:text-cyan-100">
+          Filtrar
+        </span>
+      </div>
+      <p className="mt-3 min-h-10 text-sm leading-5 text-slate-400">{detail}</p>
+      <div className="mt-4 border-t border-white/10 pt-3 text-sm font-semibold text-cyan-100">
+        {action}
+      </div>
+    </a>
+  );
+}
 
-      <form action={createCounterpartyAction} className="mt-5 space-y-4">
+function CounterpartySignal({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-semibold text-white">{value}</p>
+    </div>
+  );
+}
+
+function CounterpartyForm({
+  defaultType,
+  title,
+}: {
+  defaultType: "customer" | "supplier";
+  title: string;
+}) {
+  return (
+    <form action={createCounterpartyAction} className="space-y-4">
+      <div>
+        <p className="text-sm font-semibold text-white">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          Alta rapida para alimentar compras, facturas y documentos.
+        </p>
+      </div>
+
         <label className="block">
           <span className="text-sm font-medium text-slate-300">Nombre</span>
           <input
@@ -89,7 +148,7 @@ function CounterpartyForm() {
             <span className="text-sm font-medium text-slate-300">Tipo</span>
             <select
               className="mt-2 h-11 w-full rounded-xl border border-white/[0.1] bg-white/[0.06] px-3.5 text-sm text-white outline-none focus:border-cyan-300/45 focus:ring-4 focus:ring-cyan-300/10"
-              defaultValue="supplier"
+              defaultValue={defaultType}
               name="type"
             >
               <option className="bg-slate-950" value="supplier">
@@ -164,7 +223,105 @@ function CounterpartyForm() {
           Crear contraparte
         </button>
       </form>
-    </PremiumCard>
+  );
+}
+
+function CounterpartyModal({
+  children,
+  id,
+  title,
+}: {
+  children: ReactNode;
+  id: string;
+  title: string;
+}) {
+  return (
+    <div
+      className="invisible fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-3 opacity-0 backdrop-blur-sm transition target:visible target:opacity-100 sm:p-6"
+      id={id}
+    >
+      <div className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/20 bg-[#07111f] shadow-2xl shadow-cyan-950/30">
+        <div className="flex items-center justify-between gap-4 border-b border-white/15 bg-[#06101c] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200/70">
+              OM7 Finance OS
+            </p>
+            <p className="mt-1 truncate text-xl font-semibold text-white">
+              {title}
+            </p>
+          </div>
+          <a
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-300 transition hover:border-cyan-300/30 hover:text-cyan-100"
+            href="#resumen-relaciones"
+          >
+            Cerrar
+          </a>
+        </div>
+        <div className="min-h-0 overflow-y-auto p-5 om7-scrollbar">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CounterpartyDirectory({
+  counterparties,
+}: {
+  counterparties: CounterpartyRecord[];
+}) {
+  return (
+    <div className="mt-4 max-h-[52vh] overflow-y-auto rounded-2xl border border-white/15 om7-scrollbar">
+      <div className="divide-y divide-white/10">
+        {counterparties.length > 0 ? (
+          counterparties.map((counterparty) => (
+            <article
+              className="grid min-w-0 gap-4 p-3 transition hover:bg-cyan-500/[0.03] sm:p-5 xl:grid-cols-[minmax(0,1.2fr)_0.8fr_auto]"
+              key={counterparty.id}
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="min-w-0 truncate text-base font-semibold text-white">
+                    {counterparty.name}
+                  </p>
+                  <StatusBadge>
+                    {counterparty.is_active ? "Activo" : "Inactivo"}
+                  </StatusBadge>
+                </div>
+                <p className="mt-2 text-sm text-slate-400">
+                  {typeLabels[counterparty.type] ?? counterparty.type}
+                </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Ultima actividad: {formatDate(getLastActivity(counterparty))}
+                </p>
+              </div>
+              <div className="grid min-w-0 gap-2 text-sm text-slate-400 sm:grid-cols-3 xl:grid-cols-1">
+                <span className="truncate">
+                  Cedula: {counterparty.tax_id ?? "Sin registrar"}
+                </span>
+                <span className="truncate">
+                  Email: {counterparty.email ?? "Sin registrar"}
+                </span>
+                <span className="truncate">
+                  Tel: {counterparty.phone ?? "Sin registrar"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 xl:justify-end">
+                <Link
+                  className="om7-btn-secondary px-4 py-2.5"
+                  href={`/contrapartes/${counterparty.id}`}
+                >
+                  Ver / Editar
+                </Link>
+              </div>
+            </article>
+          ))
+        ) : (
+          <div className="p-10 text-center text-sm text-slate-500">
+            No hay contrapartes con los filtros actuales.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -182,157 +339,174 @@ export default async function CounterpartiesPage({
   const customerCount = counterparties.filter((item) =>
     ["customer", "both"].includes(item.type),
   ).length;
+  const customerDirectory = counterparties.filter((item) =>
+    ["customer", "both"].includes(item.type),
+  );
+  const supplierDirectory = counterparties.filter((item) =>
+    ["supplier", "both"].includes(item.type),
+  );
+  const hasActiveFilters =
+    Boolean(filters.query) || filters.type !== "all" || filters.status !== "active";
 
   return (
     <ModuleFrame>
       <ModuleHeader
-        title="Contrapartes"
-        description="Administra proveedores y clientes para que OM7 detecte, clasifique y conecte documentos con registros operativos."
+        title="Proveedores / Clientes"
+        description="Consola operativa para clasificar relaciones comerciales, conectar documentos y abrir workspaces de gestion."
         action={
-          <a className="om7-btn-primary px-4 py-2.5" href="#nueva-contraparte">
-            Crear contraparte
+          <a
+            className="om7-btn-primary px-4 py-2.5"
+            href="#modal-nuevo-cliente"
+          >
+            Nuevo registro
           </a>
         }
       />
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          detail={activeOrganization?.name ?? "Organizacion"}
-          label="Contrapartes"
-          value={String(counterparties.length)}
+      <section className="sticky top-[var(--om7-actions-sticky-top,12.5rem)] z-40 rounded-2xl border border-white/15 bg-[#06101c] p-2 shadow-2xl shadow-black/25 lg:top-[var(--om7-actions-sticky-top-lg,9.25rem)]">
+        <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+          <nav
+            aria-label="Navegacion de proveedores y clientes"
+            className="flex min-w-0 gap-2 overflow-x-auto om7-scrollbar"
+          >
+            {[
+              ["Clientes", "#modal-clientes"],
+              ["Proveedores", "#modal-proveedores"],
+              ["Contrapartes", "#modal-directorio"],
+            ].map(([label, href]) => (
+              <a
+                className="min-w-fit shrink-0 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-sm font-medium text-slate-300 transition hover:border-cyan-300/30 hover:bg-cyan-500/10 hover:text-cyan-50"
+                href={href}
+                key={label}
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
+          <div className="flex min-w-0 gap-2 overflow-x-auto om7-scrollbar">
+            <a
+              className="om7-btn-primary min-w-fit shrink-0 px-4 py-2.5"
+              href="#modal-nuevo-cliente"
+            >
+              Nuevo cliente
+            </a>
+            <a
+              className="om7-btn-secondary min-w-fit shrink-0 px-4 py-2.5"
+              href="#modal-nuevo-proveedor"
+            >
+              Nuevo proveedor
+            </a>
+            <a
+              className="om7-btn-secondary min-w-fit shrink-0 px-4 py-2.5"
+              href="#modal-directorio"
+            >
+              Buscar
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section
+        className="grid gap-4 lg:grid-cols-2"
+        id="resumen-relaciones"
+      >
+        <CounterpartyLauncher
+          action={`${customerCount} clientes detectados`}
+          detail="Gestiona clientes, datos fiscales y contactos ligados a facturacion."
+          href="#modal-clientes"
+          kicker={activeOrganization?.name ?? "Organizacion"}
+          title="Clientes"
         />
-        <MetricCard
-          detail="Disponibles para deteccion documental"
-          label="Activas"
-          value={String(activeCount)}
-        />
-        <MetricCard
-          detail="Compras y gastos"
-          label="Proveedores"
-          value={String(supplierCount)}
-        />
-        <MetricCard
-          detail="Ventas e ingresos"
-          label="Clientes"
-          value={String(customerCount)}
+        <CounterpartyLauncher
+          action={`${supplierCount} proveedores detectados`}
+          detail="Centraliza proveedores para compras, XML recibidos y gasto operativo."
+          href="#modal-proveedores"
+          kicker="Compras"
+          title="Proveedores"
         />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-        <PremiumCard className="overflow-hidden">
-          <div className="border-b border-white/[0.07] p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-white">
-                  Directorio de contrapartes
-                </p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Busqueda rapida por nombre, cedula, email o telefono.
-                </p>
-              </div>
-              <form className="grid gap-2 sm:grid-cols-[1fr_auto_auto]" method="get">
-                <input
-                  className="h-11 min-w-0 rounded-xl border border-white/[0.1] bg-white/[0.06] px-3.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/45 focus:ring-4 focus:ring-cyan-300/10"
-                  defaultValue={filters.query}
-                  name="q"
-                  placeholder="Buscar contraparte..."
-                />
-                <select
-                  className="h-11 rounded-xl border border-white/[0.1] bg-white/[0.06] px-3 text-sm text-white outline-none focus:border-cyan-300/45 focus:ring-4 focus:ring-cyan-300/10"
-                  defaultValue={filters.type}
-                  name="type"
-                >
-                  <option className="bg-slate-950" value="all">
-                    Todos
-                  </option>
-                  <option className="bg-slate-950" value="supplier">
-                    Proveedores
-                  </option>
-                  <option className="bg-slate-950" value="customer">
-                    Clientes
-                  </option>
-                  <option className="bg-slate-950" value="both">
-                    Ambos
-                  </option>
-                </select>
-                <select
-                  className="h-11 rounded-xl border border-white/[0.1] bg-white/[0.06] px-3 text-sm text-white outline-none focus:border-cyan-300/45 focus:ring-4 focus:ring-cyan-300/10"
-                  defaultValue={filters.status}
-                  name="status"
-                >
-                  <option className="bg-slate-950" value="active">
-                    Activos
-                  </option>
-                  <option className="bg-slate-950" value="inactive">
-                    Inactivos
-                  </option>
-                  <option className="bg-slate-950" value="all">
-                    Todos
-                  </option>
-                </select>
-                <button className="om7-btn-secondary h-11 px-4 sm:col-span-3" type="submit">
-                  Aplicar filtros
-                </button>
-              </form>
-            </div>
-          </div>
+      <CounterpartyModal id="modal-directorio" title="Directorio operativo">
+        <div className="mb-4 grid gap-2 sm:grid-cols-3">
+          <CounterpartySignal label="Total" value={String(counterparties.length)} />
+          <CounterpartySignal label="Activas" value={String(activeCount)} />
+          <CounterpartySignal label="Filtros" value={hasActiveFilters ? "Aplicados" : "Listo"} />
+        </div>
+        <form
+          action="/contrapartes#modal-directorio"
+          className="grid gap-2 border-b border-white/10 pb-4 sm:grid-cols-[1fr_auto_auto]"
+          method="get"
+        >
+          <input
+            className="h-11 min-w-0 rounded-xl border border-white/[0.1] bg-white/[0.06] px-3.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/45 focus:ring-4 focus:ring-cyan-300/10"
+            defaultValue={filters.query}
+            name="q"
+            placeholder="Buscar contraparte..."
+          />
+          <select
+            className="h-11 rounded-xl border border-white/[0.1] bg-white/[0.06] px-3 text-sm text-white outline-none focus:border-cyan-300/45 focus:ring-4 focus:ring-cyan-300/10"
+            defaultValue={filters.type}
+            name="type"
+          >
+            <option className="bg-slate-950" value="all">
+              Todos
+            </option>
+            <option className="bg-slate-950" value="supplier">
+              Proveedores
+            </option>
+            <option className="bg-slate-950" value="customer">
+              Clientes
+            </option>
+            <option className="bg-slate-950" value="both">
+              Ambos
+            </option>
+          </select>
+          <select
+            className="h-11 rounded-xl border border-white/[0.1] bg-white/[0.06] px-3 text-sm text-white outline-none focus:border-cyan-300/45 focus:ring-4 focus:ring-cyan-300/10"
+            defaultValue={filters.status}
+            name="status"
+          >
+            <option className="bg-slate-950" value="active">
+              Activos
+            </option>
+            <option className="bg-slate-950" value="inactive">
+              Inactivos
+            </option>
+            <option className="bg-slate-950" value="all">
+              Todos
+            </option>
+          </select>
+          <button className="om7-btn-secondary h-11 px-4 sm:col-span-3" type="submit">
+            Aplicar filtros
+          </button>
+        </form>
 
-          <div>
-            <div className="divide-y divide-white/[0.06]">
-            {counterparties.length > 0 ? (
-              counterparties.map((counterparty) => (
-                <article
-                  className="grid min-w-0 gap-4 p-3 transition hover:bg-white/[0.025] sm:p-5 xl:grid-cols-[minmax(0,1.2fr)_0.8fr_auto]"
-                  key={counterparty.id}
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="min-w-0 truncate text-base font-semibold text-white">
-                        {counterparty.name}
-                      </p>
-                      <StatusBadge>
-                        {counterparty.is_active ? "Activo" : "Inactivo"}
-                      </StatusBadge>
-                    </div>
-                    <p className="mt-2 text-sm text-slate-400">
-                      {typeLabels[counterparty.type] ?? counterparty.type}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-600">
-                      Ultima actividad: {formatDate(getLastActivity(counterparty))}
-                    </p>
-                  </div>
-                  <div className="grid min-w-0 gap-2 text-sm text-slate-400 sm:grid-cols-3 xl:grid-cols-1">
-                    <span className="truncate">
-                      Cedula: {counterparty.tax_id ?? "Sin registrar"}
-                    </span>
-                    <span className="truncate">
-                      Email: {counterparty.email ?? "Sin registrar"}
-                    </span>
-                    <span className="truncate">
-                      Tel: {counterparty.phone ?? "Sin registrar"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 xl:justify-end">
-                    <Link
-                      className="om7-btn-secondary px-4 py-2.5"
-                      href={`/contrapartes/${counterparty.id}`}
-                    >
-                      Ver / Editar
-                    </Link>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <div className="p-10 text-center text-sm text-slate-500">
-                No hay contrapartes con los filtros actuales.
-              </div>
-            )}
-            </div>
-          </div>
-        </PremiumCard>
+        <CounterpartyDirectory counterparties={counterparties} />
+      </CounterpartyModal>
 
-        <CounterpartyForm />
-      </section>
+      <CounterpartyModal id="modal-clientes" title="Clientes">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <CounterpartySignal label="Clientes" value={String(customerCount)} />
+          <CounterpartySignal label="Activas" value={String(activeCount)} />
+        </div>
+        <CounterpartyDirectory counterparties={customerDirectory} />
+      </CounterpartyModal>
+
+      <CounterpartyModal id="modal-proveedores" title="Proveedores">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <CounterpartySignal label="Proveedores" value={String(supplierCount)} />
+          <CounterpartySignal label="Activas" value={String(activeCount)} />
+        </div>
+        <CounterpartyDirectory counterparties={supplierDirectory} />
+      </CounterpartyModal>
+
+      <CounterpartyModal id="modal-nuevo-cliente" title="Nuevo cliente">
+        <CounterpartyForm defaultType="customer" title="Crear cliente" />
+      </CounterpartyModal>
+
+      <CounterpartyModal id="modal-nuevo-proveedor" title="Nuevo proveedor">
+        <CounterpartyForm defaultType="supplier" title="Crear proveedor" />
+      </CounterpartyModal>
     </ModuleFrame>
   );
 }

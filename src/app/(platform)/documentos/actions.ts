@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { getActiveContext } from "@/lib/active-context";
 import {
   acceptCounterpartyMatch,
   createCounterpartyFromMatch,
@@ -26,7 +27,10 @@ import {
   updateDocumentClassificationStatus,
   type DocumentClassificationFlow,
 } from "@/lib/document-classification";
-import { createInvoiceForActiveCompany } from "@/lib/invoices";
+import {
+  assertInvoiceIssuerMatchesCompany,
+  createInvoiceForActiveCompany,
+} from "@/lib/invoices";
 import { assertInternalUser } from "@/lib/permissions";
 import { createPurchase } from "@/lib/purchases";
 import { uploadDocument } from "@/lib/storage";
@@ -328,7 +332,9 @@ export async function uploadDocumentAction(formData: FormData) {
     await uploadDocument({
       file: getFile(formData),
       relatedType:
-        relatedType === "invoice" || relatedType === "purchase"
+        relatedType === "invoice" ||
+        relatedType === "purchase" ||
+        relatedType === "client_upload"
           ? relatedType
           : "general",
       relatedId: relatedId || undefined,
@@ -344,6 +350,7 @@ export async function uploadDocumentAction(formData: FormData) {
   }
 
   revalidatePath("/documentos");
+  revalidatePath("/bandeja");
   revalidatePath("/facturas");
   revalidatePath("/compras");
   redirect(target);
@@ -389,6 +396,40 @@ export async function processDocumentAction(formData: FormData) {
   }
 
   revalidatePath("/documentos");
+  redirect(target);
+}
+
+export async function initializeDocumentClassificationAction(formData: FormData) {
+  const documentId = String(formData.get("documentId") ?? "").trim();
+  const redirectTo = String(formData.get("redirectTo") ?? "/documentos");
+  let target = `${redirectTo}#clasificacion`;
+
+  try {
+    if (!documentId) {
+      throw new Error("Documento requerido.");
+    }
+
+    const extraction = await createManualExtraction(
+      documentId,
+      "Extraccion manual creada para clasificacion desde Bandeja.",
+      getDefaultExtractedData(),
+    );
+
+    await classifyAndStoreDocumentExtraction(extraction.id);
+    target = redirectWithNotice(
+      `${redirectTo}#clasificacion`,
+      "Documento preparado y clasificado correctamente.",
+    );
+  } catch (error) {
+    logActionError("initializeDocumentClassificationAction", error);
+    target = redirectWithError(
+      `${redirectTo}#clasificacion`,
+      getErrorMessage(error, "No se pudo preparar la clasificacion."),
+    );
+  }
+
+  revalidatePath("/documentos");
+  revalidatePath("/bandeja");
   redirect(target);
 }
 
@@ -1017,6 +1058,11 @@ export async function createInvoiceFromXmlAction(formData: FormData) {
     assertReviewedExtractionStatus(extraction.extraction_status);
     const { currentUser } = await getConvertibleDocument(extraction.document_id);
     const data = extraction.extracted_data ?? {};
+    const activeContext = await getActiveContext();
+    assertInvoiceIssuerMatchesCompany({
+      company: activeContext.activeCompany,
+      data,
+    });
     const classification = await getPreferredDocumentClassification(extraction.id);
     const counterparty = await getAcceptedCounterpartyMatch(extraction.id);
     const clave = data.clave ?? "";
@@ -1050,7 +1096,7 @@ export async function createInvoiceFromXmlAction(formData: FormData) {
 
     await markDocumentAsConverted({
       convertedBy: currentUser.userId,
-      conversionNotes: `Factura creada desde extraccion ${extraction.id}.`,
+      conversionNotes: `Venta creada desde extraccion ${extraction.id}.`,
       convertedRecordId: invoice.id,
       convertedType: "invoice",
       documentId: extraction.document_id,
@@ -1066,7 +1112,7 @@ export async function createInvoiceFromXmlAction(formData: FormData) {
     logActionError("createInvoiceFromXmlAction", error);
     redirectTo = redirectWithError(
       redirectTo,
-      getErrorMessage(error, "No se pudo crear la factura desde el documento."),
+      getErrorMessage(error, "No se pudo crear la venta desde el documento."),
     );
   }
 

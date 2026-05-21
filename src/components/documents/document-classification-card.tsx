@@ -65,11 +65,11 @@ export function DocumentClassificationCard({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-base font-semibold text-white">
-            Sugerencia OM7
+            Clasificacion de salida
           </p>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
-            Motor de reglas OM7. Primero clasifica por cedulas, detalle y
-            categorias programadas; IA queda para una fase posterior.
+            Defina si el documento sale como Compra, Venta u Otro antes de
+            continuar el flujo.
           </p>
         </div>
         {classification ? (
@@ -89,17 +89,17 @@ export function DocumentClassificationCard({
       {!classification ? (
         <div className="mt-5 rounded-2xl border border-dashed border-cyan-300/20 bg-cyan-300/[0.04] p-4">
           <p className="text-sm font-medium text-cyan-50">
-            Este documento aun no tiene clasificacion.
+            Este documento aun no tiene salida definida.
           </p>
           <p className="mt-1 text-sm leading-6 text-cyan-100/70">
-            Genere una sugerencia con reglas locales antes de convertirlo en
-            compra o factura.
+            Genere una sugerencia o ajuste manualmente la clasificacion antes
+            de enviarlo al modulo operativo.
           </p>
           <form action={classifyDocumentExtractionAction} className="mt-4">
             <input name="extractionId" type="hidden" value={extractionId} />
             <input name="redirectTo" type="hidden" value={redirectTo} />
             <button className="om7-btn-primary px-4 py-2.5" type="submit">
-              Generar clasificacion
+              Clasificar documento
             </button>
           </form>
         </div>
@@ -107,7 +107,7 @@ export function DocumentClassificationCard({
         <>
           <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-white/[0.08] bg-black/15 p-3">
-              <p className="text-xs text-slate-500">Tipo sugerido</p>
+              <p className="text-xs text-slate-500">Salida sugerida</p>
               <p className="mt-1 text-sm font-semibold text-white">
                 {flowLabels[classification.flow_type] ?? classification.flow_type}
               </p>
@@ -164,7 +164,7 @@ export function DocumentClassificationCard({
               />
               <input name="redirectTo" type="hidden" value={redirectTo} />
               <button className="om7-btn-primary px-4 py-2.5" type="submit">
-                Aceptar
+                Confirmar salida
               </button>
             </form>
             <form action={rejectDocumentClassificationAction}>
@@ -182,7 +182,7 @@ export function DocumentClassificationCard({
 
           <details className="mt-4 rounded-2xl border border-white/[0.08] bg-black/15 p-4">
             <summary className="cursor-pointer text-sm font-semibold text-slate-200">
-              Editar clasificacion
+              Ajustar salida
             </summary>
             <form
               action={editDocumentClassificationAction}
@@ -196,7 +196,7 @@ export function DocumentClassificationCard({
               <input name="redirectTo" type="hidden" value={redirectTo} />
               <label className="block">
                 <span className="text-xs font-semibold text-slate-400">
-                  Tipo
+                  Salida
                 </span>
                 <select
                   className="mt-2 h-11 w-full rounded-xl border border-white/[0.12] bg-white/[0.07] px-3 text-sm text-white outline-none focus:border-cyan-300/45 focus:ring-4 focus:ring-cyan-300/10"

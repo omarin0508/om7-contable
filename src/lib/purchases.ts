@@ -92,6 +92,21 @@ export type UpdatePurchaseReviewStatusInput = {
   notes?: string;
 };
 
+export type UpdatePurchaseAccountingInput = {
+  purchaseId: string;
+  supplierName?: string;
+  documentNumber?: string;
+  purchaseDate?: string;
+  category?: string;
+  description?: string;
+  subtotal?: number;
+  tax?: number;
+  total?: number;
+  suggestedAccount?: string;
+  suggestedCostCenterId?: string;
+  notes?: string;
+};
+
 async function getAuthenticatedSupabase() {
   const supabase = await createClient();
 
@@ -276,6 +291,51 @@ export async function updatePurchaseReviewStatus(
     throw new Error(
       error?.message ??
         "No se pudo actualizar la compra. Si la ves en pantalla, falta aplicar la policy de actualizacion del schema 023 en Supabase.",
+    );
+  }
+
+  return data as Purchase;
+}
+
+export async function updatePurchaseAccountingFields(
+  input: UpdatePurchaseAccountingInput,
+) {
+  const { supabase } = await getAuthenticatedSupabase();
+  const activeContext = await getActiveContext();
+
+  if (!activeContext.organization || !activeContext.activeCompany) {
+    throw new Error("Selecciona una empresa activa antes de corregir compras.");
+  }
+
+  const { data, error } = await supabase
+    .from("purchases")
+    .update({
+      category: input.category?.trim() || null,
+      contabilizacion_error: null,
+      description: input.description?.trim() || null,
+      document_number: input.documentNumber?.trim() || null,
+      estado_contable: "pendiente",
+      notes: input.notes?.trim() || null,
+      purchase_date: input.purchaseDate?.trim() || null,
+      subtotal: input.subtotal ?? 0,
+      suggested_account: input.suggestedAccount?.trim() || null,
+      suggested_cost_center_id: input.suggestedCostCenterId?.trim() || null,
+      supplier_name: input.supplierName?.trim() || null,
+      tax: input.tax ?? 0,
+      total: input.total ?? 0,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.purchaseId)
+    .eq("organization_id", activeContext.organization.id)
+    .eq("company_id", activeContext.activeCompany.id)
+    .neq("estado_contable", "contabilizado")
+    .select("*")
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new Error(
+      error?.message ??
+        "No se pudo corregir la compra. Si ya esta contabilizada, anulala antes de editar.",
     );
   }
 

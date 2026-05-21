@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CuentasContablesTree } from "@/components/accounting/cuentas-contables-tree";
+import { CatalogoCuentasWorkspace } from "@/components/accounting/catalogo-cuentas-workspace";
 import {
   BackLink,
   MetricCard,
@@ -9,32 +9,53 @@ import {
 import {
   ContextualHelpCard,
   EmptyStateOM7,
-  SectionHeader,
   StatusBadge,
 } from "@/components/om7/operational-design-system";
 import { PremiumCard } from "@/components/ui/premium-card";
-import { listCuentasContables } from "@/lib/cuentas-contables";
+import { listCatalogoContableWorkspace } from "@/lib/cuentas-contables";
 
-export default async function AccountingCatalogPage() {
-  const result = await listCuentasContables().catch((error: unknown) => ({
+export default async function AccountingCatalogPage(props: {
+  searchParams?: Promise<{ error?: string; success?: string }>;
+}) {
+  const searchParams = (await props.searchParams) ?? {};
+  const result = await listCatalogoContableWorkspace().catch((error: unknown) => ({
+    activeCompany: null,
     accounts: [],
+    canEditMaster: false,
     error:
       error instanceof Error && error.message
         ? error.message
         : "No se pudo cargar el catalogo contable.",
+    globalAccounts: [],
     organization: null,
+    organizationAccounts: [],
     source: "global" as const,
     stats: {
       acumulativa: 0,
+      activas: 0,
       bg: 0,
+      copiadas: 0,
       detalle: 0,
       er: 0,
+      inactivas: 0,
       movimientos: 0,
+      personalizadas: 0,
       total: 0,
     },
     tree: [],
+    usageByAccountId: {},
   }));
-  const { accounts, organization, source, stats, tree } = result;
+  const {
+    accounts,
+    activeCompany,
+    canEditMaster,
+    globalAccounts,
+    organization,
+    organizationAccounts,
+    source,
+    stats,
+    usageByAccountId,
+  } = result;
   const actionError = "error" in result ? result.error : null;
 
   return (
@@ -66,7 +87,23 @@ export default async function AccountingCatalogPage() {
         </PremiumCard>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {searchParams.error ? (
+        <PremiumCard className="border-amber-300/20 bg-amber-300/[0.08] p-4">
+          <p className="text-sm font-semibold text-amber-100">
+            {searchParams.error}
+          </p>
+        </PremiumCard>
+      ) : null}
+
+      {searchParams.success ? (
+        <PremiumCard className="border-emerald-300/20 bg-emerald-300/[0.08] p-4">
+          <p className="text-sm font-semibold text-emerald-100">
+            {searchParams.success}
+          </p>
+        </PremiumCard>
+      ) : null}
+
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <MetricCard
           detail={organization?.name ?? "Sin organizacion activa"}
           label="Cuentas"
@@ -78,72 +115,58 @@ export default async function AccountingCatalogPage() {
           value={String(stats.detalle)}
         />
         <MetricCard
-          detail="Balance general"
-          label="BG"
-          value={String(stats.bg)}
+          detail="Cuentas activas"
+          label="Activas"
+          value={String(stats.activas)}
         />
         <MetricCard
-          detail="Estado de resultados"
-          label="ER"
-          value={String(stats.er)}
+          detail="Agrupan ramas"
+          label="Acumulativas"
+          value={String(stats.acumulativa)}
+        />
+        <MetricCard
+          detail="Creadas por el cliente"
+          label="Personalizadas"
+          value={String(stats.personalizadas)}
+        />
+        <MetricCard
+          detail="Desde maestro OM7"
+          label="Copiadas"
+          value={String(stats.copiadas)}
         />
       </section>
 
       <ContextualHelpCard title="Nucleo contable OM7">
-        Este catalogo es la base persistente que usaran los modulos operativos
-        para registrar movimientos contra cuentas reales. En esta fase solo se
-        prepara estructura, jerarquia, importacion y navegacion; los asientos y
-        estados financieros siguen en sus flujos actuales.
+        Este catalogo alimenta asientos, mayor, balance de comprobacion, reglas y
+        reportes. El Catalogo Maestro funciona como plantilla; para cada cliente
+        puedes copiar solo las cuentas necesarias, editar nombres/codigos y
+        desactivar lo que no se use.
       </ContextualHelpCard>
 
       {accounts.length > 0 ? (
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <PremiumCard className="min-w-0 overflow-hidden">
-            <CuentasContablesTree accountsCount={accounts.length} tree={tree} />
-          </PremiumCard>
-
-          <div className="grid content-start gap-4">
-            <PremiumCard className="p-5">
-              <SectionHeader
-                description="Resumen operativo de la estructura importada."
-                action={
-                  <StatusBadge tone={source === "global" ? "amber" : "emerald"}>
-                    {source === "global" ? "Plantilla global" : "Organizacion"}
-                  </StatusBadge>
-                }
-                title="Estado del catalogo"
-              />
-              <div className="mt-5 grid gap-2">
-                <div className="flex items-center justify-between rounded-2xl border border-white/[0.07] bg-black/15 px-3 py-2">
-                  <span className="text-sm text-slate-400">Acumulativas</span>
-                  <StatusBadge tone="cyan">{stats.acumulativa}</StatusBadge>
-                </div>
-                <div className="flex items-center justify-between rounded-2xl border border-white/[0.07] bg-black/15 px-3 py-2">
-                  <span className="text-sm text-slate-400">Movimientos</span>
-                  <StatusBadge tone="emerald">{stats.movimientos}</StatusBadge>
-                </div>
-                <div className="flex items-center justify-between rounded-2xl border border-white/[0.07] bg-black/15 px-3 py-2">
-                  <span className="text-sm text-slate-400">Naturaleza</span>
-                  <StatusBadge tone="slate">Debe/Haber</StatusBadge>
-                </div>
-              </div>
-            </PremiumCard>
-
-            <PremiumCard className="p-5">
-              <p className="text-sm font-semibold text-white">
-                Importacion idempotente
-              </p>
-              <p className="mt-3 text-sm leading-6 text-slate-400">
-                El importador usa upsert por organizacion y codigo. Puedes
-                correrlo nuevamente cuando el Excel oficial cambie sin duplicar
-                cuentas.
-              </p>
-              <div className="mt-4 rounded-2xl border border-white/[0.08] bg-black/20 p-3 font-mono text-xs leading-6 text-slate-300">
-                npm run import:catalogo -- --file=&quot;Catalogo de cuentas v1 12 mayo 26.xlsx&quot; --organization=&quot;ORG_ID&quot;
-              </div>
-            </PremiumCard>
+        <>
+          <div className="flex flex-wrap gap-2">
+            <StatusBadge tone={source === "global" ? "amber" : "emerald"}>
+              {source === "global" ? "Viendo plantilla global" : "Catalogo editable"}
+            </StatusBadge>
+            <StatusBadge tone="cyan">
+              {globalAccounts.length} cuentas maestras disponibles
+            </StatusBadge>
+            {activeCompany ? (
+              <StatusBadge tone="slate">{activeCompany.name}</StatusBadge>
+            ) : null}
           </div>
-        </section>
+
+          <CatalogoCuentasWorkspace
+            accounts={accounts}
+            activeCompanyName={activeCompany?.name}
+            canEditMaster={canEditMaster}
+            globalAccounts={globalAccounts}
+            organizationAccounts={organizationAccounts}
+            source={source}
+            usageByAccountId={usageByAccountId}
+          />
+        </>
       ) : (
         <EmptyStateOM7
           action={

@@ -5,6 +5,7 @@ export type CurrentUserRole = {
   userId: string;
   email: string | null;
   role: "internal" | "client" | null;
+  membershipRoles: string[];
   clientCompanies: Company[];
 };
 
@@ -52,6 +53,9 @@ export async function getCurrentUserRole(): Promise<CurrentUserRole> {
   const hasInternalRole = (memberships ?? []).some((membership) =>
     internalRoles.has(String(membership.role)),
   );
+  const membershipRoles = (memberships ?? []).map((membership) =>
+    String(membership.role),
+  );
 
   const { data: companyUsers, error: companyUsersError } = await supabase
     .from("company_users")
@@ -73,6 +77,7 @@ export async function getCurrentUserRole(): Promise<CurrentUserRole> {
     userId: user.id,
     email: user.email ?? null,
     role: hasInternalRole ? "internal" : clientCompanies.length > 0 ? "client" : null,
+    membershipRoles,
     clientCompanies,
   };
 }
@@ -92,6 +97,20 @@ export async function assertInternalUser() {
 
   if (currentUser.role !== "internal") {
     throw new Error("No tienes permisos internos para esta accion.");
+  }
+
+  return currentUser;
+}
+
+export async function assertMasterCatalogAdmin() {
+  const currentUser = await assertInternalUser();
+  const allowedRoles = new Set(["owner", "platform_owner", "org_owner", "admin"]);
+  const canEditMaster = currentUser.membershipRoles.some((role) =>
+    allowedRoles.has(role),
+  );
+
+  if (!canEditMaster) {
+    throw new Error("Solo administradores internos pueden editar el catalogo maestro.");
   }
 
   return currentUser;

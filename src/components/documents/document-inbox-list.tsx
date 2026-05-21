@@ -193,7 +193,7 @@ function getPrimaryAction(document: InboxDocument) {
 
   return {
     href: `/documentos/${document.id}`,
-    label: "Abrir documento",
+    label: "Ver documento",
   };
 }
 
@@ -207,11 +207,11 @@ export function DocumentInboxList({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-base font-semibold text-white">
-            Bandeja documental
+            Documentos ingresados
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            Cada documento abre un workspace dedicado. La lista se mantiene
-            compacta para operar rapido.
+            Consulta rapida del original y la trazabilidad. La clasificacion
+            operativa se trabaja desde Bandeja.
           </p>
         </div>
         <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-xs text-slate-400">

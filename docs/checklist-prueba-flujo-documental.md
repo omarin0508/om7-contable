@@ -5,7 +5,8 @@
 - [ ] Aplicar en Supabase los schemas pendientes hasta `schema-019-accounting-review-status.sql`.
 - [ ] Confirmar que existe un usuario admin/contador con acceso al despacho.
 - [ ] Confirmar que existe una empresa/cliente demo activa.
-- [ ] Si no hay empresa demo, ejecutar `supabase/seed-001-demo-company.sql` o `supabase/seed-002-demo-data-all-organizations.sql`.
+- [ ] Si no hay empresas demo, ejecutar `supabase/seed-demo-training.sql` para cargar el escenario multiempresa. Como alternativa legacy, usar `supabase/seed-001-demo-company.sql` o `supabase/seed-002-demo-data-all-organizations.sql`.
+- [ ] Para QA local, iniciar sesion con `qa.e7@om7.local`; el seed multiempresa tambien apunta a ese usuario.
 - [ ] Crear o confirmar un usuario cliente real en Supabase Auth.
 - [ ] Asignar el usuario cliente a la empresa demo desde `/empresas`.
 - [ ] Tener a mano 2 archivos:

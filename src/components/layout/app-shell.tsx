@@ -47,7 +47,7 @@ export function AppShell({
             organizationName={organizationName}
             userEmail={userEmail}
           />
-          <main className="min-w-0 flex-1 px-3 pb-28 pt-4 sm:px-5 sm:pt-5 lg:px-8 lg:pb-8">
+          <main className="min-w-0 flex-1 px-3 pb-28 pt-20 sm:px-5 lg:px-8 lg:pb-8">
             {children}
           </main>
         </div>

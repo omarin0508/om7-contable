@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   archiveDocumentAction,
+  initializeDocumentClassificationAction,
   inactivateDocumentAction,
+  processDocumentAction,
   processDocumentWithVisionAction,
   restoreDocumentAction,
   softDeleteDocumentAction,
@@ -37,7 +39,14 @@ type DocumentWorkspacePageProps = {
   }>;
 };
 
-const documentTypes = ["factura", "compra", "contrato", "estado_cuenta", "otro"];
+const documentTypes = [
+  "factura",
+  "venta",
+  "compra",
+  "contrato",
+  "estado_cuenta",
+  "otro",
+];
 
 function isXmlDocument(document: {
   mime_type: string | null;
@@ -108,10 +117,10 @@ function DocumentInfoSection({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-base font-semibold text-white">
-              Informacion del documento
+              Datos de consulta
             </p>
             <p className="mt-1 text-sm leading-6 text-slate-500">
-              Edita datos operativos sin modificar el archivo original.
+              Informacion secundaria para busqueda y trazabilidad.
             </p>
           </div>
           <span className="om7-chip om7-chip-cyan">Editable</span>
@@ -136,7 +145,7 @@ function DocumentInfoSection({
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/80">
-                Tipo documento
+                Tipo recibido
               </span>
               <select
                 className="mt-2 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.075] px-3 text-sm font-medium text-white outline-none transition focus:border-cyan-300/55 focus:bg-white/[0.1] focus:ring-4 focus:ring-cyan-300/15"
@@ -153,20 +162,20 @@ function DocumentInfoSection({
 
             <label className="block rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/80">
-                Etiquetas
+                Palabras clave
               </span>
               <input
                 className="mt-2 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.075] px-3 text-sm font-medium text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/55 focus:bg-white/[0.1] focus:ring-4 focus:ring-cyan-300/15"
                 defaultValue={getTags(document)}
                 name="tags"
-                placeholder="proveedor, urgente, demo"
+                placeholder="proveedor, proyecto, urgencia"
               />
             </label>
           </div>
 
           <label className="block rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3">
             <span className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/80">
-              Notas internas
+              Nota de consulta
             </span>
             <textarea
               className="mt-2 min-h-28 w-full rounded-xl border border-white/[0.16] bg-white/[0.075] px-3 py-2 text-sm font-medium text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/55 focus:bg-white/[0.1] focus:ring-4 focus:ring-cyan-300/15"
@@ -183,9 +192,9 @@ function DocumentInfoSection({
       </PremiumCard>
 
       <PremiumCard className="p-5">
-        <p className="text-base font-semibold text-white">Administracion</p>
+          <p className="text-base font-semibold text-white">Ciclo de vida</p>
         <p className="mt-1 text-sm leading-6 text-slate-500">
-          Acciones de ciclo de vida. No borran fisicamente el archivo original.
+          Acciones secundarias para ordenar la consulta documental.
         </p>
 
         <div className="mt-5 space-y-3">
@@ -284,10 +293,10 @@ function DocumentConvertedBanner({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-base font-semibold text-emerald-50">
-            Documento convertido
+            Salida creada
           </p>
           <p className="mt-2 text-sm leading-6 text-emerald-100/75">
-            Este documento ya fue convertido en una {recordLabel}
+            Este documento ya salio de Bandeja como {recordLabel}
             {document.converted_at ? ` el ${formatDate(document.converted_at)}` : ""}.
             La accion de crear registros queda bloqueada para evitar duplicados.
           </p>
@@ -299,7 +308,7 @@ function DocumentConvertedBanner({
             ) : null}
             {classification ? (
               <span className="om7-chip om7-chip-cyan">
-                Sugerencia OM7:{" "}
+                Clasificacion:{" "}
                 {classification.suggested_category ??
                   classification.suggested_account ??
                   classification.flow_type}
@@ -313,8 +322,172 @@ function DocumentConvertedBanner({
           </div>
         </div>
         <Link className="om7-btn-secondary px-4 py-2.5" href={href}>
-          Ver {recordLabel}
+          Continuar en {convertedType === "purchase" ? "Compras" : "Facturas"}
         </Link>
+      </div>
+    </PremiumCard>
+  );
+}
+
+function PendingExtractionWorkspace({
+  document,
+  signedUrl,
+}: {
+  document: Awaited<ReturnType<typeof getDocumentViewerData>>["document"];
+  signedUrl: string | null;
+}) {
+  const canProcessWithAi = isAiProcessableDocument(document);
+  const canOpenXml = isXmlDocument(document);
+  const redirectTo = `/documentos/${document.id}`;
+
+  return (
+    <PremiumCard className="p-5">
+      <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+        <section className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {["Entrada", "Preparar datos", "Clasificar", "Salida"].map(
+              (step, index) => (
+                <span
+                  className={[
+                    "rounded-2xl border px-3 py-2 text-center text-xs font-semibold",
+                    index <= 1
+                      ? "border-cyan-300/25 bg-cyan-300/10 text-cyan-100"
+                      : "border-white/[0.08] bg-black/15 text-slate-500",
+                  ].join(" ")}
+                  key={step}
+                >
+                  {step}
+                </span>
+              ),
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-cyan-300/15 bg-cyan-300/[0.045] p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge>Pendiente de datos</StatusBadge>
+              <span className="om7-chip text-slate-300">
+                {document.document_type}
+              </span>
+            </div>
+            <p className="mt-4 text-lg font-semibold text-white">
+              {document.original_filename ?? "Documento"}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Para clasificar y dar salida primero necesitamos datos revisables:
+              XML interpretado, IA sobre PDF/imagen o una captura manual.
+            </p>
+          </div>
+
+          <div className="grid gap-3">
+            {canProcessWithAi ? (
+              <form
+                action={processDocumentWithVisionAction}
+                className="rounded-2xl border border-white/[0.08] bg-black/15 p-4"
+              >
+                <input name="redirectTo" type="hidden" value={redirectTo} />
+                <input name="documentId" type="hidden" value={document.id} />
+                <p className="text-sm font-semibold text-white">
+                  Procesar PDF/imagen con IA
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Extrae proveedor, fecha, consecutivo, totales y lineas para
+                  habilitar revision y clasificacion.
+                </p>
+                <button className="om7-btn-primary mt-4 h-11 px-4" type="submit">
+                  Procesar con IA
+                </button>
+              </form>
+            ) : null}
+
+            {canOpenXml ? (
+              <div className="rounded-2xl border border-white/[0.08] bg-black/15 p-4">
+                <p className="text-sm font-semibold text-white">
+                  Interpretar XML
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Abra el visor del XML para leer la factura electronica y
+                  preparar los datos de revision.
+                </p>
+                <Link
+                  className="om7-btn-secondary mt-4 h-11 px-4"
+                  href={`/visor-documento/${document.id}`}
+                >
+                  Abrir visor XML
+                </Link>
+              </div>
+            ) : null}
+
+            <form
+              action={initializeDocumentClassificationAction}
+              className="rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.07] p-4"
+            >
+              <input name="redirectTo" type="hidden" value={redirectTo} />
+              <input name="documentId" type="hidden" value={document.id} />
+              <p className="text-sm font-semibold text-white">
+                Clasificar manualmente ahora
+              </p>
+              <p className="mt-1 text-xs leading-5 text-emerald-100/75">
+                Crea una revision base y abre la clasificacion de salida para
+                elegir Compra, Venta u Otro.
+              </p>
+              <button className="om7-btn-primary mt-4 h-11 px-4" type="submit">
+                Clasificar salida
+              </button>
+            </form>
+
+            <details className="rounded-2xl border border-white/[0.08] bg-black/15 p-4">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-200">
+                Crear solo revision manual
+              </summary>
+              <form action={processDocumentAction} className="mt-4">
+                <input name="redirectTo" type="hidden" value={redirectTo} />
+                <input name="documentId" type="hidden" value={document.id} />
+                <input
+                  name="rawText"
+                  type="hidden"
+                  value="Extraccion manual creada desde Bandeja para revision."
+                />
+                <p className="text-xs leading-5 text-slate-500">
+                  Use esto si primero quiere revisar datos antes de generar la
+                  clasificacion.
+                </p>
+                <button className="om7-btn-ghost mt-3 h-11 px-4" type="submit">
+                  Crear revision
+                </button>
+              </form>
+            </details>
+          </div>
+        </section>
+
+        <aside className="rounded-2xl border border-white/[0.08] bg-black/15 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-white">
+              Evidencia original
+            </p>
+            {signedUrl ? (
+              <a
+                className="om7-btn-ghost px-3 py-1.5 text-xs"
+                href={signedUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Abrir original
+              </a>
+            ) : null}
+          </div>
+          {signedUrl ? (
+            <iframe
+              className="mt-4 h-96 w-full rounded-2xl border border-white/[0.08] bg-black/20"
+              src={signedUrl}
+              title={document.original_filename ?? "Documento"}
+            />
+          ) : (
+            <p className="mt-4 rounded-xl border border-dashed border-white/[0.1] px-4 py-8 text-center text-sm text-slate-500">
+              Preview no disponible. El flujo puede continuar con revision
+              manual.
+            </p>
+          )}
+        </aside>
       </div>
     </PremiumCard>
   );
@@ -348,13 +521,11 @@ export default async function DocumentWorkspacePage({
       )
     : null;
   const state = getWorkflowState(document, extraction);
-  const canProcessWithAi = isAiProcessableDocument(document);
-
   return (
     <ModuleFrame>
       <ModuleHeader
-        title="Documento"
-        description="Revise el archivo, apruebe los datos y conviertalo en compra o factura."
+        title="Clasificar documento"
+        description="Revise datos, confirme salida y continue el flujo en Compras o Facturas."
         action={
           <div className="flex flex-wrap gap-2">
             {extraction ? (
@@ -365,7 +536,7 @@ export default async function DocumentWorkspacePage({
                 Abrir E7 Mind
               </Link>
             ) : null}
-            <BackLink href="/documentos" label="Volver a documentos" />
+            <BackLink href="/bandeja" label="Volver a bandeja" />
           </div>
         }
       />
@@ -395,22 +566,22 @@ export default async function DocumentWorkspacePage({
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           detail={document.original_filename ?? document.id}
-          label="Documento"
+          label="Fuente"
           value={getDocumentTitle(document)}
         />
         <MetricCard
           detail={document.mime_type ?? "Sin MIME"}
-          label="Estado"
+          label="Estado bandeja"
           value={state}
         />
         <MetricCard
           detail={extraction?.extraction_provider ?? "Sin extraccion"}
-          label="Origen"
+          label="Extraccion"
           value={extraction ? "Detectado" : "Pendiente"}
         />
         <MetricCard
           detail={formatDate(document.created_at)}
-          label="Confianza"
+          label="Entrada"
           value={extraction?.confidence ? String(extraction.confidence) : "N/D"}
         />
       </section>
@@ -421,8 +592,6 @@ export default async function DocumentWorkspacePage({
         document={document}
       />
 
-      <DocumentInfoSection document={document} />
-
       {extraction ? (
         <>
           <DocumentClassificationCard
@@ -430,12 +599,6 @@ export default async function DocumentWorkspacePage({
             classification={classification}
             counterpartyMatch={counterpartyMatch}
             extractionId={extraction.id}
-            redirectTo={`/documentos/${document.id}`}
-          />
-
-          <CounterpartyDetectionCard
-            extractionId={extraction.id}
-            match={counterpartyMatch}
             redirectTo={`/documentos/${document.id}`}
           />
 
@@ -457,96 +620,25 @@ export default async function DocumentWorkspacePage({
               signedUrl={viewer.signedUrl}
             />
           </PremiumCard>
+
+          <CounterpartyDetectionCard
+            extractionId={extraction.id}
+            match={counterpartyMatch}
+            redirectTo={`/documentos/${document.id}`}
+          />
         </>
       ) : (
-        <PremiumCard className="p-5">
-          <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-            <section>
-              <div className="flex flex-wrap gap-2">
-                {["Subido", "Procesado", "Revisado", "Convertido"].map(
-                  (step, index) => (
-                    <span
-                      className={[
-                        "rounded-2xl border px-3 py-2 text-center text-xs font-semibold",
-                        index === 0
-                          ? "border-cyan-300/25 bg-cyan-300/10 text-cyan-100"
-                          : "border-white/[0.08] bg-black/15 text-slate-500",
-                      ].join(" ")}
-                      key={step}
-                    >
-                      {step}
-                    </span>
-                  ),
-                )}
-              </div>
-
-              <div className="mt-5 rounded-2xl border border-white/[0.08] bg-black/15 p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatusBadge>{state}</StatusBadge>
-                  <span className="om7-chip text-slate-400">
-                    Sin extraccion principal
-                  </span>
-                </div>
-                <p className="mt-4 text-lg font-semibold text-white">
-                  {document.original_filename ?? "Documento"}
-                </p>
-                <p className="mt-2 text-sm leading-6 text-slate-400">
-                  Este documento esta cargado, pero todavia no tiene datos
-                  estructurados. La siguiente accion depende del tipo de
-                  archivo.
-                </p>
-
-                <div className="mt-5">
-                  {canProcessWithAi ? (
-                    <form action={processDocumentWithVisionAction}>
-                      <input
-                        name="redirectTo"
-                        type="hidden"
-                        value={`/documentos/${document.id}`}
-                      />
-                      <input name="documentId" type="hidden" value={document.id} />
-                      <button
-                        className="om7-btn-primary h-12 w-full px-4"
-                        type="submit"
-                      >
-                        Procesar documento con IA
-                      </button>
-                    </form>
-                  ) : isXmlDocument(document) ? (
-                    <Link
-                      className="om7-btn-secondary h-12 px-4"
-                      href={`/visor-documento/${document.id}`}
-                    >
-                      Abrir visor XML
-                    </Link>
-                  ) : (
-                    <span className="block rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-sm text-slate-400">
-                      No hay una accion automatica disponible para este archivo.
-                    </span>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            <aside className="rounded-2xl border border-white/[0.08] bg-black/15 p-4">
-              <p className="text-sm font-semibold text-white">
-                Preview documento
-              </p>
-              {viewer.signedUrl ? (
-                <iframe
-                  className="mt-4 h-96 w-full rounded-2xl border border-white/[0.08] bg-black/20"
-                  src={viewer.signedUrl}
-                  title={document.original_filename ?? "Documento"}
-                />
-              ) : (
-                <p className="mt-4 rounded-xl border border-dashed border-white/[0.1] px-4 py-8 text-center text-sm text-slate-500">
-                  Preview no disponible.
-                </p>
-              )}
-            </aside>
-          </div>
-        </PremiumCard>
+        <PendingExtractionWorkspace document={document} signedUrl={viewer.signedUrl} />
       )}
+
+      <details className="rounded-3xl border border-white/[0.08] bg-white/[0.025] p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-200">
+          Opciones de consulta y archivo
+        </summary>
+        <div className="mt-4">
+          <DocumentInfoSection document={document} />
+        </div>
+      </details>
     </ModuleFrame>
   );
 }

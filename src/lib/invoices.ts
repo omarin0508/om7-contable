@@ -3,7 +3,10 @@ import {
   normalizeReviewStatus,
   type AccountingReviewStatus,
 } from "@/lib/accounting-review-ui";
+import { normalizeTaxId } from "@/lib/counterparties";
 import { normalizeCurrencyCode } from "@/lib/currency";
+import type { ExtractedDocumentData } from "@/lib/document-processing";
+import type { Company } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
 
 export type Invoice = {
@@ -87,6 +90,20 @@ export type UpdateInvoiceReviewStatusInput = {
   notes?: string;
 };
 
+export type UpdateInvoiceAccountingInput = {
+  invoiceId: string;
+  proveedor?: string;
+  numeroDocumento?: string;
+  fecha?: string;
+  tipoDocumento?: string;
+  subtotal?: number;
+  impuesto?: number;
+  total?: number;
+  suggestedAccount?: string;
+  suggestedCostCenterId?: string;
+  notas?: string;
+};
+
 async function getAuthenticatedSupabase() {
   const supabase = await createClient();
 
@@ -104,6 +121,68 @@ async function getAuthenticatedSupabase() {
   }
 
   return { supabase, user };
+}
+
+function normalizeComparableName(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+export function getInvoiceIssuerCompanyLabel(
+  company: Pick<Company, "legal_name" | "name" | "tax_id"> | null | undefined,
+) {
+  if (!company) {
+    return "Empresa activa";
+  }
+
+  return [company.legal_name || company.name, company.tax_id]
+    .filter(Boolean)
+    .join(" - ");
+}
+
+export function assertInvoiceIssuerMatchesCompany({
+  company,
+  data,
+}: {
+  company: Pick<Company, "legal_name" | "name" | "tax_id"> | null | undefined;
+  data: ExtractedDocumentData | null | undefined;
+}) {
+  if (!company) {
+    throw new Error("Selecciona una empresa activa antes de crear ventas.");
+  }
+
+  const companyTaxId = normalizeTaxId(company.tax_id);
+  const issuerTaxId = normalizeTaxId(data?.emisor_cedula ?? data?.supplier_tax_id);
+
+  if (companyTaxId && issuerTaxId && companyTaxId !== issuerTaxId) {
+    throw new Error(
+      `Esta venta no se puede crear porque el emisor del documento no coincide con la empresa activa (${getInvoiceIssuerCompanyLabel(company)}). En ventas, el emisor debe ser el cliente contable y el receptor debe ser el comprador.`,
+    );
+  }
+
+  const issuerName = normalizeComparableName(
+    data?.emisor_nombre ?? data?.supplier_name,
+  );
+  const companyNames = [
+    normalizeComparableName(company.legal_name),
+    normalizeComparableName(company.name),
+  ].filter(Boolean);
+
+  if (!companyTaxId && !issuerTaxId && issuerName && companyNames.length > 0) {
+    const nameMatches = companyNames.some(
+      (name) => name === issuerName || name.includes(issuerName) || issuerName.includes(name),
+    );
+
+    if (!nameMatches) {
+      throw new Error(
+        `Esta venta no se puede crear porque el emisor extraido (${data?.emisor_nombre ?? data?.supplier_name}) no coincide con la empresa activa (${getInvoiceIssuerCompanyLabel(company)}).`,
+      );
+    }
+  }
 }
 
 export async function getInvoicesForActiveCompany() {
@@ -268,6 +347,49 @@ export async function updateInvoiceReviewStatus(
     throw new Error(
       error?.message ??
         "No se pudo actualizar la factura. Si la ves en pantalla, falta aplicar la policy de actualizacion del schema 023 en Supabase.",
+    );
+  }
+
+  return data as Invoice;
+}
+
+export async function updateInvoiceAccountingFields(
+  input: UpdateInvoiceAccountingInput,
+) {
+  const { supabase } = await getAuthenticatedSupabase();
+  const activeContext = await getActiveContext();
+
+  if (!activeContext.organization || !activeContext.activeCompany) {
+    throw new Error("Selecciona una empresa activa antes de corregir facturas.");
+  }
+
+  const { data, error } = await supabase
+    .from("invoices")
+    .update({
+      contabilizacion_error: null,
+      estado_contable: "pendiente",
+      fecha: input.fecha?.trim() || null,
+      impuesto: input.impuesto ?? 0,
+      notas: input.notas?.trim() || null,
+      numero_documento: input.numeroDocumento?.trim() || null,
+      proveedor: input.proveedor?.trim() || "Sin cliente",
+      subtotal: input.subtotal ?? 0,
+      suggested_account: input.suggestedAccount?.trim() || null,
+      suggested_cost_center_id: input.suggestedCostCenterId?.trim() || null,
+      tipo_documento: input.tipoDocumento?.trim() || "factura",
+      total: input.total ?? 0,
+    })
+    .eq("id", input.invoiceId)
+    .eq("organization_id", activeContext.organization.id)
+    .eq("company_id", activeContext.activeCompany.id)
+    .neq("estado_contable", "contabilizado")
+    .select("*")
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new Error(
+      error?.message ??
+        "No se pudo corregir la factura. Si ya esta contabilizada, anulala antes de editar.",
     );
   }
 

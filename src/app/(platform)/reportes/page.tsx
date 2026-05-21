@@ -217,44 +217,6 @@ function ExportActions({ period }: { period: MonthlyReportPeriod }) {
   );
 }
 
-function ReportViewNav({
-  activeView,
-  period,
-}: {
-  activeView: ReportView | "general";
-  period: MonthlyReportPeriod;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      <Link
-        className={[
-          "rounded-full border px-3 py-2 text-xs font-semibold transition",
-          activeView === "general"
-            ? "border-cyan-300/30 bg-cyan-300/12 text-cyan-100"
-            : "border-white/[0.08] bg-white/[0.04] text-slate-400 hover:text-white",
-        ].join(" ")}
-        href={getReportHref("general", period)}
-      >
-        General
-      </Link>
-      {reportViews.map((view) => (
-        <Link
-          className={[
-            "rounded-full border px-3 py-2 text-xs font-semibold transition",
-            activeView === view.key
-              ? "border-cyan-300/30 bg-cyan-300/12 text-cyan-100"
-              : "border-white/[0.08] bg-white/[0.04] text-slate-400 hover:text-white",
-          ].join(" ")}
-          href={getReportHref(view.key, period)}
-          key={view.key}
-        >
-          {view.title}
-        </Link>
-      ))}
-    </div>
-  );
-}
-
 function PeriodSelector({
   activeView,
   period,
@@ -437,6 +399,45 @@ function ReportShell({
   );
 }
 
+function ReportsModal({
+  children,
+  id,
+  title,
+}: {
+  children: ReactNode;
+  id: string;
+  title: string;
+}) {
+  return (
+    <div
+      className="invisible fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-3 opacity-0 backdrop-blur-sm transition target:visible target:opacity-100 sm:p-6"
+      id={id}
+    >
+      <div className="flex max-h-[88vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl border border-white/20 bg-[#07111f] shadow-2xl shadow-cyan-950/30">
+        <div className="flex items-center justify-between gap-4 border-b border-white/15 bg-[#06101c] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200/70">
+              OM7 Finance OS
+            </p>
+            <p className="mt-1 truncate text-xl font-semibold text-white">
+              {title}
+            </p>
+          </div>
+          <a
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-300 transition hover:border-cyan-300/30 hover:text-cyan-100"
+            href="#panel-reportes"
+          >
+            Cerrar
+          </a>
+        </div>
+        <div className="min-h-0 overflow-y-auto p-5 om7-scrollbar">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const selectedPeriod = parsePeriod(resolvedSearchParams);
@@ -487,38 +488,48 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
     isDateInPeriod(invoice.fecha ?? invoice.created_at, selectedPeriod),
   );
   const hasAttention = report.pending > 0 || report.observed > 0;
-  const dashboardCards = [
+  const consoleCards = [
     {
-      ...reportViews[0],
+      action: "Abrir",
+      description: "Balance operativo, compras, facturas y bloqueos del mes.",
+      href: "#modal-resumen",
       metric: formatCurrencyAmount(report.balance, currency),
+      title: "Resumen mensual",
     },
     {
-      ...reportViews[1],
+      action: "Analizar",
+      description: "Categorias de gasto y concentracion de compras.",
+      href: "#modal-compras",
       metric: `${report.purchaseCategories.length} categorias`,
+      title: "Compras",
     },
     {
-      ...reportViews[2],
+      action: "Ver",
+      description: "Ingresos del periodo y facturas por estado.",
+      href: "#modal-facturas",
       metric: formatCurrencyAmount(report.totalInvoices, currency),
+      title: "Facturas",
     },
     {
-      ...reportViews[3],
+      action: "Revisar",
+      description: "Pendientes y observados que frenan cierre.",
+      href: "#modal-bloqueos",
       metric: `${report.observed} observados`,
+      title: "Bloqueos",
     },
     {
-      ...reportViews[4],
-      metric: `${report.documents.received} recibidos`,
-    },
-    {
-      ...reportViews[5],
-      metric: getPeriodStatusLabel(periodStatus),
-    },
-    {
-      ...reportViews[6],
+      action: "Validar",
+      description: "Asientos, Debe/Haber y estado contable del mes.",
+      href: "#modal-contabilidad",
       metric: `${accountingSummary.totalEntries} asientos`,
+      title: "Contabilidad",
     },
     {
-      ...reportViews[7],
+      action: "Exportar",
+      description: "Excel detallado y estructura de PDF ejecutivo.",
+      href: "#modal-exportaciones",
       metric: "PDF / Excel",
+      title: "Exportaciones",
     },
   ];
 
@@ -556,6 +567,28 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
         </PremiumCard>
       ) : null}
 
+      <section className="sticky top-[var(--om7-actions-sticky-top,12.5rem)] z-40 rounded-2xl border border-white/16 bg-[#06101c] p-2 shadow-2xl shadow-black/25 lg:top-[var(--om7-actions-sticky-top-lg,9.25rem)]">
+        <div className="flex min-w-0 items-center gap-2 overflow-x-auto om7-scrollbar">
+          {[
+            ["#modal-resumen", "Resumen"],
+            ["#modal-compras", "Compras"],
+            ["#modal-facturas", "Facturas"],
+            ["#modal-bloqueos", "Bloqueos"],
+            ["#modal-contabilidad", "Contabilidad"],
+            ["#modal-exportaciones", "Exportaciones"],
+          ].map(([href, label]) => (
+            <a
+              className="grid h-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.035] px-3.5 text-sm font-semibold text-slate-300 transition hover:border-cyan-200/25 hover:bg-cyan-300/[0.08] hover:text-cyan-100"
+              href={href}
+              key={href}
+            >
+              {label}
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <div id="panel-reportes">
       <PremiumCard className="p-5">
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -571,9 +604,9 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
             <StatusBadge>{getPeriodStatusLabel(periodStatus)}</StatusBadge>
           </div>
           <PeriodSelector activeView={activeView} period={selectedPeriod} />
-          <ReportViewNav activeView={activeView} period={selectedPeriod} />
         </div>
       </PremiumCard>
+      </div>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
@@ -601,100 +634,208 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
       {activeView === "general" ? (
         <>
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {dashboardCards.map((card) => (
+            {consoleCards.map((card) => (
               <ReportCard
                 action={card.action}
                 description={card.description}
-                href={getReportHref(card.key, selectedPeriod)}
-                key={card.key}
+                href={card.href}
+                key={card.title}
                 metric={card.metric}
                 title={card.title}
               />
             ))}
           </section>
 
-          <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-            <PremiumCard className="p-5">
-              <p className="text-base font-semibold text-white">
-                Bloqueos relevantes
-              </p>
-              <div className="mt-5 grid gap-3">
-                {[
-                  {
-                    detail: "Compras y facturas por revisar",
-                    href: getReportHref("observados", selectedPeriod),
-                    label: "Pendientes",
-                    value: report.pending,
-                  },
-                  {
-                    detail: "Impiden cerrar el mes",
-                    href: "/observados",
-                    label: "Observados",
-                    urgent: report.observed > 0,
-                    value: report.observed,
-                  },
-                  {
-                    detail: "Aun no generaron compra/factura",
-                    href: getReportHref("documentos", selectedPeriod),
-                    label: "Documentos sin convertir",
-                    value: report.documents.unconverted,
-                  },
-                ].map((item) => (
-                  <Link
-                    className={[
-                      "flex items-center justify-between gap-4 rounded-2xl border p-4 transition",
-                      item.urgent
-                        ? "border-amber-300/20 bg-amber-300/[0.06] hover:border-amber-200/35"
-                        : "border-white/[0.08] bg-black/15 hover:border-cyan-300/25",
-                    ].join(" ")}
-                    href={item.href}
-                    key={item.label}
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-white">
-                        {item.label}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {item.detail}
-                      </p>
-                    </div>
-                    <span className="text-xl font-semibold text-white">
-                      {item.value}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            </PremiumCard>
+          <ReportsModal id="modal-resumen" title="Resumen mensual">
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <MetricCard
+                detail={`${periodPurchases.length} compras`}
+                label="Total compras"
+                value={formatCurrencyAmount(report.totalPurchases, currency)}
+              />
+              <MetricCard
+                detail={`${periodInvoices.length} facturas`}
+                label="Total facturas"
+                value={formatCurrencyAmount(report.totalInvoices, currency)}
+              />
+              <MetricCard
+                detail={hasAttention ? "Requiere accion" : "Listo para cierre"}
+                label="Pendientes"
+                value={String(report.pending)}
+              />
+              <MetricCard
+                detail="Bloquean cierre"
+                label="Observados"
+                value={String(report.observed)}
+              />
+            </section>
+          </ReportsModal>
 
-            <PremiumCard className="p-5">
-              <p className="text-base font-semibold text-white">
-                Exportaciones preparadas
-              </p>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                La exportacion incluira encabezado con cliente/empresa, periodo,
-                fecha de generacion, resumen ejecutivo, totales, subtotales,
-                detalle justificado, observaciones y trazabilidad documental
-                cuando aplique.
-              </p>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-4">
-                  <p className="text-sm font-semibold text-white">PDF ejecutivo</p>
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    Formato profesional para entregar al cliente o direccion.
+          <ReportsModal id="modal-compras" title="Compras por categoria">
+            <div className="max-h-[62vh] overflow-y-auto om7-scrollbar">
+              <div className="grid gap-3">
+                {report.purchaseCategories.length > 0 ? (
+                  report.purchaseCategories.map((category) => (
+                    <div
+                      className="rounded-2xl border border-white/[0.08] bg-black/15 p-4"
+                      key={category.key}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-white">
+                            {category.label}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {category.count} compras
+                          </p>
+                        </div>
+                        <p className="text-sm font-semibold text-cyan-50">
+                          {formatCurrencyAmount(category.amount, currency)}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <EmptyReportState text="No hay compras registradas en este periodo." />
+                )}
+              </div>
+            </div>
+          </ReportsModal>
+
+          <ReportsModal id="modal-facturas" title="Facturas e ingresos">
+            <StatusSummaryGrid currency={currency} items={report.invoiceStatus} />
+          </ReportsModal>
+
+          <ReportsModal id="modal-bloqueos" title="Bloqueos del periodo">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <MetricCard
+                detail="Compras + facturas"
+                label="Pendientes"
+                value={String(report.pending)}
+              />
+              <MetricCard
+                detail="Necesitan correccion"
+                label="Observados"
+                value={String(report.observed)}
+              />
+              <MetricCard
+                detail="Listos para cierre"
+                label="Aprobados"
+                value={String(report.approved)}
+              />
+            </div>
+            <div className="mt-5 max-h-[52vh] overflow-y-auto om7-scrollbar">
+              <div className="grid gap-3">
+                {report.observedRecords.length > 0 ? (
+                  report.observedRecords.map((record) => {
+                    const isPurchase = "supplier_name" in record;
+
+                    return (
+                      <div
+                        className="rounded-2xl border border-amber-300/15 bg-amber-300/[0.04] p-4"
+                        key={`${isPurchase ? "purchase" : "invoice"}-${record.id}`}
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="om7-chip om7-chip-amber">
+                                {isPurchase ? "Compra" : "Factura"}
+                              </span>
+                              <span className={getReviewStatusBadgeClass("observed")}>
+                                {getReviewStatusLabel("observed")}
+                              </span>
+                            </div>
+                            <p className="mt-3 truncate text-sm font-semibold text-white">
+                              {getRecordTitle(record)}
+                            </p>
+                            <p className="mt-1 line-clamp-2 text-sm text-amber-100/75">
+                              {record.review_notes ?? "Sin nota registrada"}
+                            </p>
+                          </div>
+                          <p className="shrink-0 text-sm font-semibold text-white">
+                            {formatCurrencyAmount(record.total, getRecordCurrency(record))}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <EmptyReportState text="No hay observaciones activas para este periodo." />
+                )}
+              </div>
+            </div>
+          </ReportsModal>
+
+          <ReportsModal id="modal-contabilidad" title="Contabilidad asistida">
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <AccountingStatusCard
+                detail="Entradas del periodo"
+                label="Total asientos"
+                value={String(accountingSummary.totalEntries)}
+              />
+              <AccountingStatusCard
+                detail="Ya registrados"
+                label="Contabilizados"
+                value={String(accountingSummary.posted)}
+              />
+              <AccountingStatusCard
+                detail="Necesitan correccion"
+                label="Observados"
+                value={String(accountingSummary.observed)}
+              />
+              <AccountingStatusCard
+                detail="Sugeridos, revisados u observados"
+                label="Por contabilizar"
+                value={String(accountingSummary.pendingToPost)}
+              />
+            </section>
+            <div className="mt-5 rounded-2xl border border-white/[0.08] bg-black/15 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">
+                    {accountingSummary.isBalanced ? "Cuadra" : "Con diferencia"}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Diferencia Debe/Haber:{" "}
+                    {formatCurrencyAmount(accountingSummary.difference, currency)}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-4">
-                  <p className="text-sm font-semibold text-white">Excel detallado</p>
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    Base tabular para revision y respaldo operativo.
+                <Link className="om7-btn-secondary px-4 py-2.5" href="/contabilidad">
+                  Abrir contabilidad
+                </Link>
+              </div>
+            </div>
+          </ReportsModal>
+
+          <ReportsModal id="modal-exportaciones" title="Exportaciones">
+            <div className="grid gap-4 md:grid-cols-2">
+              {[
+                {
+                  detail:
+                    "Incluira encabezado, cliente/empresa, periodo, fecha de generacion, resumen ejecutivo, resumen contable, Debe/Haber, observaciones y trazabilidad.",
+                  title: "PDF ejecutivo",
+                },
+                {
+                  detail:
+                    "Incluira totales, subtotales, detalle justificado, categorias, estados, documentos origen, asientos contabilizados y pendientes de contabilizar.",
+                  title: "Excel detallado",
+                },
+              ].map((item) => (
+                <div
+                  className="rounded-2xl border border-white/[0.08] bg-black/15 p-5"
+                  key={item.title}
+                >
+                  <p className="text-base font-semibold text-white">{item.title}</p>
+                  <p className="mt-3 text-sm leading-6 text-slate-500">
+                    {item.detail}
                   </p>
+                  <div className="mt-5">
+                    <ExportActions period={selectedPeriod} />
+                  </div>
                 </div>
-              </div>
-              <div className="mt-5">
-                <ExportActions period={selectedPeriod} />
-              </div>
-            </PremiumCard>
-          </section>
+              ))}
+            </div>
+          </ReportsModal>
         </>
       ) : null}
 
