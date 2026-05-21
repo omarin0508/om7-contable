@@ -587,7 +587,18 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
 
       {error ? (
         <PremiumCard className="border-rose-300/15 bg-rose-300/10 p-4">
-          <p className="text-sm font-medium text-rose-100">{error}</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-medium text-rose-100">{error}</p>
+            <form action={connectGmailXmlAction}>
+              <GmailSubmitButton
+                className="om7-btn-secondary px-4 py-2.5 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={Boolean(gmailActionsDisabledReason)}
+                pendingLabel="Generando OAuth..."
+              >
+                Reintentar conexion Gmail
+              </GmailSubmitButton>
+            </form>
+          </div>
         </PremiumCard>
       ) : null}
 

@@ -1,0 +1,320 @@
+import ExcelJS from "exceljs";
+import {
+  getGmailXmlDiagnosticSnapshot,
+  type GmailXmlDocumentDiagnosticDetail,
+  type GmailXmlProviderSummary,
+} from "@/lib/gmail-xml-diagnostics";
+
+const moneyFormat = '"CRC" #,##0.00;[Red]-"CRC" #,##0.00';
+
+function formatDate(value: string | null | undefined) {
+  if (!value) {
+    return "N/D";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date;
+}
+
+function safeSheetName(value: string) {
+  return value.slice(0, 31);
+}
+
+function styleHeader(row: ExcelJS.Row) {
+  row.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  row.fill = {
+    fgColor: { argb: "FF0F172A" },
+    pattern: "solid",
+    type: "pattern",
+  };
+  row.alignment = { vertical: "middle", wrapText: true };
+}
+
+function applyWorksheetStyle(sheet: ExcelJS.Worksheet) {
+  sheet.eachRow((row) => {
+    row.eachCell((cell) => {
+      cell.border = {
+        bottom: { color: { argb: "FFE2E8F0" }, style: "thin" },
+      };
+      cell.alignment = {
+        ...cell.alignment,
+        vertical: "top",
+        wrapText: true,
+      };
+    });
+  });
+
+  sheet.columns.forEach((column) => {
+    let maxLength = Number(column.width ?? 12);
+
+    column.eachCell?.({ includeEmpty: true }, (cell) => {
+      const value = String(cell.value ?? "");
+      maxLength = Math.max(maxLength, Math.min(value.length + 2, 48));
+    });
+
+    column.width = maxLength;
+  });
+}
+
+function addTitleBlock(
+  sheet: ExcelJS.Worksheet,
+  title: string,
+  subtitle: string,
+  span = "A1:H1",
+) {
+  sheet.mergeCells(span);
+  sheet.getCell("A1").value = "OM7 Finance OS";
+  sheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 16 };
+  sheet.getCell("A1").fill = {
+    fgColor: { argb: "FF082F37" },
+    pattern: "solid",
+    type: "pattern",
+  };
+  sheet.getCell("A2").value = title;
+  sheet.getCell("A2").font = { bold: true, size: 14 };
+  sheet.getCell("A3").value = subtitle;
+  sheet.getCell("A3").font = { color: { argb: "FF475569" } };
+}
+
+function addMoneyFormat(sheet: ExcelJS.Worksheet, keys: string[]) {
+  for (const key of keys) {
+    const column = sheet.getColumn(key);
+    column.numFmt = moneyFormat;
+    column.alignment = { horizontal: "right", vertical: "top" };
+  }
+}
+
+function setupTable(
+  sheet: ExcelJS.Worksheet,
+  startRow: number,
+  columns: Array<{ header: string; key: string; width: number }>,
+) {
+  sheet.columns = columns.map(({ key, width }) => ({ key, width }));
+  const header = sheet.getRow(startRow);
+  header.values = columns.map((column) => column.header);
+  styleHeader(header);
+  sheet.autoFilter = {
+    from: { column: 1, row: startRow },
+    to: { column: columns.length, row: startRow },
+  };
+}
+
+function addExecutiveSummary(
+  workbook: ExcelJS.Workbook,
+  data: Awaited<ReturnType<typeof getGmailXmlDiagnosticSnapshot>>,
+) {
+  const sheet = workbook.addWorksheet("Resumen Ejecutivo", {
+    views: [{ state: "frozen", ySplit: 12 }],
+  });
+  const companyName =
+    data.activeContext.activeCompany?.legal_name ??
+    data.activeContext.activeCompany?.name ??
+    "Sin empresa activa";
+  const organizationName =
+    data.activeContext.organization?.name ?? "Sin organizacion activa";
+
+  addTitleBlock(
+    sheet,
+    "Diagnostico Gmail XML",
+    "Reporte ejecutivo para revision de base documental XML",
+  );
+
+  sheet.addRow([]);
+  sheet.addRow(["Empresa activa", companyName]);
+  sheet.addRow(["Organizacion", organizationName]);
+  sheet.addRow(["Fecha generacion", new Date()]);
+  sheet.addRow([
+    "Rango fiscal analizado",
+    `${data.kpis?.fiscalDateMin ?? "N/D"} - ${data.kpis?.fiscalDateMax ?? "N/D"}`,
+  ]);
+  sheet.addRow([]);
+  sheet.addRow(["Metrica", "Valor"]);
+  styleHeader(sheet.getRow(10));
+
+  const metrics = [
+    ["Total documentos", data.kpis?.totalXmlDocuments ?? 0],
+    ["Total proveedores", data.kpis?.totalProviders ?? 0],
+    ["Subtotal/base imponible", data.kpis?.totalSubtotal ?? 0],
+    ["IVA total", data.kpis?.totalIva ?? 0],
+    ["Total general", data.kpis?.totalGeneral ?? 0],
+    ["Documentos sin proveedor", data.kpis?.documentsWithoutProvider ?? 0],
+    ["Documentos pendientes de convertir", data.kpis?.pendingConversion ?? 0],
+    ["Duplicados detectados", data.kpis?.duplicatesCount ?? 0],
+    ["Documentos sin IVA", data.kpis?.documentsWithoutIva ?? 0],
+    ["Errores de extraccion", data.kpis?.extractionErrors ?? 0],
+  ];
+
+  metrics.forEach((row) => sheet.addRow(row));
+  sheet.addRow([]);
+  sheet.addRow([
+    "Nota metodologica",
+    "Este reporte resume XML ya guardados en la base OM7 para la empresa activa. Las fechas usan fecha fiscal del comprobante cuando esta disponible.",
+  ]);
+  sheet.getColumn(1).width = 34;
+  sheet.getColumn(2).width = 48;
+  sheet.getColumn(2).numFmt = moneyFormat;
+  applyWorksheetStyle(sheet);
+}
+
+function addProviderSummary(
+  workbook: ExcelJS.Workbook,
+  providers: GmailXmlProviderSummary[],
+) {
+  const sheet = workbook.addWorksheet(safeSheetName("Resumen por Proveedor"), {
+    views: [{ state: "frozen", ySplit: 5 }],
+  });
+
+  addTitleBlock(sheet, "Resumen por Proveedor", "Totales agrupados por emisor XML");
+  setupTable(sheet, 5, [
+    { header: "Proveedor", key: "providerName", width: 34 },
+    { header: "Tax ID", key: "providerTaxId", width: 18 },
+    { header: "Documentos", key: "documentsCount", width: 12 },
+    { header: "Subtotal", key: "subtotal", width: 16 },
+    { header: "IVA", key: "iva", width: 16 },
+    { header: "Total", key: "total", width: 16 },
+    { header: "Promedio por documento", key: "averagePerDocument", width: 20 },
+    { header: "Fecha desde", key: "oldestDate", width: 16 },
+    { header: "Fecha hasta", key: "newestDate", width: 16 },
+    { header: "Ultima importacion", key: "lastImportAt", width: 20 },
+    { header: "Estado clasificacion", key: "classificationStatus", width: 28 },
+    { header: "Contraparte vinculada", key: "linkedCounterpartyName", width: 30 },
+  ]);
+
+  providers.forEach((provider) => {
+    sheet.addRow({
+      ...provider,
+      oldestDate: formatDate(provider.oldestDate),
+      newestDate: formatDate(provider.newestDate),
+      lastImportAt: formatDate(provider.lastImportAt),
+    });
+  });
+
+  const totalRow = sheet.addRow({
+    providerName: "Total",
+    documentsCount: providers.reduce((sum, item) => sum + item.documentsCount, 0),
+    subtotal: providers.reduce((sum, item) => sum + item.subtotal, 0),
+    iva: providers.reduce((sum, item) => sum + item.iva, 0),
+    total: providers.reduce((sum, item) => sum + item.total, 0),
+  });
+  totalRow.font = { bold: true };
+  addMoneyFormat(sheet, ["subtotal", "iva", "total", "averagePerDocument"]);
+  applyWorksheetStyle(sheet);
+}
+
+function addDocumentDetail(
+  workbook: ExcelJS.Workbook,
+  documents: GmailXmlDocumentDiagnosticDetail[],
+) {
+  const sheet = workbook.addWorksheet("Detalle Documentos", {
+    views: [{ state: "frozen", ySplit: 5 }],
+  });
+
+  addTitleBlock(sheet, "Detalle Documentos", "Documento fiscal deduplicado por clave");
+  setupTable(sheet, 5, [
+    { header: "Fecha fiscal", key: "fiscalDate", width: 16 },
+    { header: "Mes/Ano", key: "monthKey", width: 12 },
+    { header: "Proveedor", key: "providerName", width: 34 },
+    { header: "Tax ID", key: "providerTaxId", width: 18 },
+    { header: "Clave fiscal", key: "fiscalKey", width: 52 },
+    { header: "Numero comprobante", key: "documentNumber", width: 24 },
+    { header: "Subtotal", key: "subtotal", width: 16 },
+    { header: "IVA", key: "iva", width: 16 },
+    { header: "Total", key: "total", width: 16 },
+    { header: "Estado importacion", key: "importStatus", width: 18 },
+    { header: "Estado conversion", key: "conversionStatus", width: 22 },
+    { header: "Compra/Factura ID", key: "convertedRecordId", width: 38 },
+    { header: "Fuente", key: "source", width: 12 },
+    { header: "Fecha importacion", key: "importedAt", width: 20 },
+    { header: "Observaciones", key: "observations", width: 42 },
+  ]);
+
+  documents.forEach((document) => {
+    sheet.addRow({
+      ...document,
+      fiscalDate: formatDate(document.fiscalDate),
+      importedAt: formatDate(document.importedAt),
+      observations: document.observations.join("; "),
+    });
+  });
+
+  addMoneyFormat(sheet, ["subtotal", "iva", "total"]);
+  applyWorksheetStyle(sheet);
+}
+
+function addQualityAlerts(
+  workbook: ExcelJS.Workbook,
+  documents: GmailXmlDocumentDiagnosticDetail[],
+) {
+  const sheet = workbook.addWorksheet(safeSheetName("Alertas Calidad"), {
+    views: [{ state: "frozen", ySplit: 5 }],
+  });
+
+  addTitleBlock(sheet, "Alertas / Calidad de datos", "Documentos que requieren revision");
+  setupTable(sheet, 5, [
+    { header: "Tipo alerta", key: "alertType", width: 30 },
+    { header: "Proveedor", key: "providerName", width: 34 },
+    { header: "Tax ID", key: "providerTaxId", width: 18 },
+    { header: "Clave fiscal", key: "fiscalKey", width: 52 },
+    { header: "Fecha fiscal", key: "fiscalDate", width: 16 },
+    { header: "Total", key: "total", width: 16 },
+    { header: "Documento", key: "filename", width: 34 },
+    { header: "Observaciones", key: "observations", width: 48 },
+  ]);
+
+  documents
+    .filter((document) => document.observations.length > 0)
+    .forEach((document) => {
+      for (const observation of document.observations) {
+        sheet.addRow({
+          alertType: observation,
+          providerName: document.providerName,
+          providerTaxId: document.providerTaxId,
+          fiscalKey: document.fiscalKey,
+          fiscalDate: formatDate(document.fiscalDate),
+          total: document.total,
+          filename: document.filename,
+          observations: document.observations.join("; "),
+        });
+      }
+    });
+
+  addMoneyFormat(sheet, ["total"]);
+  applyWorksheetStyle(sheet);
+}
+
+export async function buildGmailXmlDiagnosticExcel() {
+  const data = await getGmailXmlDiagnosticSnapshot({});
+  const workbook = new ExcelJS.Workbook();
+  const companyName =
+    data.activeContext.activeCompany?.legal_name ??
+    data.activeContext.activeCompany?.name ??
+    "cliente";
+  const safeCompanyName = companyName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+
+  workbook.creator = "OM7 Finance OS";
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  addExecutiveSummary(workbook, data);
+  addProviderSummary(workbook, data.providerSummary ?? []);
+  addDocumentDetail(workbook, data.documentDetails ?? []);
+  addQualityAlerts(workbook, data.documentDetails ?? []);
+
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  return {
+    content: buffer,
+    contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    filename: `om7-gmail-xml-diagnostico-${safeCompanyName || "cliente"}.xlsx`,
+  };
+}

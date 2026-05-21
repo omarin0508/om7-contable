@@ -1,5 +1,13 @@
 import { exchangeGmailOAuthCode } from "@/lib/gmail-xml-import";
 
+function getOAuthErrorMessage(error: string) {
+  if (error === "access_denied") {
+    return "Conexion cancelada. Podes intentar conectar Gmail nuevamente.";
+  }
+
+  return "Google no completo la conexion Gmail. Podes intentar conectar Gmail nuevamente.";
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
@@ -8,7 +16,10 @@ export async function GET(request: Request) {
 
   if (oauthError) {
     return Response.redirect(
-      new URL(`/gmail-xml?error=${encodeURIComponent(oauthError)}`, request.url),
+      new URL(
+        `/gmail-xml?error=${encodeURIComponent(getOAuthErrorMessage(oauthError))}`,
+        request.url,
+      ),
     );
   }
 

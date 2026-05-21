@@ -14,6 +14,7 @@ import {
   createClient as createSupabaseServiceClient,
   type SupabaseClient,
 } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 
 const GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 const GMAIL_XML_PENDING_LABEL = "OM7/Pendientes";
@@ -23,6 +24,11 @@ const GMAIL_XML_ERROR_LABEL = "OM7/Error";
 const GMAIL_XML_MAX_RETRY_ATTEMPTS = 3;
 const GMAIL_XML_DEFAULT_LIMIT = 20;
 const GMAIL_XML_ALLOWED_LIMITS = [20, 50, 100] as const;
+const GMAIL_XML_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+const GMAIL_XML_SCOPES = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/userinfo.email",
+] as const;
 
 export type GmailXmlConnection = {
   id: string;
@@ -244,8 +250,9 @@ function getGmailEnv() {
   const clientId = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID;
   const clientSecret =
     process.env.GMAIL_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri =
-    process.env.GMAIL_REDIRECT_URI ?? process.env.GOOGLE_REDIRECT_URI;
+  const redirectUri = validateGmailRedirectUri(
+    process.env.GMAIL_REDIRECT_URI ?? process.env.GOOGLE_REDIRECT_URI,
+  );
 
   if (!clientId || !clientSecret || !redirectUri) {
     throw new Error(
@@ -256,15 +263,47 @@ function getGmailEnv() {
   return { clientId, clientSecret, redirectUri };
 }
 
+function validateGmailRedirectUri(value: string | undefined) {
+  const redirectUri = value?.trim();
+
+  if (!redirectUri) {
+    return null;
+  }
+
+  let parsed: URL;
+
+  try {
+    parsed = new URL(redirectUri);
+  } catch {
+    throw new Error("GOOGLE_REDIRECT_URI no es una URL valida.");
+  }
+
+  if (parsed.search || parsed.hash) {
+    throw new Error("GOOGLE_REDIRECT_URI debe configurarse sin query ni hash.");
+  }
+
+  if (!parsed.pathname.endsWith("/api/auth/gmail/callback")) {
+    throw new Error(
+      "GOOGLE_REDIRECT_URI debe coincidir exactamente con /api/auth/gmail/callback.",
+    );
+  }
+
+  return parsed.toString();
+}
+
 function encodeState(value: Record<string, string>) {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
 }
 
 function decodeState(state: string) {
-  return JSON.parse(Buffer.from(state, "base64url").toString("utf8")) as Record<
-    string,
-    string
-  >;
+  try {
+    return JSON.parse(Buffer.from(state, "base64url").toString("utf8")) as Record<
+      string,
+      string
+    >;
+  } catch {
+    throw new Error("La sesion OAuth de Gmail no es valida. Intenta conectar de nuevo.");
+  }
 }
 
 async function getAuthenticatedSupabase() {
@@ -1202,19 +1241,15 @@ export async function getGmailConnectUrl() {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
-  url.searchParams.set(
-    "scope",
-    [
-      "https://www.googleapis.com/auth/gmail.modify",
-      "https://www.googleapis.com/auth/userinfo.email",
-    ].join(" "),
-  );
+  url.searchParams.set("scope", GMAIL_XML_SCOPES.join(" "));
   url.searchParams.set(
     "state",
     encodeState({
       userId: currentUser.userId,
       organizationId: activeContext.organization.id,
       companyId: activeContext.activeCompany?.id ?? "",
+      nonce: randomUUID(),
+      issuedAt: String(Date.now()),
     }),
   );
 
@@ -1227,6 +1262,25 @@ export async function exchangeGmailOAuthCode(code: string, state: string) {
 
   if (stateData.userId !== currentUser.userId) {
     throw new Error("La sesion OAuth no coincide con el usuario activo.");
+  }
+
+  const issuedAt = Number(stateData.issuedAt);
+  if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > GMAIL_XML_OAUTH_STATE_TTL_MS) {
+    throw new Error("La sesion OAuth de Gmail expiro. Intenta conectar de nuevo.");
+  }
+
+  if (!stateData.nonce) {
+    throw new Error("La sesion OAuth de Gmail no es valida. Intenta conectar de nuevo.");
+  }
+
+  const activeContext = await getActiveContext();
+  if (
+    activeContext.organization?.id !== stateData.organizationId ||
+    activeContext.activeCompany?.id !== stateData.companyId
+  ) {
+    throw new Error(
+      "La empresa activa cambio durante OAuth. Selecciona la empresa correcta e intenta conectar de nuevo.",
+    );
   }
 
   const env = getGmailEnv();

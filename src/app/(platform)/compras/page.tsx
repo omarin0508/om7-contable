@@ -1030,7 +1030,7 @@ function PurchasesWorkspace({
     <div className="rounded-2xl border border-white/15 bg-black/10 p-3 sm:p-4">
       {purchases.length > 0 ? (
         <div className="grid gap-3">
-          {purchases.map((purchase, index) => {
+          {purchases.map((purchase) => {
             const title =
               purchase.counterparty?.name ??
               purchase.supplier_name ??
@@ -1040,8 +1040,6 @@ function PurchasesWorkspace({
               <details
                 className="group rounded-2xl border border-white/[0.09] bg-white/[0.026] open:border-cyan-300/24 open:bg-cyan-300/[0.035]"
                 key={purchase.id}
-                name="purchase-focus-workspace"
-                open={index === 0}
               >
                 <summary className="grid cursor-pointer list-none gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                   <div className="min-w-0">
@@ -1250,6 +1248,80 @@ function GuidedIssueCard({
   );
 }
 
+type PurchaseAvailableActions = {
+  canApprove: boolean;
+  canContabilizar: boolean;
+  canCreateJournalEntry: boolean;
+  canEditAmounts: boolean;
+  canObserve: boolean;
+  canReviewTaxes: boolean;
+  canViewDocument: boolean;
+  canViewJournalEntry: boolean;
+  hasAccountingError: boolean;
+  hasInvalidAmounts: boolean;
+  hasTaxMismatch: boolean;
+  isApproved: boolean;
+  isPosted: boolean;
+};
+
+function getPurchaseAvailableActions({
+  journalEntry,
+  period,
+  purchase,
+}: {
+  journalEntry: JournalEntry | null;
+  period: AccountingPeriod | null;
+  purchase: Purchase;
+}): PurchaseAvailableActions {
+  const subtotal = Number(purchase.subtotal ?? 0);
+  const tax = Number(purchase.tax ?? 0);
+  const total = Number(purchase.total ?? 0);
+  const accountingStatus = purchase.estado_contable ?? "pendiente";
+  const reviewStatus = String(purchase.review_status ?? "pending");
+  const lockedByPeriod = isRecordLockedByPeriod(period);
+  const hasTaxMismatch =
+    Number.isFinite(subtotal) &&
+    Number.isFinite(tax) &&
+    Number.isFinite(total) &&
+    total > 0 &&
+    Math.abs(subtotal + tax - total) > 1;
+  const hasInvalidAmounts = !Number.isFinite(total) || total <= 0;
+  const hasAccountingError =
+    accountingStatus === "error" || Boolean(purchase.contabilizacion_error);
+  const isPosted =
+    accountingStatus === "contabilizado" ||
+    journalEntry?.status === "posted" ||
+    Boolean(purchase.asiento_contable_id);
+  const isApproved = reviewStatus === "approved";
+  const canCreateJournalEntry =
+    !lockedByPeriod &&
+    !isPosted &&
+    !hasInvalidAmounts &&
+    !hasTaxMismatch &&
+    !hasAccountingError &&
+    ["reviewed", "approved"].includes(reviewStatus);
+
+  return {
+    canApprove:
+      !isApproved &&
+      !lockedByPeriod &&
+      !hasInvalidAmounts &&
+      canApproveRecord(purchase, period),
+    canContabilizar: canCreateJournalEntry,
+    canCreateJournalEntry,
+    canEditAmounts: !lockedByPeriod && !isPosted,
+    canObserve: canObserveRecord(purchase, period),
+    canReviewTaxes: hasInvalidAmounts || hasTaxMismatch || hasAccountingError,
+    canViewDocument: Boolean(getPurchaseTraceDocumentId(purchase)),
+    canViewJournalEntry: isPosted,
+    hasAccountingError,
+    hasInvalidAmounts,
+    hasTaxMismatch,
+    isApproved,
+    isPosted,
+  };
+}
+
 function PurchaseDocumentWindow({
   documentId,
   modalId,
@@ -1321,20 +1393,8 @@ function PurchaseDetailWorkspace({
   const paymentLabel = getPaymentStatusLabel(purchase.total, paidAmount);
   const remainingAmount = getRemainingAmount(purchase.total, paidAmount);
   const lockedByPeriod = isRecordLockedByPeriod(period);
-  const canGenerateAccounting =
-    !lockedByPeriod &&
-    ["reviewed", "approved"].includes(String(purchase.review_status ?? "")) &&
-    accountingStatus !== "contabilizado";
   const reviewStatus = String(purchase.review_status ?? "pending");
-  const subtotalAmount = Number(purchase.subtotal ?? 0);
-  const taxAmount = Number(purchase.tax ?? 0);
-  const totalAmount = Number(purchase.total ?? 0);
-  const hasTaxMismatch =
-    Number.isFinite(subtotalAmount) &&
-    Number.isFinite(taxAmount) &&
-    Number.isFinite(totalAmount) &&
-    totalAmount > 0 &&
-    Math.abs(subtotalAmount + taxAmount - totalAmount) > 1;
+  const actions = getPurchaseAvailableActions({ journalEntry, period, purchase });
   const ruleApplied =
     purchase.classification_rule_applied ??
     getConversionMetadataValue(
@@ -1344,6 +1404,22 @@ function PurchaseDetailWorkspace({
     );
   const documentModalId = `documento-compra-${purchase.id}`;
   const guidedIssues: ReactNode[] = [];
+
+  if (actions.hasInvalidAmounts) {
+    guidedIssues.push(
+      <GuidedIssueCard
+        action={
+          <Link className="om7-btn-secondary px-3 py-2 text-xs" href={tabHref("taxes")}>
+            Revisar impuestos / montos
+          </Link>
+        }
+        description={`Esta compra tiene total ${formatMoney(purchase.total, purchase.currency)}. Revise subtotal, IVA y total en la pestana Impuestos antes de enviarla al flujo contable.`}
+        impact="Despues de corregir los importes, podra aprobar o contabilizar sin generar asientos en cero."
+        key="zero-amount"
+        title="Montos incompletos"
+      />,
+    );
+  }
 
   if (reviewStatus === "observed") {
     guidedIssues.push(
@@ -1443,7 +1519,7 @@ function PurchaseDetailWorkspace({
     guidedIssues.push(
       <GuidedIssueCard
         action={
-          canGenerateAccounting ? (
+          actions.canCreateJournalEntry ? (
             <PurchaseAccountingForm
               action={generatePurchaseAccountingEntryAction}
               className="om7-btn-primary px-3 py-2 text-xs"
@@ -1466,7 +1542,7 @@ function PurchaseDetailWorkspace({
     );
   }
 
-  if (hasTaxMismatch || accountingStatus === "error") {
+  if (actions.hasTaxMismatch || actions.hasAccountingError) {
     guidedIssues.push(
       <GuidedIssueCard
         action={
@@ -1480,18 +1556,18 @@ function PurchaseDetailWorkspace({
           "Una diferencia en importes puede generar asientos incorrectos o errores de contabilizacion."
         }
         key="taxes"
-        title={hasTaxMismatch ? "Diferencia en importes" : "Error contable"}
+        title={actions.hasTaxMismatch ? "Diferencia en importes" : "Error contable"}
       />,
     );
   }
 
   return (
     <section className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3 overflow-hidden">
-      <PremiumCard className="p-4 sm:p-5">
+      <PremiumCard className="overflow-hidden p-4 sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <Link className="om7-btn-ghost mb-3 inline-flex px-3 py-2 text-sm" href={backHref}>
-              &lt;- Regresar a compras
+              &lt;- Volver a compras
             </Link>
             <div className="flex flex-wrap items-center gap-2">
               <span className={getReviewStatusBadgeClass(purchase.review_status)}>
@@ -1509,7 +1585,7 @@ function PurchaseDetailWorkspace({
                 <span className="om7-chip text-slate-400">Manual</span>
               )}
             </div>
-            <h2 className="mt-4 break-words text-2xl font-semibold tracking-tight text-white">
+            <h2 className="mt-4 max-w-5xl break-words text-2xl font-semibold tracking-tight text-white sm:text-3xl">
               {title}
             </h2>
             <p className="mt-2 text-sm text-slate-500">
@@ -1519,17 +1595,27 @@ function PurchaseDetailWorkspace({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {canReviewRecord(purchase, period) ? (
+            {actions.canApprove ? (
+              <ReviewStatusForm
+                className="om7-btn-primary px-3 py-2 text-xs"
+                purchaseId={purchase.id}
+                redirectTo={redirectTo}
+                status="approved"
+              >
+                Aprobar compra
+              </ReviewStatusForm>
+            ) : null}
+            {canReviewRecord(purchase, period) && !actions.isApproved ? (
               <ReviewStatusForm
                 className="om7-btn-secondary px-3 py-2 text-xs"
                 purchaseId={purchase.id}
                 redirectTo={redirectTo}
                 status="reviewed"
               >
-                Aprobar revision
+                Marcar revisada
               </ReviewStatusForm>
             ) : null}
-            {canObserveRecord(purchase, period) ? (
+            {actions.canObserve ? (
               <ReviewStatusForm
                 className="om7-btn-ghost px-3 py-2 text-xs"
                 purchaseId={purchase.id}
@@ -1539,17 +1625,27 @@ function PurchaseDetailWorkspace({
                 Observado
               </ReviewStatusForm>
             ) : null}
-            {canGenerateAccounting ? (
+            {actions.canContabilizar ? (
               <PurchaseAccountingForm
                 action={generatePurchaseAccountingEntryAction}
                 className="om7-btn-primary px-3 py-2 text-xs"
                 purchaseId={purchase.id}
                 redirectTo={redirectTo}
               >
-                Contabilizar
+                Crear asiento
               </PurchaseAccountingForm>
             ) : null}
-            {traceDocumentId ? (
+            {actions.canReviewTaxes ? (
+              <Link className="om7-btn-secondary px-3 py-2 text-xs" href={tabHref("taxes")}>
+                Revisar impuestos / montos
+              </Link>
+            ) : null}
+            {actions.canEditAmounts ? (
+              <Link className="om7-btn-ghost px-3 py-2 text-xs" href={tabHref("lines")}>
+                Editar compra
+              </Link>
+            ) : null}
+            {actions.canViewDocument && traceDocumentId ? (
               <a
                 className="om7-btn-ghost px-3 py-2 text-xs"
                 href={`#${documentModalId}`}
@@ -1557,7 +1653,7 @@ function PurchaseDetailWorkspace({
                 Ver documento
               </a>
             ) : null}
-            {purchase.asiento_contable_id ? (
+            {actions.canViewJournalEntry && purchase.asiento_contable_id ? (
               <Link
                 className="om7-btn-secondary px-3 py-2 text-xs"
                 href={`/contabilidad/asientos/${purchase.asiento_contable_id}`}
