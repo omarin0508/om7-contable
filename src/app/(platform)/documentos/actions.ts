@@ -968,6 +968,7 @@ export async function editCounterpartyMatchAction(formData: FormData) {
 
 export async function createPurchaseFromXmlAction(formData: FormData) {
   const extractionId = String(formData.get("extractionId") ?? "").trim();
+  const successRedirectTo = String(formData.get("successRedirectTo") ?? "").trim();
 
   if (!extractionId) {
     redirect(redirectWithError("/documentos", "Extraccion requerida."));
@@ -977,7 +978,7 @@ export async function createPurchaseFromXmlAction(formData: FormData) {
 
   try {
     const extraction = await getDocumentExtractionById(extractionId);
-    redirectTo = `/documentos/${extraction.document_id}`;
+    redirectTo = successRedirectTo || `/documentos/${extraction.document_id}`;
     assertReviewedExtractionStatus(extraction.extraction_status);
     const { currentUser } = await getConvertibleDocument(extraction.document_id);
     const data = extraction.extracted_data ?? {};
@@ -1031,7 +1032,9 @@ export async function createPurchaseFromXmlAction(formData: FormData) {
     revalidatePath("/documentos");
     revalidatePath(`/documentos/${extraction.document_id}`);
     revalidatePath("/bandeja");
-    redirectTo = "/compras";
+    redirectTo = successRedirectTo
+      ? redirectWithNotice(successRedirectTo, "Compra creada desde el documento.")
+      : "/compras";
   } catch (error) {
     logActionError("createPurchaseFromXmlAction", error);
     redirectTo = redirectWithError(
@@ -1045,6 +1048,7 @@ export async function createPurchaseFromXmlAction(formData: FormData) {
 
 export async function createInvoiceFromXmlAction(formData: FormData) {
   const extractionId = String(formData.get("extractionId") ?? "").trim();
+  const successRedirectTo = String(formData.get("successRedirectTo") ?? "").trim();
 
   if (!extractionId) {
     redirect(redirectWithError("/documentos", "Extraccion requerida."));
@@ -1054,7 +1058,7 @@ export async function createInvoiceFromXmlAction(formData: FormData) {
 
   try {
     const extraction = await getDocumentExtractionById(extractionId);
-    redirectTo = `/documentos/${extraction.document_id}`;
+    redirectTo = successRedirectTo || `/documentos/${extraction.document_id}`;
     assertReviewedExtractionStatus(extraction.extraction_status);
     const { currentUser } = await getConvertibleDocument(extraction.document_id);
     const data = extraction.extracted_data ?? {};
@@ -1107,7 +1111,9 @@ export async function createInvoiceFromXmlAction(formData: FormData) {
     revalidatePath("/documentos");
     revalidatePath(`/documentos/${extraction.document_id}`);
     revalidatePath("/bandeja");
-    redirectTo = "/facturas";
+    redirectTo = successRedirectTo
+      ? redirectWithNotice(successRedirectTo, "Venta creada desde el documento.")
+      : "/facturas";
   } catch (error) {
     logActionError("createInvoiceFromXmlAction", error);
     redirectTo = redirectWithError(

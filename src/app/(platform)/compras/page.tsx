@@ -9,11 +9,8 @@ import {
   updatePurchaseReviewStatusAction,
 } from "@/app/(platform)/compras/actions";
 import { AccountingAmountCalculator } from "@/components/accounting/accounting-amount-calculator";
-import {
-  BackLink,
-  ModuleFrame,
-  ModuleHeader,
-} from "@/components/modules/shared";
+import { ModuleFrame } from "@/components/modules/shared";
+import { PurchaseFilterForm } from "@/components/purchases/purchase-filter-form";
 import { JournalEntryCard } from "@/components/accounting/journal-entry-card";
 import { PremiumCard } from "@/components/ui/premium-card";
 import {
@@ -66,9 +63,13 @@ type PurchasesPageProps = {
   searchParams?: Promise<{
     error?: string;
     filter?: string;
+    period?: string;
+    provider?: string;
+    purchase?: string;
     q?: string;
     returnLabel?: string;
     returnTo?: string;
+    tab?: string;
   }>;
 };
 
@@ -93,6 +94,16 @@ const filterLabels: Record<string, string> = {
   accounting_approved: "Aprobadas",
   accounting_observed: "Observadas",
 };
+
+type PurchaseWorkspaceTab = "summary" | "lines" | "taxes" | "trace" | "history";
+
+const purchaseWorkspaceTabs: Array<{ key: PurchaseWorkspaceTab; label: string }> = [
+  { key: "summary", label: "Resumen" },
+  { key: "lines", label: "Lineas" },
+  { key: "taxes", label: "Impuestos" },
+  { key: "trace", label: "Trazabilidad" },
+  { key: "history", label: "Historial" },
+];
 
 function formatMoney(value: number | null | undefined, currency: string | null) {
   return formatCurrencyAmount(value, currency);
@@ -213,6 +224,11 @@ function getSearchText(purchase: Purchase) {
     purchase.category,
     purchase.suggested_account,
     purchase.document_number,
+    purchase.purchase_date,
+    purchase.total,
+    purchase.review_status,
+    purchase.estado_contable,
+    purchase.status,
     purchase.source_document?.display_name,
     purchase.source_document?.original_filename,
   ]
@@ -893,19 +909,34 @@ function PurchaseCard({
 function PurchaseConsoleStat({
   detail,
   label,
+  tone = "muted",
   value,
 }: {
   detail: string;
   label: string;
+  tone?: "critical" | "primary" | "success" | "muted";
   value: number | string;
 }) {
+  const toneClass = {
+    critical:
+      "border-rose-300/28 bg-[linear-gradient(180deg,rgba(251,113,133,0.12),rgba(255,255,255,0.028))] ring-rose-300/[0.08]",
+    muted:
+      "border-white/[0.1] bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.024))] ring-white/[0.025]",
+    primary:
+      "border-cyan-300/24 bg-[linear-gradient(180deg,rgba(34,211,238,0.11),rgba(255,255,255,0.026))] ring-cyan-300/[0.07]",
+    success:
+      "border-emerald-300/22 bg-[linear-gradient(180deg,rgba(52,211,153,0.1),rgba(255,255,255,0.026))] ring-emerald-300/[0.06]",
+  }[tone];
+
   return (
-    <div className="rounded-2xl border border-white/[0.14] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-4 shadow-xl shadow-black/20 ring-1 ring-white/[0.035]">
-      <p className="text-sm text-slate-300">{label}</p>
-      <p className="mt-3 break-words text-2xl font-semibold tracking-tight text-white">
+    <div className={`rounded-2xl border p-3.5 shadow-xl shadow-black/16 ring-1 ${toneClass}`}>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+        {label}
+      </p>
+      <p className="mt-2 break-words text-xl font-semibold tracking-tight text-white">
         {value}
       </p>
-      <p className="mt-3 text-xs leading-5 text-slate-500">{detail}</p>
+      <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
     </div>
   );
 }
@@ -921,7 +952,7 @@ function PurchasesModal({
 }) {
   return (
     <div
-      className="invisible fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-3 opacity-0 backdrop-blur-sm transition target:visible target:opacity-100 sm:p-6"
+      className="hidden"
       id={id}
     >
       <div className="flex max-h-[88vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl border border-white/20 bg-[#07111f] shadow-2xl shadow-cyan-950/30">
@@ -996,31 +1027,841 @@ function PurchasesWorkspace({
   redirectTo: string;
 }) {
   return (
-    <div className="max-h-[62vh] overflow-y-auto rounded-2xl border border-white/15 p-3 om7-scrollbar sm:p-5">
-      <div className="grid gap-4">
-        {purchases.length > 0 ? (
-          purchases.map((purchase) => (
-            <PurchaseCard
-              journalEntry={journalEntries.get(purchase.id) ?? null}
-              key={purchase.id}
-              options={options}
-              paymentMethods={paymentMethods}
-              paymentSummary={paymentSummaries.get(purchase.id) ?? null}
-              period={getPurchasePeriod(purchase, periods)}
-              purchase={purchase}
-              redirectTo={redirectTo}
-            />
-          ))
-        ) : (
-          <div className="rounded-3xl border border-dashed border-white/[0.12] bg-white/[0.025] p-10 text-center">
-            <p className="text-base font-semibold text-white">
-              Sin compras para esta vista
-            </p>
-            <p className="mt-2 text-sm text-slate-500">{emptyText}</p>
-          </div>
-        )}
+    <div className="rounded-2xl border border-white/15 bg-black/10 p-3 sm:p-4">
+      {purchases.length > 0 ? (
+        <div className="grid gap-3">
+          {purchases.map((purchase, index) => {
+            const title =
+              purchase.counterparty?.name ??
+              purchase.supplier_name ??
+              "Sin proveedor";
+
+            return (
+              <details
+                className="group rounded-2xl border border-white/[0.09] bg-white/[0.026] open:border-cyan-300/24 open:bg-cyan-300/[0.035]"
+                key={purchase.id}
+                name="purchase-focus-workspace"
+                open={index === 0}
+              >
+                <summary className="grid cursor-pointer list-none gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {title}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-slate-500">
+                      {purchase.document_number ?? "Sin documento"} ·{" "}
+                      {formatMoney(purchase.total, purchase.currency)}
+                    </p>
+                  </div>
+                  <span className="w-fit rounded-xl border border-white/[0.1] bg-black/20 px-3 py-2 text-xs font-semibold text-slate-300 group-open:border-cyan-300/30 group-open:text-cyan-100">
+                    Trabajar
+                  </span>
+                </summary>
+                <div className="border-t border-white/[0.08] p-3 sm:p-4">
+                  <PurchaseCard
+                    journalEntry={journalEntries.get(purchase.id) ?? null}
+                    options={options}
+                    paymentMethods={paymentMethods}
+                    paymentSummary={paymentSummaries.get(purchase.id) ?? null}
+                    period={getPurchasePeriod(purchase, periods)}
+                    purchase={purchase}
+                    redirectTo={redirectTo}
+                  />
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-3xl border border-dashed border-white/[0.12] bg-white/[0.025] p-10 text-center">
+          <p className="text-base font-semibold text-white">
+            Sin compras para esta vista
+          </p>
+          <p className="mt-2 text-sm text-slate-500">{emptyText}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getPurchaseTitle(purchase: Purchase) {
+  return purchase.counterparty?.name ?? purchase.supplier_name ?? "Sin proveedor";
+}
+
+function getPurchasePeriodValue(purchase: Purchase) {
+  const date = getPurchasePeriodDate(purchase);
+
+  if (!date) {
+    return "none";
+  }
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function buildPurchasesHref({
+  filter,
+  period,
+  provider,
+  purchaseId,
+  q,
+  returnQuery,
+  tab,
+}: {
+  filter: string;
+  period: string;
+  provider: string;
+  purchaseId?: string;
+  q: string;
+  returnQuery: string;
+  tab?: string;
+}) {
+  const params = new URLSearchParams();
+
+  if (filter && filter !== "all") params.set("filter", filter);
+  if (period && period !== "all") params.set("period", period);
+  if (provider) params.set("provider", provider);
+  if (q) params.set("q", q);
+  if (purchaseId) params.set("purchase", purchaseId);
+  if (tab && tab !== "summary") params.set("tab", tab);
+
+  const query = params.toString();
+  const returnSuffix = returnQuery ? `${query ? "&" : "?"}${returnQuery.slice(1)}` : "";
+
+  return `/compras${query ? `?${query}` : ""}${returnSuffix}`;
+}
+
+function CompactMetric({
+  label,
+  tone = "muted",
+  value,
+}: {
+  label: string;
+  tone?: "critical" | "muted" | "primary" | "success";
+  value: number | string;
+}) {
+  const toneClass = {
+    critical: "border-rose-300/20 bg-rose-300/10 text-rose-100",
+    muted: "border-white/[0.08] bg-white/[0.04] text-slate-200",
+    primary: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100",
+    success: "border-emerald-300/20 bg-emerald-300/10 text-emerald-100",
+  }[tone];
+
+  return (
+    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 ${toneClass}`}>
+      <span className="text-sm font-semibold leading-none">{value}</span>
+      <span className="text-xs text-current/70">{label}</span>
+    </div>
+  );
+}
+
+function PurchaseResultsTable({
+  hrefForPurchase,
+  purchases,
+}: {
+  hrefForPurchase: (purchaseId: string) => string;
+  purchases: Purchase[];
+}) {
+  if (purchases.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-white/[0.12] bg-white/[0.025] p-8 text-center">
+        <p className="text-sm font-semibold text-white">Sin compras visibles</p>
+        <p className="mt-2 text-sm text-slate-500">
+          Ajusta busqueda o filtros para encontrar la compra.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/[0.08]">
+      <div className="hidden grid-cols-[minmax(0,1.4fr)_120px_130px_150px_110px] gap-3 border-b border-white/[0.08] bg-white/[0.035] px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 lg:grid">
+        <span>Proveedor</span>
+        <span>Fecha</span>
+        <span>Total</span>
+        <span>Estado</span>
+        <span></span>
+      </div>
+      <div className="min-h-0 divide-y divide-white/[0.07] overflow-y-auto om7-scrollbar">
+        {purchases.map((purchase) => (
+          <Link
+            className="grid gap-3 px-4 py-3 transition hover:bg-cyan-300/[0.05] lg:grid-cols-[minmax(0,1.4fr)_120px_130px_150px_110px] lg:items-center"
+            href={hrefForPurchase(purchase.id)}
+            key={purchase.id}
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-white">
+                {getPurchaseTitle(purchase)}
+              </p>
+              <p className="mt-1 truncate text-xs text-slate-500">
+                {purchase.document_number ?? "Sin documento"} ·{" "}
+                {purchase.category ?? "Sin categoria"}
+              </p>
+            </div>
+            <span className="text-sm text-slate-400">
+              {purchase.purchase_date ?? "Sin fecha"}
+            </span>
+            <span className="text-sm font-semibold text-slate-100">
+              {formatMoney(purchase.total, purchase.currency)}
+            </span>
+            <span className={getReviewStatusBadgeClass(purchase.review_status)}>
+              {getReviewStatusLabel(purchase.review_status)}
+            </span>
+            <span className="w-fit rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-cyan-100">
+              Revisar
+            </span>
+          </Link>
+        ))}
       </div>
     </div>
+  );
+}
+
+function DataCell({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-white/[0.07] bg-black/15 px-3 py-2">
+      <p className="text-xs text-slate-500">{label}</p>
+      <div className="mt-1 break-words text-sm font-semibold text-slate-100">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function GuidedIssueCard({
+  action,
+  description,
+  impact,
+  title,
+}: {
+  action: ReactNode;
+  description: string;
+  impact: string;
+  title: string;
+}) {
+  return (
+    <div className="grid gap-3 rounded-xl border border-amber-300/18 bg-amber-300/[0.055] p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-amber-100">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-amber-100/75">{description}</p>
+        <p className="mt-1 text-xs leading-5 text-slate-500">{impact}</p>
+      </div>
+      <div className="flex shrink-0 justify-start md:justify-end">{action}</div>
+    </div>
+  );
+}
+
+function PurchaseDocumentWindow({
+  documentId,
+  modalId,
+  title,
+}: {
+  documentId: string;
+  modalId: string;
+  title: string;
+}) {
+  return (
+    <div
+      className="invisible fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-3 opacity-0 backdrop-blur-sm transition target:visible target:opacity-100 sm:p-6"
+      id={modalId}
+    >
+      <div className="grid h-[min(86vh,54rem)] w-full max-w-6xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/15 bg-[#07111f] shadow-2xl shadow-black/40">
+        <div className="flex items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-100/70">
+              Documento origen
+            </p>
+            <p className="mt-1 truncate text-sm font-semibold text-white">{title}</p>
+          </div>
+          <a className="om7-btn-ghost px-3 py-2 text-xs" href="#">
+            Cerrar
+          </a>
+        </div>
+        <iframe
+          className="h-full w-full bg-black/30"
+          src={`/visor-documento/${documentId}`}
+          title={title}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PurchaseDetailWorkspace({
+  activeTab,
+  backHref,
+  journalEntry,
+  options,
+  paymentMethods,
+  paymentSummary,
+  period,
+  purchase,
+  redirectTo,
+  tabHref,
+}: {
+  activeTab: PurchaseWorkspaceTab;
+  backHref: string;
+  journalEntry: JournalEntry | null;
+  options: AccountingCorrectionOptions;
+  paymentMethods: PaymentMethod[];
+  paymentSummary: PaymentSummary | null;
+  period: AccountingPeriod | null;
+  purchase: Purchase;
+  redirectTo: string;
+  tabHref: (tab: PurchaseWorkspaceTab) => string;
+}) {
+  const title = getPurchaseTitle(purchase);
+  const accountingStatus = purchase.estado_contable ?? "pendiente";
+  const traceDocumentId = getPurchaseTraceDocumentId(purchase);
+  const sourceName =
+    purchase.source_document?.display_name ??
+    purchase.source_document?.original_filename ??
+    "Documento procesado";
+  const paidAmount = paymentSummary?.amount ?? 0;
+  const paymentStatus = getPaymentStatusKey(purchase.total, paidAmount);
+  const paymentLabel = getPaymentStatusLabel(purchase.total, paidAmount);
+  const remainingAmount = getRemainingAmount(purchase.total, paidAmount);
+  const lockedByPeriod = isRecordLockedByPeriod(period);
+  const canGenerateAccounting =
+    !lockedByPeriod &&
+    ["reviewed", "approved"].includes(String(purchase.review_status ?? "")) &&
+    accountingStatus !== "contabilizado";
+  const reviewStatus = String(purchase.review_status ?? "pending");
+  const subtotalAmount = Number(purchase.subtotal ?? 0);
+  const taxAmount = Number(purchase.tax ?? 0);
+  const totalAmount = Number(purchase.total ?? 0);
+  const hasTaxMismatch =
+    Number.isFinite(subtotalAmount) &&
+    Number.isFinite(taxAmount) &&
+    Number.isFinite(totalAmount) &&
+    totalAmount > 0 &&
+    Math.abs(subtotalAmount + taxAmount - totalAmount) > 1;
+  const ruleApplied =
+    purchase.classification_rule_applied ??
+    getConversionMetadataValue(
+      purchase.conversion_metadata,
+      "classification_rule_applied",
+      "Sin regla registrada",
+    );
+  const documentModalId = `documento-compra-${purchase.id}`;
+  const guidedIssues: ReactNode[] = [];
+
+  if (reviewStatus === "observed") {
+    guidedIssues.push(
+      <GuidedIssueCard
+        action={
+          <ReviewStatusForm
+            className="om7-btn-secondary px-3 py-2 text-xs"
+            purchaseId={purchase.id}
+            redirectTo={redirectTo}
+            status="reviewed"
+          >
+            Marcar corregida
+          </ReviewStatusForm>
+        }
+        description="Esta compra tiene una observacion pendiente. Corrija el dato indicado y marque la compra como corregida."
+        impact="Mientras siga observada, puede bloquear aprobacion, cierre o salida contable."
+        key="observed"
+        title="Compra observada"
+      />,
+    );
+  }
+
+  if (!purchase.counterparty_id) {
+    guidedIssues.push(
+      <GuidedIssueCard
+        action={
+          <Link className="om7-btn-secondary px-3 py-2 text-xs" href={tabHref("lines")}>
+            Asociar proveedor
+          </Link>
+        }
+        description="No hay proveedor asociado a esta compra. Para continuar, asocie o cree una contraparte."
+        impact="Sin contraparte, la trazabilidad por proveedor y algunos controles de cierre quedan incompletos."
+        key="counterparty"
+        title="Sin contraparte"
+      />,
+    );
+  }
+
+  if (!traceDocumentId) {
+    guidedIssues.push(
+      <GuidedIssueCard
+        action={
+          <Link className="om7-btn-ghost px-3 py-2 text-xs" href={tabHref("trace")}>
+            Vincular documento
+          </Link>
+        }
+        description="Esta compra no tiene documento fuente vinculado. Puede continuar, pero perdera trazabilidad documental."
+        impact="Sin documento origen, auditoria y revision posterior tendran menos evidencia."
+        key="document"
+        title="Sin documento origen"
+      />,
+    );
+  }
+
+  if (!purchase.suggested_account) {
+    guidedIssues.push(
+      <GuidedIssueCard
+        action={
+          <Link className="om7-btn-secondary px-3 py-2 text-xs" href={tabHref("lines")}>
+            Asignar cuenta
+          </Link>
+        }
+        description="Falta definir la cuenta contable para registrar correctamente el gasto."
+        impact="La contabilizacion puede quedar pendiente o fallar si no hay cuenta sugerida."
+        key="account"
+        title="Sin cuenta contable"
+      />,
+    );
+  }
+
+  if (reviewStatus === "pending" || reviewStatus === "reviewed") {
+    guidedIssues.push(
+      <GuidedIssueCard
+        action={
+          <ReviewStatusForm
+            className="om7-btn-secondary px-3 py-2 text-xs"
+            purchaseId={purchase.id}
+            redirectTo={redirectTo}
+            status="approved"
+          >
+            Aprobar compra
+          </ReviewStatusForm>
+        }
+        description="Revise los datos principales y apruebe la compra antes de contabilizar."
+        impact="Sin aprobacion, la compra no deberia avanzar al cierre operativo."
+        key="approval"
+        title="Pendiente de aprobacion"
+      />,
+    );
+  }
+
+  if (
+    ["approved", "reviewed"].includes(reviewStatus) &&
+    !purchase.asiento_contable_id &&
+    accountingStatus !== "contabilizado"
+  ) {
+    guidedIssues.push(
+      <GuidedIssueCard
+        action={
+          canGenerateAccounting ? (
+            <PurchaseAccountingForm
+              action={generatePurchaseAccountingEntryAction}
+              className="om7-btn-primary px-3 py-2 text-xs"
+              purchaseId={purchase.id}
+              redirectTo={redirectTo}
+            >
+              Crear asiento
+            </PurchaseAccountingForm>
+          ) : (
+            <Link className="om7-btn-ghost px-3 py-2 text-xs" href={tabHref("trace")}>
+              Ver trazabilidad
+            </Link>
+          )
+        }
+        description="La compra esta aprobada o revisada, pero todavia no tiene asiento contable generado."
+        impact="Sin asiento, el gasto no impacta mayor, balance ni estados financieros."
+        key="journal"
+        title="Asiento pendiente"
+      />,
+    );
+  }
+
+  if (hasTaxMismatch || accountingStatus === "error") {
+    guidedIssues.push(
+      <GuidedIssueCard
+        action={
+          <Link className="om7-btn-secondary px-3 py-2 text-xs" href={tabHref("taxes")}>
+            Revisar impuestos
+          </Link>
+        }
+        description="Revise el subtotal, IVA y total antes de enviar esta compra al flujo contable."
+        impact={
+          purchase.contabilizacion_error ??
+          "Una diferencia en importes puede generar asientos incorrectos o errores de contabilizacion."
+        }
+        key="taxes"
+        title={hasTaxMismatch ? "Diferencia en importes" : "Error contable"}
+      />,
+    );
+  }
+
+  return (
+    <section className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3 overflow-hidden">
+      <PremiumCard className="p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <Link className="om7-btn-ghost mb-3 inline-flex px-3 py-2 text-sm" href={backHref}>
+              &lt;- Regresar a compras
+            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={getReviewStatusBadgeClass(purchase.review_status)}>
+                {getReviewStatusLabel(purchase.review_status)}
+              </span>
+              <span className={getPurchaseAccountingStatusClass(accountingStatus)}>
+                {getPurchaseAccountingStatusLabel(accountingStatus)}
+              </span>
+              <span className={getMovementStatusBadgeClass(paymentStatus)}>
+                {paymentLabel}
+              </span>
+              {traceDocumentId ? (
+                <span className="om7-chip om7-chip-cyan">Con documento</span>
+              ) : (
+                <span className="om7-chip text-slate-400">Manual</span>
+              )}
+            </div>
+            <h2 className="mt-4 break-words text-2xl font-semibold tracking-tight text-white">
+              {title}
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              {purchase.document_number ?? "Sin documento"} ·{" "}
+              {purchase.purchase_date ?? "Sin fecha"} ·{" "}
+              {formatMoney(purchase.total, purchase.currency)}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {canReviewRecord(purchase, period) ? (
+              <ReviewStatusForm
+                className="om7-btn-secondary px-3 py-2 text-xs"
+                purchaseId={purchase.id}
+                redirectTo={redirectTo}
+                status="reviewed"
+              >
+                Aprobar revision
+              </ReviewStatusForm>
+            ) : null}
+            {canObserveRecord(purchase, period) ? (
+              <ReviewStatusForm
+                className="om7-btn-ghost px-3 py-2 text-xs"
+                purchaseId={purchase.id}
+                redirectTo={redirectTo}
+                status="observed"
+              >
+                Observado
+              </ReviewStatusForm>
+            ) : null}
+            {canGenerateAccounting ? (
+              <PurchaseAccountingForm
+                action={generatePurchaseAccountingEntryAction}
+                className="om7-btn-primary px-3 py-2 text-xs"
+                purchaseId={purchase.id}
+                redirectTo={redirectTo}
+              >
+                Contabilizar
+              </PurchaseAccountingForm>
+            ) : null}
+            {traceDocumentId ? (
+              <a
+                className="om7-btn-ghost px-3 py-2 text-xs"
+                href={`#${documentModalId}`}
+              >
+                Ver documento
+              </a>
+            ) : null}
+            {purchase.asiento_contable_id ? (
+              <Link
+                className="om7-btn-secondary px-3 py-2 text-xs"
+                href={`/contabilidad/asientos/${purchase.asiento_contable_id}`}
+              >
+                Ver asiento
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      </PremiumCard>
+
+      {guidedIssues.length > 0 ? (
+        <div className="max-h-44 overflow-y-auto rounded-2xl border border-amber-300/14 bg-black/15 p-2 om7-scrollbar">
+          <div className="mb-2 flex items-center justify-between gap-3 px-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-100/80">
+              Requiere atencion
+            </p>
+            <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2 py-1 text-xs text-amber-100">
+              {guidedIssues.length}
+            </span>
+          </div>
+          <div className="grid gap-2">{guidedIssues}</div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-emerald-300/14 bg-emerald-300/[0.045] px-3 py-2">
+          <span className="om7-chip om7-chip-emerald">Sin bloqueos operativos</span>
+          <span className="text-xs text-emerald-100/70">
+            La compra no presenta issues accionables en este momento.
+          </span>
+        </div>
+      )}
+
+      <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.026]">
+        <div className="flex flex-wrap gap-2 border-b border-white/[0.08] p-3">
+          {purchaseWorkspaceTabs.map((tab) => (
+            <Link
+              className={[
+                "rounded-full border px-3 py-2 text-xs font-semibold transition",
+                activeTab === tab.key
+                  ? "border-cyan-300/34 bg-cyan-300/12 text-cyan-100"
+                  : "border-white/[0.08] bg-white/[0.035] text-slate-400 hover:text-white",
+              ].join(" ")}
+              href={tabHref(tab.key)}
+              key={tab.key}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </div>
+        <div className="min-h-0 overflow-y-auto p-4 om7-scrollbar">
+        {activeTab === "summary" ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <DataCell label="Proveedor" value={title} />
+            <DataCell label="Documento" value={purchase.document_number ?? "Sin numero"} />
+            <DataCell label="Periodo" value={getPurchasePeriodLabel(purchase)} />
+            <DataCell label="Total" value={formatMoney(purchase.total, purchase.currency)} />
+            <DataCell label="Estado operativo" value={getRecordBusinessStateLabel(purchase, period)} />
+            <DataCell label="Pago" value={`${paymentLabel} · ${formatMoney(paidAmount, purchase.currency)}`} />
+            <DataCell label="Saldo" value={formatMoney(remainingAmount, purchase.currency)} />
+            <DataCell label="Contraparte" value={purchase.counterparty?.name ?? "Sin contraparte"} />
+          </div>
+          <p className="mt-4 text-sm leading-6 text-slate-500">
+            {getRecordBusinessStateDescription(purchase, period)}
+          </p>
+          </>
+        ) : null}
+
+        {activeTab === "lines" ? (
+          <form
+            action={updatePurchaseAccountingFieldsAction}
+            className="grid gap-3 md:grid-cols-3"
+          >
+            <input name="purchaseId" type="hidden" value={purchase.id} />
+            <input name="redirectTo" type="hidden" value={redirectTo} />
+            <label className="block md:col-span-2">
+              <span className="text-xs text-slate-300">Proveedor</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35"
+                defaultValue={purchase.supplier_name ?? ""}
+                name="supplierName"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-300">Documento</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35"
+                defaultValue={purchase.document_number ?? ""}
+                name="documentNumber"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-300">Categoria</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35"
+                defaultValue={purchase.category ?? ""}
+                list={`purchase-workspace-categories-${purchase.id}`}
+                name="category"
+              />
+              <datalist id={`purchase-workspace-categories-${purchase.id}`}>
+                {options.purchaseCategories.map((category) => (
+                  <option key={category.value} label={category.label} value={category.value} />
+                ))}
+              </datalist>
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-300">Cuenta sugerida</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35"
+                defaultValue={purchase.suggested_account ?? ""}
+                list={`purchase-workspace-accounts-${purchase.id}`}
+                name="suggestedAccount"
+              />
+              <datalist id={`purchase-workspace-accounts-${purchase.id}`}>
+                {options.accounts.map((account) => (
+                  <option key={account.value} label={account.label} value={account.value} />
+                ))}
+              </datalist>
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-300">Fecha</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35"
+                defaultValue={purchase.purchase_date ?? ""}
+                name="purchaseDate"
+                type="date"
+              />
+            </label>
+            <label className="block md:col-span-3">
+              <span className="text-xs text-slate-300">Descripcion</span>
+              <input
+                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35"
+                defaultValue={purchase.description ?? ""}
+                name="description"
+              />
+            </label>
+            <button className="om7-btn-secondary w-fit px-3 py-2 text-xs" type="submit">
+              Guardar cambios
+            </button>
+          </form>
+        ) : null}
+
+        {activeTab === "taxes" ? (
+          <form action={updatePurchaseAccountingFieldsAction} className="grid gap-3 md:grid-cols-3">
+            <input name="purchaseId" type="hidden" value={purchase.id} />
+            <input name="redirectTo" type="hidden" value={redirectTo} />
+            <AccountingAmountCalculator
+              subtotal={purchase.subtotal}
+              tax={purchase.tax}
+              taxFieldName="tax"
+              taxName="Impuesto"
+              total={purchase.total}
+            />
+            <button className="om7-btn-secondary w-fit px-3 py-2 text-xs md:col-span-3" type="submit">
+              Guardar importes
+            </button>
+          </form>
+        ) : null}
+
+        {activeTab === "trace" ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <DataCell label="Origen" value={traceDocumentId ? sourceName : "Registro manual"} />
+            <DataCell label="Regla" value={ruleApplied} />
+            <DataCell label="Confianza" value={formatConfidence(purchase.classification_confidence) ?? "Sin IA"} />
+            <DataCell label="E7 Mind" value={hasE7MindTrace(purchase.conversion_metadata) ? "Sincronizado" : "Sin sincronizacion"} />
+          </div>
+          {journalEntry ? (
+            <div className="mt-4">
+              <JournalEntryCard
+                currency={purchase.currency}
+                entry={journalEntry}
+                locked={lockedByPeriod}
+                lockedReason="Periodo cerrado. El asiento queda solo lectura."
+                redirectTo={redirectTo}
+                sourceId={purchase.id}
+                sourceType="purchase"
+              />
+            </div>
+          ) : null}
+          </>
+        ) : null}
+
+        {activeTab === "history" ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <DataCell label="Creada" value={purchase.created_at ?? "Sin fecha"} />
+            <DataCell label="Actualizada" value={purchase.updated_at ?? "Sin fecha"} />
+            <DataCell label="Revision" value={getReviewStatusLabel(purchase.review_status)} />
+            <DataCell label="Contabilidad" value={getPurchaseAccountingStatusLabel(accountingStatus)} />
+          </div>
+          <PurchasePaymentForm
+            locked={lockedByPeriod}
+            methods={paymentMethods}
+            paid={paidAmount}
+            purchase={purchase}
+            redirectTo={redirectTo}
+          />
+          {canReopenReview(purchase, period) ? (
+            <div className="mt-3">
+              <ReviewStatusForm
+                className="om7-btn-ghost px-3 py-2 text-xs"
+                purchaseId={purchase.id}
+                redirectTo={redirectTo}
+                status="pending"
+              >
+                Devolver a revision
+              </ReviewStatusForm>
+            </div>
+          ) : null}
+          </>
+        ) : null}
+      </div>
+      </div>
+      {traceDocumentId ? (
+        <PurchaseDocumentWindow
+          documentId={traceDocumentId}
+          modalId={documentModalId}
+          title={sourceName}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function NewPurchasePanel({
+  activeCompanyName,
+  currency,
+  disabled,
+}: {
+  activeCompanyName?: string;
+  currency: string;
+  disabled: boolean;
+}) {
+  return (
+    <section id="nueva-compra">
+      <div className="rounded-2xl border border-white/[0.08] bg-black/15">
+        <details>
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4">
+            <div>
+              <p className="text-sm font-semibold text-white">Nueva compra manual</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                {activeCompanyName
+                  ? `Se guardara en ${activeCompanyName}.`
+                  : "Selecciona una empresa activa antes de registrar."}
+              </p>
+            </div>
+            <span className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.08] px-3 py-2 text-xs font-semibold text-cyan-100">
+              Abrir
+            </span>
+          </summary>
+          <form action={createPurchaseAction} className="grid gap-4 border-t border-white/[0.08] p-4 md:grid-cols-3">
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-300">Proveedor</span>
+              <input className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none" disabled={disabled} name="supplierName" placeholder="Proveedor S.A." />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-300">Documento</span>
+              <input className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none" disabled={disabled} name="documentNumber" placeholder="OC-1001" />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-300">Fecha</span>
+              <input className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none" disabled={disabled} name="purchaseDate" type="date" />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-300">Categoria</span>
+              <select className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none" disabled={disabled} name="category">
+                <option className="bg-slate-950" value="">Seleccionar</option>
+                {categoryOptions.map((category) => (
+                  <option className="bg-slate-950" key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-300">Estado</span>
+              <select className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none" defaultValue="registrada" disabled={disabled} name="status">
+                <option className="bg-slate-950" value="registrada">Registrada</option>
+                <option className="bg-slate-950" value="pendiente">Pendiente</option>
+                <option className="bg-slate-950" value="pagada">Pagada</option>
+                <option className="bg-slate-950" value="revision">Revision</option>
+              </select>
+            </label>
+            <label className="block md:col-span-3">
+              <span className="text-sm font-medium text-slate-300">Descripcion</span>
+              <input className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none" disabled={disabled} name="description" placeholder="Servicios, equipos, suscripcion..." />
+            </label>
+            <input name="currency" type="hidden" value={currency} />
+            {["subtotal", "tax", "total"].map((name) => (
+              <label className="block" key={name}>
+                <span className="text-sm font-medium text-slate-300">
+                  {name === "tax" ? "Impuesto" : name === "total" ? "Total" : "Subtotal"}
+                </span>
+                <input className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none" disabled={disabled} min="0" name={name} placeholder="0.00" step="0.01" type="number" />
+              </label>
+            ))}
+            <button className="om7-btn-primary h-11 px-4 disabled:cursor-not-allowed disabled:opacity-50 md:col-span-3" disabled={disabled} type="submit">
+              Guardar compra
+            </button>
+          </form>
+        </details>
+      </div>
+    </section>
   );
 }
 
@@ -1030,7 +1871,15 @@ export default async function PurchasesPage({
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const activeFilter = resolvedSearchParams.filter ?? "all";
   const actionError = resolvedSearchParams.error ?? null;
+  const activePeriod = resolvedSearchParams.period ?? "all";
+  const providerFilter = resolvedSearchParams.provider ?? "";
+  const selectedPurchaseId = resolvedSearchParams.purchase ?? "";
   const searchTerm = resolvedSearchParams.q ?? "";
+  const activeTab = purchaseWorkspaceTabs.some(
+    (tab) => tab.key === resolvedSearchParams.tab,
+  )
+    ? (resolvedSearchParams.tab as PurchaseWorkspaceTab)
+    : "summary";
   const returnTo = resolvedSearchParams.returnTo?.startsWith("/")
     ? resolvedSearchParams.returnTo
     : "/dashboard";
@@ -1039,9 +1888,15 @@ export default async function PurchasesPage({
     returnTo !== "/dashboard"
       ? `&returnTo=${encodeURIComponent(returnTo)}&returnLabel=${encodeURIComponent(returnLabel)}`
       : "";
-  const redirectTo = `/compras?filter=${activeFilter}${
-    searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""
-  }${returnQuery}`;
+  const redirectTo = buildPurchasesHref({
+    filter: activeFilter,
+    period: activePeriod,
+    provider: providerFilter,
+    purchaseId: selectedPurchaseId,
+    q: searchTerm,
+    returnQuery,
+    tab: activeTab,
+  });
   const [
     { activeContext, purchases },
     periodsResult,
@@ -1076,14 +1931,55 @@ export default async function PurchasesPage({
   const currency = normalizeCurrencyCode(
     activeCompany?.base_currency ?? organization?.base_currency ?? "CRC",
   );
-  const filteredPurchases = filterPurchases(
-    purchases,
-    activeFilter,
-    searchTerm,
+  const supplierOptions = Array.from(
+    new Set(
+      purchases
+        .map((purchase) => getPurchaseTitle(purchase))
+        .filter((name) => name && name !== "Sin proveedor"),
+    ),
+  ).sort((first, second) => first.localeCompare(second));
+  const periodOptions = Array.from(
+    new Set(purchases.map(getPurchasePeriodValue).filter((period) => period !== "none")),
+  ).sort((first, second) => second.localeCompare(first));
+  const filteredPurchases = filterPurchases(purchases, activeFilter, searchTerm).filter(
+    (purchase) => {
+      const matchesPeriod =
+        activePeriod === "all" || getPurchasePeriodValue(purchase) === activePeriod;
+      const matchesProvider =
+        !providerFilter || getPurchaseTitle(purchase) === providerFilter;
+
+      return matchesPeriod && matchesProvider;
+    },
   );
-  const fromDocumentCount = purchases.filter(
-    (purchase) => purchase.source_document_id,
-  ).length;
+  const selectedPurchase = selectedPurchaseId
+    ? purchases.find((purchase) => purchase.id === selectedPurchaseId) ?? null
+    : null;
+  const backHref = buildPurchasesHref({
+    filter: activeFilter,
+    period: activePeriod,
+    provider: providerFilter,
+    q: searchTerm,
+    returnQuery,
+  });
+  const hrefForPurchase = (purchaseId: string) =>
+    buildPurchasesHref({
+      filter: activeFilter,
+      period: activePeriod,
+      provider: providerFilter,
+      purchaseId,
+      q: searchTerm,
+      returnQuery,
+    });
+  const hrefForTab = (tab: PurchaseWorkspaceTab) =>
+    buildPurchasesHref({
+      filter: activeFilter,
+      period: activePeriod,
+      provider: providerFilter,
+      purchaseId: selectedPurchaseId,
+      q: searchTerm,
+      returnQuery,
+      tab,
+    });
   const missingTraceCount = purchases.filter(
     (purchase) => !purchase.counterparty_id || !purchase.source_document_id,
   ).length;
@@ -1108,49 +2004,157 @@ export default async function PurchasesPage({
 
   return (
     <ModuleFrame>
-      <ModuleHeader
-        title="Compras"
-        description="Consola operativa para revisar gastos, proveedores, pagos y trazabilidad."
-        action={
-          <div className="flex flex-wrap gap-2">
-            <BackLink href={returnTo} label={returnLabel} />
-            <a className="om7-btn-primary px-4 py-2.5" href="#modal-nueva-compra">
-              Nueva compra
-            </a>
+      <div className="flex h-[calc(100dvh-7rem)] min-h-[34rem] flex-col overflow-hidden">
+        <header className="flex-shrink-0 rounded-2xl border border-white/[0.08] bg-[#06101c]/95 p-3 shadow-xl shadow-black/20 sm:p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-100/60">
+                Consola operativa
+              </p>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight text-white">
+                Compras
+              </h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Revisa gastos, proveedores, pagos y trazabilidad sin salir del workspace.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <a className="om7-btn-primary px-4 py-2.5" href="#nueva-compra">
+                Nueva compra
+              </a>
+              <Link className="om7-btn-ghost px-4 py-2.5" href="/compras">
+                Refrescar
+              </Link>
+              <a className="om7-btn-secondary px-4 py-2.5" href="#filtros-avanzados">
+                Filtros avanzados
+              </a>
+            </div>
           </div>
-        }
-      />
+        </header>
 
-      {actionError ? (
-        <PremiumCard className="border-amber-300/15 bg-amber-300/[0.08] p-5">
-          <p className="text-sm font-semibold text-amber-100">
-            No se pudo completar la accion
-          </p>
-          <p className="mt-2 text-sm leading-6 text-amber-100/75">
-            {actionError}
-          </p>
-        </PremiumCard>
-      ) : null}
+        {actionError ? (
+          <PremiumCard className="mt-3 flex-shrink-0 border-amber-300/15 bg-amber-300/[0.08] p-4">
+            <p className="text-sm font-semibold text-amber-100">
+              No se pudo completar la accion
+            </p>
+            <p className="mt-1 text-sm leading-6 text-amber-100/75">
+              {actionError}
+            </p>
+          </PremiumCard>
+        ) : null}
 
-      {!activeCompany ? (
-        <PremiumCard className="border-amber-300/15 bg-amber-300/10 p-5">
-          <p className="text-sm font-medium text-amber-100">
-            Selecciona una empresa activa
-          </p>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-100/75">
-            Las compras deben registrarse bajo una empresa. Ve a Empresas y
-            define el contexto de trabajo antes de crear gastos reales.
-          </p>
-          <Link
-            className="mt-4 inline-flex rounded-xl border border-amber-200/20 bg-black/15 px-4 py-2 text-sm font-medium text-amber-100 transition hover:bg-black/25"
-            href="/empresas"
-          >
-            Ir a empresas
-          </Link>
-        </PremiumCard>
-      ) : null}
+        {!activeCompany ? (
+          <PremiumCard className="mt-3 flex-shrink-0 border-amber-300/15 bg-amber-300/10 p-4">
+            <p className="text-sm font-medium text-amber-100">
+              Selecciona una empresa activa
+            </p>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-amber-100/75">
+              Las compras deben registrarse bajo una empresa activa.
+            </p>
+          </PremiumCard>
+        ) : null}
 
-      <section className="sticky top-[var(--om7-actions-sticky-top,12.5rem)] z-40 rounded-2xl border border-white/16 bg-[#06101c] p-2 shadow-2xl shadow-black/25 lg:top-[var(--om7-actions-sticky-top-lg,9.25rem)]">
+        <div className="mt-3 min-h-0 flex-1 overflow-hidden">
+      {selectedPurchase ? (
+          <PurchaseDetailWorkspace
+            activeTab={activeTab}
+            backHref={backHref}
+            journalEntry={purchaseEntryMap.get(selectedPurchase.id) ?? null}
+            options={correctionOptions}
+            paymentMethods={paymentMethods}
+            paymentSummary={purchasePaymentMap.get(selectedPurchase.id) ?? null}
+            period={getPurchasePeriod(selectedPurchase, periods)}
+            purchase={selectedPurchase}
+            redirectTo={redirectTo}
+            tabHref={hrefForTab}
+          />
+      ) : (
+          <PremiumCard className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] p-4 sm:p-5">
+            <div className="min-h-0">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <PurchaseFilterForm
+                activeFilter={activeFilter}
+                activePeriod={activePeriod}
+                periodOptions={periodOptions}
+                providerFilter={providerFilter}
+                searchTerm={searchTerm}
+                supplierOptions={supplierOptions}
+              />
+              <div className="flex flex-wrap gap-2 xl:justify-end">
+                <CompactMetric label="compras" value={purchases.length} />
+                <CompactMetric label="pendientes" tone="primary" value={pendingReviewCount} />
+                <CompactMetric label="aprobadas" tone="success" value={approvedCount} />
+                <CompactMetric label="observadas" tone="critical" value={observedCount} />
+              </div>
+            </div>
+
+            <details
+              className="mt-3 rounded-2xl border border-white/[0.08] bg-black/15 p-3"
+              id="filtros-avanzados"
+            >
+              <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Filtros avanzados
+              </summary>
+              <form className="mt-4 grid gap-3 sm:grid-cols-[220px_1fr_auto]" method="get">
+                <input name="q" type="hidden" value={searchTerm} />
+                <input name="period" type="hidden" value={activePeriod} />
+                <input name="provider" type="hidden" value={providerFilter} />
+                <select
+                  className="h-11 rounded-xl border border-white/[0.08] bg-black/20 px-3 text-sm text-white outline-none"
+                  defaultValue={activeFilter}
+                  name="filter"
+                >
+                  {Object.entries(filterLabels).map(([filter, label]) => (
+                    <option className="bg-slate-950" key={filter} value={filter}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <p className="self-center text-xs leading-5 text-slate-500">
+                  Usa esta vista para criterios menos frecuentes sin saturar la consola principal.
+                </p>
+                <button className="om7-btn-secondary h-11 px-4" type="submit">
+                  Aplicar
+                </button>
+              </form>
+              <div className="mt-3">
+                <Link className="om7-chip text-slate-400" href="/compras">
+                  Limpiar
+                </Link>
+              </div>
+            </details>
+
+            <div className="mt-4">
+              <NewPurchasePanel
+                activeCompanyName={activeCompany?.name}
+                currency={currency}
+                disabled={!activeCompany}
+              />
+            </div>
+            </div>
+
+            <section className="mt-4 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10 p-3">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-base font-semibold text-white">Compras operativas</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Filtra y selecciona una compra para abrir su workspace.
+                </p>
+              </div>
+              <span className="text-sm text-slate-500">
+                {filteredPurchases.length} de {purchases.length}
+              </span>
+            </div>
+            <div className="min-h-0">
+              <PurchaseResultsTable hrefForPurchase={hrefForPurchase} purchases={filteredPurchases} />
+            </div>
+            </section>
+          </PremiumCard>
+      )}
+        </div>
+      </div>
+
+      <section className="hidden">
         <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center">
           <div className="flex min-w-0 items-center gap-2 overflow-x-auto om7-scrollbar">
             {[
@@ -1187,30 +2191,34 @@ export default async function PurchasesPage({
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="hidden">
         <PurchaseConsoleStat
           detail={activeCompany?.name ?? "Sin empresa activa"}
           label="Compras"
+          tone="muted"
           value={purchases.length}
         />
         <PurchaseConsoleStat
-          detail={`${observedCount} observadas`}
+          detail="Requieren decision operativa"
+          label="Pendientes"
+          tone="primary"
+          value={pendingReviewCount}
+        />
+        <PurchaseConsoleStat
+          detail="Listas para salida contable"
           label="Aprobadas"
+          tone="success"
           value={approvedCount}
         />
         <PurchaseConsoleStat
-          detail="Tienen documento origen"
-          label="Desde XML"
-          value={fromDocumentCount}
-        />
-        <PurchaseConsoleStat
-          detail={`Por completar ${missingTraceCount}`}
-          label="Por revisar"
-          value={pendingReviewCount}
+          detail={`Por corregir · ${missingTraceCount} incompletas`}
+          label="Observadas"
+          tone="critical"
+          value={observedCount}
         />
       </section>
 
-      <section className="grid gap-3 lg:grid-cols-4" id="panel-compras">
+      <section className="hidden" id="panel-compras">
         <PurchaseWorkspaceLauncher
           action="Abrir"
           detail={`${purchases.length} registros`}

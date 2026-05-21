@@ -893,19 +893,111 @@ function InvoiceCard({
 function InvoiceConsoleStat({
   detail,
   label,
+  tone = "muted",
   value,
 }: {
   detail: string;
   label: string;
+  tone?: "critical" | "primary" | "success" | "muted";
   value: number | string;
 }) {
+  const toneClass = {
+    critical:
+      "border-rose-300/28 bg-[linear-gradient(180deg,rgba(251,113,133,0.12),rgba(255,255,255,0.028))] ring-rose-300/[0.08]",
+    muted:
+      "border-white/[0.1] bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.024))] ring-white/[0.025]",
+    primary:
+      "border-cyan-300/24 bg-[linear-gradient(180deg,rgba(34,211,238,0.11),rgba(255,255,255,0.026))] ring-cyan-300/[0.07]",
+    success:
+      "border-emerald-300/22 bg-[linear-gradient(180deg,rgba(52,211,153,0.1),rgba(255,255,255,0.026))] ring-emerald-300/[0.06]",
+  }[tone];
+
   return (
-    <div className="rounded-2xl border border-white/[0.14] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-4 shadow-xl shadow-black/20 ring-1 ring-white/[0.035]">
-      <p className="text-sm text-slate-300">{label}</p>
-      <p className="mt-3 break-words text-2xl font-semibold tracking-tight text-white">
+    <div className={`rounded-2xl border p-3.5 shadow-xl shadow-black/16 ring-1 ${toneClass}`}>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+        {label}
+      </p>
+      <p className="mt-2 break-words text-xl font-semibold tracking-tight text-white">
         {value}
       </p>
-      <p className="mt-3 text-xs leading-5 text-slate-500">{detail}</p>
+      <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+    </div>
+  );
+}
+
+function InvoicesWorkspace({
+  collectionSummaries,
+  emptyText = "Ajusta los filtros o crea una venta desde un documento revisado.",
+  invoices,
+  issuerCompanyLabel,
+  journalEntries,
+  options,
+  paymentMethods,
+  periods,
+  redirectTo,
+}: {
+  collectionSummaries: Map<string, CollectionSummary>;
+  emptyText?: string;
+  invoices: Invoice[];
+  issuerCompanyLabel: string;
+  journalEntries: Map<string, JournalEntry>;
+  options: AccountingCorrectionOptions;
+  paymentMethods: PaymentMethod[];
+  periods: AccountingPeriod[];
+  redirectTo: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/15 bg-black/10 p-3 sm:p-4">
+      {invoices.length > 0 ? (
+        <div className="grid gap-3">
+          {invoices.map((invoice, index) => {
+            const title = invoice.counterparty?.name ?? invoice.proveedor;
+
+            return (
+              <details
+                className="group rounded-2xl border border-white/[0.09] bg-white/[0.026] open:border-cyan-300/24 open:bg-cyan-300/[0.035]"
+                key={invoice.id}
+                name="invoice-focus-workspace"
+                open={index === 0}
+              >
+                <summary className="grid cursor-pointer list-none gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {title}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-slate-500">
+                      {invoice.numero_documento ?? "Sin documento"} ·{" "}
+                      {formatMoney(invoice.total, invoice.moneda)}
+                    </p>
+                  </div>
+                  <span className="w-fit rounded-xl border border-white/[0.1] bg-black/20 px-3 py-2 text-xs font-semibold text-slate-300 group-open:border-cyan-300/30 group-open:text-cyan-100">
+                    Trabajar
+                  </span>
+                </summary>
+                <div className="border-t border-white/[0.08] p-3 sm:p-4">
+                  <InvoiceCard
+                    collectionSummary={collectionSummaries.get(invoice.id) ?? null}
+                    invoice={invoice}
+                    issuerCompanyLabel={issuerCompanyLabel}
+                    journalEntry={journalEntries.get(invoice.id) ?? null}
+                    options={options}
+                    paymentMethods={paymentMethods}
+                    period={getInvoicePeriod(invoice, periods)}
+                    redirectTo={redirectTo}
+                  />
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-3xl border border-dashed border-white/[0.12] bg-white/[0.025] p-10 text-center">
+          <p className="text-base font-semibold text-white">
+            Sin ventas para esta vista
+          </p>
+          <p className="mt-2 text-sm text-slate-500">{emptyText}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -960,10 +1052,6 @@ export default async function InvoicesPage({
   const activeCompany = activeContext.activeCompany;
   const issuerCompanyLabel = getInvoiceIssuerCompanyLabel(activeCompany);
   const filteredInvoices = filterInvoices(invoices, activeFilter, searchTerm);
-  const fromDocumentCount = invoices.filter(
-    (invoice) => invoice.source_document_id,
-  ).length;
-  const pendingCount = invoices.filter(isPending).length;
   const approvedCount = invoices.filter((invoice) =>
     hasAccountingStatus(invoice, "approved"),
   ).length;
@@ -1070,22 +1158,26 @@ export default async function InvoicesPage({
         <InvoiceConsoleStat
           detail={activeCompany?.name ?? "Sin empresa activa"}
           label="Ventas"
+          tone="muted"
           value={invoices.length}
         />
         <InvoiceConsoleStat
-          detail={`${observedCount} observadas`}
+          detail="Requieren decision operativa"
+          label="Pendientes"
+          tone="primary"
+          value={pendingReviewCount}
+        />
+        <InvoiceConsoleStat
+          detail="Listas para cobro y contabilidad"
           label="Aprobadas"
+          tone="success"
           value={approvedCount}
         />
         <InvoiceConsoleStat
-          detail="Tienen documento origen"
-          label="Desde documento"
-          value={fromDocumentCount}
-        />
-        <InvoiceConsoleStat
-          detail={`Pendientes ${pendingCount} · por completar ${missingTraceCount}`}
-          label="Por revisar"
-          value={pendingReviewCount}
+          detail={`${missingTraceCount} incompletas`}
+          label="Observadas"
+          tone="critical"
+          value={observedCount}
         />
       </section>
 
@@ -1141,34 +1233,17 @@ export default async function InvoicesPage({
             </div>
           </div>
 
-          <div className="max-h-[58vh] overflow-y-auto p-3 om7-scrollbar sm:p-5">
-            <div className="grid gap-4">
-            {filteredInvoices.length > 0 ? (
-              filteredInvoices.map((invoice) => (
-                <InvoiceCard
-                  collectionSummary={invoiceCollectionMap.get(invoice.id) ?? null}
-                  invoice={invoice}
-                  issuerCompanyLabel={issuerCompanyLabel}
-                  journalEntry={invoiceEntryMap.get(invoice.id) ?? null}
-                  key={invoice.id}
-                  options={correctionOptions}
-                  paymentMethods={paymentMethods}
-                  period={getInvoicePeriod(invoice, periods)}
-                  redirectTo={redirectTo}
-                />
-              ))
-            ) : (
-              <div className="rounded-3xl border border-dashed border-white/[0.12] bg-white/[0.025] p-10 text-center">
-              <p className="text-base font-semibold text-white">
-                  Sin ventas para esta vista
-                </p>
-                <p className="mt-2 text-sm text-slate-500">
-                  Ajusta los filtros o crea una venta desde un documento
-                  revisado.
-                </p>
-              </div>
-            )}
-            </div>
+          <div className="p-3 sm:p-5">
+            <InvoicesWorkspace
+              collectionSummaries={invoiceCollectionMap}
+              invoices={filteredInvoices}
+              issuerCompanyLabel={issuerCompanyLabel}
+              journalEntries={invoiceEntryMap}
+              options={correctionOptions}
+              paymentMethods={paymentMethods}
+              periods={periods}
+              redirectTo={redirectTo}
+            />
           </div>
         </PremiumCard>
       </section>

@@ -1,6 +1,7 @@
 export type DocumentHumanStatusKey =
   | "convertido"
   | "error"
+  | "observado"
   | "procesado"
   | "recibido"
   | "requiere_revision";
@@ -49,9 +50,22 @@ export function getDocumentHumanStatus(document: DocumentUiLike): {
 
   if (
     document.processing_status === "error" ||
-    document.review_status === "rejected" ||
     document.extraction?.extraction_status === "error"
   ) {
+    return {
+      key: "error",
+      label: "Error / requiere atención",
+    };
+  }
+
+  if (document.review_status === "observed") {
+    return {
+      key: "observado",
+      label: "Observado",
+    };
+  }
+
+  if (document.review_status === "rejected") {
     return {
       key: "error",
       label: "Error / requiere atención",

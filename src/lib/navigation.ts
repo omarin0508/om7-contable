@@ -5,7 +5,6 @@ export const navigationItems: NavItem[] = [
   { group: "Principal", label: "Bandeja diaria", href: "/bandeja", icon: "inbox" },
   { group: "Principal", label: "Consulta documentos", href: "/documentos", icon: "documents" },
   { group: "Principal", label: "Gmail XML", href: "/gmail-xml", icon: "inbox" },
-  { group: "Principal", label: "Observados", href: "/observados", icon: "inbox" },
   { group: "Operacion", label: "Compras", href: "/compras", icon: "expenses" },
   { group: "Operacion", label: "Ventas", href: "/facturas", icon: "invoice" },
   { group: "Operacion", label: "Proveedores/Clientes", href: "/contrapartes", icon: "companies" },
