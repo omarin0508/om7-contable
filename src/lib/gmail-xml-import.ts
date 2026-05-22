@@ -26,7 +26,7 @@ const GMAIL_XML_DEFAULT_LIMIT = 20;
 const GMAIL_XML_ALLOWED_LIMITS = [20, 50, 100] as const;
 const GMAIL_XML_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const GMAIL_XML_SCOPES = [
-  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.modify",
   "https://www.googleapis.com/auth/userinfo.email",
 ] as const;
 
