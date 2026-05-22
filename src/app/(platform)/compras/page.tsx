@@ -69,6 +69,7 @@ type PurchasesPageProps = {
     q?: string;
     returnLabel?: string;
     returnTo?: string;
+    mode?: string;
     tab?: string;
   }>;
 };
@@ -96,6 +97,13 @@ const filterLabels: Record<string, string> = {
 };
 
 type PurchaseWorkspaceTab = "summary" | "lines" | "taxes" | "trace" | "history";
+type PurchaseDetailMode = "summary" | "fix_amounts" | "traceability" | "document";
+type PurchaseBlockingIssue =
+  | "amount_mismatch"
+  | "invalid_amounts"
+  | "missing_journal_entry"
+  | "needs_approval"
+  | "none";
 
 const purchaseWorkspaceTabs: Array<{ key: PurchaseWorkspaceTab; label: string }> = [
   { key: "summary", label: "Resumen" },
@@ -1098,6 +1106,7 @@ function getPurchasePeriodValue(purchase: Purchase) {
 
 function buildPurchasesHref({
   filter,
+  mode,
   period,
   provider,
   purchaseId,
@@ -1106,6 +1115,7 @@ function buildPurchasesHref({
   tab,
 }: {
   filter: string;
+  mode?: string;
   period: string;
   provider: string;
   purchaseId?: string;
@@ -1120,6 +1130,7 @@ function buildPurchasesHref({
   if (provider) params.set("provider", provider);
   if (q) params.set("q", q);
   if (purchaseId) params.set("purchase", purchaseId);
+  if (mode && mode !== "summary") params.set("mode", mode);
   if (tab && tab !== "summary") params.set("tab", tab);
 
   const query = params.toString();
@@ -1237,14 +1248,31 @@ function GuidedIssueCard({
   title: string;
 }) {
   return (
-    <div className="grid gap-3 rounded-xl border border-amber-300/18 bg-amber-300/[0.055] p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+    <div className="grid gap-3 rounded-xl border border-amber-300/18 bg-amber-300/[0.055] p-3">
       <div className="min-w-0">
         <p className="text-sm font-semibold text-amber-100">{title}</p>
         <p className="mt-1 text-xs leading-5 text-amber-100/75">{description}</p>
         <p className="mt-1 text-xs leading-5 text-slate-500">{impact}</p>
       </div>
-      <div className="flex shrink-0 justify-start md:justify-end">{action}</div>
+      <div className="flex shrink-0 justify-start">{action}</div>
     </div>
+  );
+}
+
+function SidebarPanel({
+  children,
+  title,
+}: {
+  children: ReactNode;
+  title: string;
+}) {
+  return (
+    <section className="rounded-2xl border border-white/[0.08] bg-white/[0.026] p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+        {title}
+      </p>
+      <div className="mt-3">{children}</div>
+    </section>
   );
 }
 
@@ -1322,6 +1350,40 @@ function getPurchaseAvailableActions({
   };
 }
 
+function getPurchaseBlockingIssue({
+  actions,
+  accountingStatus,
+  purchase,
+  reviewStatus,
+}: {
+  actions: PurchaseAvailableActions;
+  accountingStatus: string;
+  purchase: Purchase;
+  reviewStatus: string;
+}): PurchaseBlockingIssue {
+  if (actions.hasInvalidAmounts) {
+    return "invalid_amounts";
+  }
+
+  if (actions.hasTaxMismatch || actions.hasAccountingError) {
+    return "amount_mismatch";
+  }
+
+  if (reviewStatus === "pending" || reviewStatus === "reviewed") {
+    return "needs_approval";
+  }
+
+  if (
+    ["approved", "reviewed"].includes(reviewStatus) &&
+    !purchase.asiento_contable_id &&
+    accountingStatus !== "contabilizado"
+  ) {
+    return "missing_journal_entry";
+  }
+
+  return "none";
+}
+
 function PurchaseDocumentWindow({
   documentId,
   modalId,
@@ -1361,7 +1423,9 @@ function PurchaseDocumentWindow({
 function PurchaseDetailWorkspace({
   activeTab,
   backHref,
+  detailMode,
   journalEntry,
+  modeHref,
   options,
   paymentMethods,
   paymentSummary,
@@ -1372,7 +1436,9 @@ function PurchaseDetailWorkspace({
 }: {
   activeTab: PurchaseWorkspaceTab;
   backHref: string;
+  detailMode: PurchaseDetailMode;
   journalEntry: JournalEntry | null;
+  modeHref: (mode: PurchaseDetailMode) => string;
   options: AccountingCorrectionOptions;
   paymentMethods: PaymentMethod[];
   paymentSummary: PaymentSummary | null;
@@ -1514,7 +1580,10 @@ function PurchaseDetailWorkspace({
   if (
     ["approved", "reviewed"].includes(reviewStatus) &&
     !purchase.asiento_contable_id &&
-    accountingStatus !== "contabilizado"
+    accountingStatus !== "contabilizado" &&
+    !actions.hasInvalidAmounts &&
+    !actions.hasTaxMismatch &&
+    !actions.hasAccountingError
   ) {
     guidedIssues.push(
       <GuidedIssueCard
@@ -1561,9 +1630,186 @@ function PurchaseDetailWorkspace({
     );
   }
 
+  const reviewTaxesButton = (
+    <Link className="om7-btn-secondary px-3 py-2 text-xs" href={modeHref("fix_amounts")}>
+      Corregir importes
+    </Link>
+  );
+  const blockingIssue = getPurchaseBlockingIssue({
+    actions,
+    accountingStatus,
+    purchase,
+    reviewStatus,
+  });
+  const blockingIssueConfig: Record<
+    PurchaseBlockingIssue,
+    {
+      action: ReactNode;
+      cause: string;
+      problem: string;
+      recommendation: string;
+      state: string;
+    }
+  > = {
+    amount_mismatch: {
+      action: reviewTaxesButton,
+      cause:
+        purchase.contabilizacion_error ??
+        "Hay diferencia entre subtotal, IVA y total, o existe un error contable previo.",
+      problem: actions.hasTaxMismatch ? "Diferencia entre subtotal + IVA y total" : "Error contable detectado",
+      recommendation: "Revise y guarde los importes antes de continuar.",
+      state: "Requiere correccion",
+    },
+    invalid_amounts: {
+      action: reviewTaxesButton,
+      cause: "El XML/documento no cargo subtotal, IVA o total correctamente.",
+      problem: "Total de compra en cero",
+      recommendation: "Revise subtotal, IVA y total antes de contabilizar.",
+      state: "Requiere correccion",
+    },
+    missing_journal_entry: {
+      action: (
+        <PurchaseAccountingForm
+          action={generatePurchaseAccountingEntryAction}
+          className="om7-btn-primary px-3 py-2 text-xs"
+          purchaseId={purchase.id}
+          redirectTo={redirectTo}
+        >
+          Crear asiento
+        </PurchaseAccountingForm>
+      ),
+      cause: "La compra esta aprobada y tiene importes validos, pero aun no impacta contabilidad.",
+      problem: "Asiento contable pendiente",
+      recommendation: "Genere el asiento para registrar el gasto.",
+      state: "Lista para contabilizar",
+    },
+    needs_approval: {
+      action: (
+        <ReviewStatusForm
+          className="om7-btn-secondary px-3 py-2 text-xs"
+          purchaseId={purchase.id}
+          redirectTo={redirectTo}
+          status="approved"
+        >
+          Aprobar compra
+        </ReviewStatusForm>
+      ),
+      cause: "La compra aun no tiene aprobacion operativa final.",
+      problem: "Aprobacion pendiente",
+      recommendation: "Revise los datos principales y apruebe la compra.",
+      state: "Pendiente de revision",
+    },
+    none: {
+      action: null,
+      cause: "No hay bloqueos detectados para esta compra.",
+      problem: "Sin bloqueos operativos",
+      recommendation: "Puede consultar trazabilidad, documento o historial segun necesite.",
+      state: "Operativa",
+    },
+  };
+  const resolution = blockingIssueConfig[blockingIssue];
+  const primaryActions: ReactNode[] = [];
+  const secondaryActions: ReactNode[] = [];
+
+  if (actions.canReviewTaxes) {
+    primaryActions.push(
+      <Link className="om7-btn-primary px-3 py-2 text-xs" href={modeHref("fix_amounts")} key="review-taxes">
+        Corregir importes
+      </Link>,
+    );
+  } else {
+    if (actions.canApprove) {
+      primaryActions.push(
+        <ReviewStatusForm
+          className="om7-btn-primary px-3 py-2 text-xs"
+          key="approve"
+          purchaseId={purchase.id}
+          redirectTo={redirectTo}
+          status="approved"
+        >
+          Aprobar compra
+        </ReviewStatusForm>,
+      );
+    }
+
+    if (canReviewRecord(purchase, period) && !actions.isApproved) {
+      secondaryActions.push(
+        <ReviewStatusForm
+          className="om7-btn-secondary px-3 py-2 text-xs"
+          key="reviewed"
+          purchaseId={purchase.id}
+          redirectTo={redirectTo}
+          status="reviewed"
+        >
+          Marcar revisada
+        </ReviewStatusForm>,
+      );
+    }
+
+    if (actions.canCreateJournalEntry) {
+      primaryActions.push(
+        <PurchaseAccountingForm
+          action={generatePurchaseAccountingEntryAction}
+          className="om7-btn-primary px-3 py-2 text-xs"
+          key="create-entry"
+          purchaseId={purchase.id}
+          redirectTo={redirectTo}
+        >
+          Crear asiento
+        </PurchaseAccountingForm>,
+      );
+    }
+
+    if (actions.canObserve) {
+      secondaryActions.push(
+        <ReviewStatusForm
+          className="om7-btn-ghost px-3 py-2 text-xs"
+          key="observe"
+          purchaseId={purchase.id}
+          redirectTo={redirectTo}
+          status="observed"
+        >
+          Observado
+        </ReviewStatusForm>,
+      );
+    }
+
+    if (actions.canEditAmounts) {
+      secondaryActions.push(
+        <Link className="om7-btn-ghost px-3 py-2 text-xs" href={tabHref("lines")} key="edit">
+          Editar compra
+        </Link>,
+      );
+    }
+  }
+
+  if (actions.canViewDocument && traceDocumentId) {
+    secondaryActions.push(
+      <a className="om7-btn-ghost px-3 py-2 text-xs" href={`#${documentModalId}`} key="document">
+        Ver documento
+      </a>,
+    );
+  }
+
+  if (actions.canViewJournalEntry && purchase.asiento_contable_id) {
+    secondaryActions.push(
+      <Link
+        className="om7-btn-secondary px-3 py-2 text-xs"
+        href={`/contabilidad/asientos/${purchase.asiento_contable_id}`}
+        key="entry"
+      >
+        Ver asiento
+      </Link>,
+    );
+  }
+
+  const amountsDifference =
+    Number(purchase.subtotal ?? 0) + Number(purchase.tax ?? 0) - Number(purchase.total ?? 0);
+  const summaryRedirectTo = modeHref("summary");
+
   return (
-    <section className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3 overflow-hidden">
-      <PremiumCard className="overflow-hidden p-4 sm:p-5">
+    <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3 overflow-hidden">
+      <PremiumCard className="flex-shrink-0 overflow-hidden p-4 sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <Link className="om7-btn-ghost mb-3 inline-flex px-3 py-2 text-sm" href={backHref}>
@@ -1594,99 +1840,97 @@ function PurchaseDetailWorkspace({
               {formatMoney(purchase.total, purchase.currency)}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {actions.canApprove ? (
-              <ReviewStatusForm
-                className="om7-btn-primary px-3 py-2 text-xs"
-                purchaseId={purchase.id}
-                redirectTo={redirectTo}
-                status="approved"
-              >
-                Aprobar compra
-              </ReviewStatusForm>
-            ) : null}
-            {canReviewRecord(purchase, period) && !actions.isApproved ? (
-              <ReviewStatusForm
-                className="om7-btn-secondary px-3 py-2 text-xs"
-                purchaseId={purchase.id}
-                redirectTo={redirectTo}
-                status="reviewed"
-              >
-                Marcar revisada
-              </ReviewStatusForm>
-            ) : null}
-            {actions.canObserve ? (
-              <ReviewStatusForm
-                className="om7-btn-ghost px-3 py-2 text-xs"
-                purchaseId={purchase.id}
-                redirectTo={redirectTo}
-                status="observed"
-              >
-                Observado
-              </ReviewStatusForm>
-            ) : null}
-            {actions.canContabilizar ? (
-              <PurchaseAccountingForm
-                action={generatePurchaseAccountingEntryAction}
-                className="om7-btn-primary px-3 py-2 text-xs"
-                purchaseId={purchase.id}
-                redirectTo={redirectTo}
-              >
-                Crear asiento
-              </PurchaseAccountingForm>
-            ) : null}
-            {actions.canReviewTaxes ? (
-              <Link className="om7-btn-secondary px-3 py-2 text-xs" href={tabHref("taxes")}>
-                Revisar impuestos / montos
-              </Link>
-            ) : null}
-            {actions.canEditAmounts ? (
-              <Link className="om7-btn-ghost px-3 py-2 text-xs" href={tabHref("lines")}>
-                Editar compra
-              </Link>
-            ) : null}
-            {actions.canViewDocument && traceDocumentId ? (
-              <a
-                className="om7-btn-ghost px-3 py-2 text-xs"
-                href={`#${documentModalId}`}
-              >
-                Ver documento
-              </a>
-            ) : null}
-            {actions.canViewJournalEntry && purchase.asiento_contable_id ? (
-              <Link
-                className="om7-btn-secondary px-3 py-2 text-xs"
-                href={`/contabilidad/asientos/${purchase.asiento_contable_id}`}
-              >
-                Ver asiento
-              </Link>
-            ) : null}
+          <div className="flex max-w-xl flex-wrap justify-start gap-2 lg:justify-end">
+            {primaryActions}
           </div>
         </div>
       </PremiumCard>
 
-      {guidedIssues.length > 0 ? (
-        <div className="max-h-44 overflow-y-auto rounded-2xl border border-amber-300/14 bg-black/15 p-2 om7-scrollbar">
-          <div className="mb-2 flex items-center justify-between gap-3 px-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-100/80">
-              Requiere atencion
-            </p>
-            <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2 py-1 text-xs text-amber-100">
-              {guidedIssues.length}
-            </span>
-          </div>
-          <div className="grid gap-2">{guidedIssues}</div>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-emerald-300/14 bg-emerald-300/[0.045] px-3 py-2">
-          <span className="om7-chip om7-chip-emerald">Sin bloqueos operativos</span>
-          <span className="text-xs text-emerald-100/70">
-            La compra no presenta issues accionables en este momento.
-          </span>
-        </div>
-      )}
-
+      <div className="grid min-h-0 grid-cols-1 gap-3 overflow-hidden xl:grid-cols-[minmax(0,1fr)_22rem]">
       <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.026]">
+        {detailMode === "fix_amounts" ? (
+          <>
+            <div className="flex flex-col gap-3 border-b border-white/[0.08] p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <Link className="om7-btn-ghost mb-3 inline-flex px-3 py-2 text-xs" href={modeHref("summary")}>
+                  &lt;- Volver al resumen de compra
+                </Link>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-100/60">
+                  Correccion operativa
+                </p>
+                <h3 className="mt-1 text-xl font-semibold text-white">
+                  Corregir importes e impuestos
+                </h3>
+                <p className="mt-1 truncate text-sm text-slate-500">
+                  {title} · {purchase.document_number ?? "Sin documento"}
+                </p>
+              </div>
+              <span className={actions.hasInvalidAmounts || actions.hasTaxMismatch ? "om7-chip text-amber-100" : "om7-chip om7-chip-emerald"}>
+                {actions.hasInvalidAmounts || actions.hasTaxMismatch ? "Requiere correccion" : "Montos validos"}
+              </span>
+            </div>
+            <div className="min-h-0 overflow-y-auto p-4 sm:p-5 om7-scrollbar">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+                <form
+                  action={updatePurchaseAccountingFieldsAction}
+                  className="rounded-2xl border border-white/[0.08] bg-black/15 p-4"
+                >
+                  <input name="purchaseId" type="hidden" value={purchase.id} />
+                  <input name="redirectTo" type="hidden" value={summaryRedirectTo} />
+                  <div className="mb-4">
+                    <p className="text-sm font-semibold text-white">Importes del comprobante</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      Ajuste subtotal, IVA y total. Al guardar, la compra vuelve al resumen y recalcula sus acciones.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <AccountingAmountCalculator
+                      subtotal={purchase.subtotal}
+                      tax={purchase.tax}
+                      taxFieldName="tax"
+                      taxName="IVA"
+                      total={purchase.total}
+                    />
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <DataCell label="Moneda" value={purchase.currency ?? "CRC"} />
+                    <DataCell label="Tratamiento IVA" value={Number(purchase.tax ?? 0) > 0 ? "IVA detectado" : "Sin IVA detectado"} />
+                  </div>
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <button className="om7-btn-primary px-4 py-2.5 text-sm" type="submit">
+                      Guardar importes
+                    </button>
+                    <Link className="om7-btn-ghost px-4 py-2.5 text-sm" href={modeHref("summary")}>
+                      Cancelar
+                    </Link>
+                  </div>
+                </form>
+
+                <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                    Validacion
+                  </p>
+                  <div className="mt-4 grid gap-3">
+                    <DataCell label="Subtotal + IVA" value={formatMoney(Number(purchase.subtotal ?? 0) + Number(purchase.tax ?? 0), purchase.currency)} />
+                    <DataCell label="Total actual" value={formatMoney(purchase.total, purchase.currency)} />
+                    <DataCell label="Diferencia" value={formatMoney(amountsDifference, purchase.currency)} />
+                    <DataCell
+                      label="Estado"
+                      value={
+                        actions.hasInvalidAmounts
+                          ? "Total en cero"
+                          : actions.hasTaxMismatch
+                            ? "Diferencia pendiente"
+                            : "Cuadrado"
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
         <div className="flex flex-wrap gap-2 border-b border-white/[0.08] p-3">
           {purchaseWorkspaceTabs.map((tab) => (
             <Link
@@ -1866,7 +2110,110 @@ function PurchaseDetailWorkspace({
           ) : null}
           </>
         ) : null}
+        </div>
+          </>
+        )}
       </div>
+
+      <aside className="grid min-h-0 gap-3 overflow-y-auto pr-1 om7-scrollbar xl:max-h-full">
+        <SidebarPanel title="Acciones disponibles">
+          <div className="grid gap-2">
+            {[...primaryActions, ...secondaryActions].length > 0 ? (
+              <>
+                {primaryActions}
+                {secondaryActions}
+              </>
+            ) : (
+              <span className="om7-chip om7-chip-emerald w-fit">
+                Sin acciones pendientes
+              </span>
+            )}
+          </div>
+        </SidebarPanel>
+
+        <SidebarPanel title="Validacion contable">
+          <div className="grid gap-2 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-slate-500">Total</span>
+              <span className={actions.hasInvalidAmounts ? "font-semibold text-amber-100" : "font-semibold text-white"}>
+                {formatMoney(purchase.total, purchase.currency)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-slate-500">Importes</span>
+              <span className={actions.hasTaxMismatch ? "text-amber-100" : "text-emerald-100"}>
+                {actions.hasTaxMismatch ? "Diferencia detectada" : "Cuadrados"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-slate-500">Asiento</span>
+              <span className={actions.isPosted ? "text-emerald-100" : "text-slate-300"}>
+                {actions.isPosted ? "Registrado" : "Pendiente"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-slate-500">Periodo</span>
+              <span className={lockedByPeriod ? "text-amber-100" : "text-slate-300"}>
+                {lockedByPeriod ? "Bloqueado" : "Editable"}
+              </span>
+            </div>
+            {purchase.contabilizacion_error ? (
+              <p className="rounded-xl border border-amber-300/15 bg-amber-300/[0.06] p-3 text-xs leading-5 text-amber-100/80">
+                {purchase.contabilizacion_error}
+              </p>
+            ) : null}
+          </div>
+        </SidebarPanel>
+
+        <SidebarPanel title="Centro de resolucion">
+          <div className="grid gap-3">
+            <div className="rounded-xl border border-white/[0.08] bg-black/20 p-3">
+              <p className="text-xs text-slate-500">Estado actual</p>
+              <p className="mt-1 text-sm font-semibold text-white">{resolution.state}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Problema detectado
+              </p>
+              <p className="mt-1 text-sm font-semibold text-white">{resolution.problem}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Causa probable
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-400">{resolution.cause}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Accion recomendada
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-400">{resolution.recommendation}</p>
+            </div>
+            {resolution.action}
+          </div>
+        </SidebarPanel>
+
+        <SidebarPanel title="Trazabilidad corta">
+          <div className="grid gap-2 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-slate-500">Documento</span>
+              <span className="text-right text-slate-300">
+                {traceDocumentId ? "Vinculado" : "Sin documento"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-slate-500">Origen</span>
+              <span className="text-right text-slate-300">
+                {traceDocumentId ? sourceName : "Manual"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-slate-500">Regla</span>
+              <span className="text-right text-slate-300">{ruleApplied}</span>
+            </div>
+          </div>
+        </SidebarPanel>
+      </aside>
       </div>
       {traceDocumentId ? (
         <PurchaseDocumentWindow
@@ -1971,6 +2318,12 @@ export default async function PurchasesPage({
   const providerFilter = resolvedSearchParams.provider ?? "";
   const selectedPurchaseId = resolvedSearchParams.purchase ?? "";
   const searchTerm = resolvedSearchParams.q ?? "";
+  const detailMode: PurchaseDetailMode =
+    resolvedSearchParams.mode === "fix_amounts" ||
+    resolvedSearchParams.mode === "traceability" ||
+    resolvedSearchParams.mode === "document"
+      ? resolvedSearchParams.mode
+      : "summary";
   const activeTab = purchaseWorkspaceTabs.some(
     (tab) => tab.key === resolvedSearchParams.tab,
   )
@@ -1986,6 +2339,7 @@ export default async function PurchasesPage({
       : "";
   const redirectTo = buildPurchasesHref({
     filter: activeFilter,
+    mode: detailMode,
     period: activePeriod,
     provider: providerFilter,
     purchaseId: selectedPurchaseId,
@@ -2069,12 +2423,23 @@ export default async function PurchasesPage({
   const hrefForTab = (tab: PurchaseWorkspaceTab) =>
     buildPurchasesHref({
       filter: activeFilter,
+      mode: "summary",
       period: activePeriod,
       provider: providerFilter,
       purchaseId: selectedPurchaseId,
       q: searchTerm,
       returnQuery,
       tab,
+    });
+  const hrefForMode = (mode: PurchaseDetailMode) =>
+    buildPurchasesHref({
+      filter: activeFilter,
+      mode,
+      period: activePeriod,
+      provider: providerFilter,
+      purchaseId: selectedPurchaseId,
+      q: searchTerm,
+      returnQuery,
     });
   const missingTraceCount = purchases.filter(
     (purchase) => !purchase.counterparty_id || !purchase.source_document_id,
@@ -2101,6 +2466,7 @@ export default async function PurchasesPage({
   return (
     <ModuleFrame>
       <div className="flex h-[calc(100dvh-7rem)] min-h-[34rem] flex-col overflow-hidden">
+        {!selectedPurchase ? (
         <header className="flex-shrink-0 rounded-2xl border border-white/[0.08] bg-[#06101c]/95 p-3 shadow-xl shadow-black/20 sm:p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
@@ -2127,6 +2493,7 @@ export default async function PurchasesPage({
             </div>
           </div>
         </header>
+        ) : null}
 
         {actionError ? (
           <PremiumCard className="mt-3 flex-shrink-0 border-amber-300/15 bg-amber-300/[0.08] p-4">
@@ -2150,12 +2517,14 @@ export default async function PurchasesPage({
           </PremiumCard>
         ) : null}
 
-        <div className="mt-3 min-h-0 flex-1 overflow-hidden">
+        <div className={selectedPurchase ? "min-h-0 flex-1 overflow-hidden" : "mt-3 min-h-0 flex-1 overflow-hidden"}>
       {selectedPurchase ? (
           <PurchaseDetailWorkspace
             activeTab={activeTab}
             backHref={backHref}
+            detailMode={detailMode}
             journalEntry={purchaseEntryMap.get(selectedPurchase.id) ?? null}
+            modeHref={hrefForMode}
             options={correctionOptions}
             paymentMethods={paymentMethods}
             paymentSummary={purchasePaymentMap.get(selectedPurchase.id) ?? null}
