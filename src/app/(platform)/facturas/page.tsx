@@ -70,11 +70,23 @@ type InvoicesPageProps = {
   searchParams?: Promise<{
     error?: string;
     filter?: string;
+    invoice?: string;
     q?: string;
     returnLabel?: string;
     returnTo?: string;
+    tab?: string;
   }>;
 };
+
+type InvoiceWorkspaceTab = "summary" | "lines" | "taxes" | "trace" | "history";
+
+const invoiceWorkspaceTabs: Array<{ key: InvoiceWorkspaceTab; label: string }> = [
+  { key: "summary", label: "Resumen" },
+  { key: "lines", label: "Lineas" },
+  { key: "taxes", label: "Impuestos" },
+  { key: "trace", label: "Trazabilidad" },
+  { key: "history", label: "Historial" },
+];
 
 const statusLabels: Record<string, string> = {
   archivada: "Archivada",
@@ -252,6 +264,62 @@ function filterInvoices(invoices: Invoice[], filter: string, searchTerm: string)
 
     return matchesSearch && matchesFilter;
   });
+}
+
+function buildInvoicesHref({
+  filter,
+  invoiceId,
+  q,
+  returnQuery,
+  tab,
+}: {
+  filter: string;
+  invoiceId?: string;
+  q: string;
+  returnQuery: string;
+  tab?: string;
+}) {
+  const params = new URLSearchParams();
+
+  if (filter && filter !== "all") params.set("filter", filter);
+  if (q) params.set("q", q);
+  if (invoiceId) params.set("invoice", invoiceId);
+  if (tab && tab !== "summary") params.set("tab", tab);
+
+  const query = params.toString();
+  const returnSuffix = returnQuery ? `${query ? "&" : "?"}${returnQuery.slice(1)}` : "";
+
+  return `/facturas${query ? `?${query}` : ""}${returnSuffix}`;
+}
+
+function InvoiceDataCell({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_0_rgba(0,0,0,0.18)] ring-1 ring-white/[0.035]">
+      <p className="text-xs font-medium text-slate-400">{label}</p>
+      <div className="mt-1 break-words text-sm font-semibold text-white">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function InvoiceSidebarPanel({
+  children,
+  className = "",
+  title,
+}: {
+  children: ReactNode;
+  className?: string;
+  title: string;
+}) {
+  return (
+    <section className={`min-w-0 rounded-2xl border border-white/[0.1] bg-white/[0.04] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${className}`}>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+        {title}
+      </p>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
 }
 
 function ReviewStatusForm({
@@ -925,6 +993,461 @@ function InvoiceConsoleStat({
   );
 }
 
+function InvoiceResultsTable({
+  hrefForInvoice,
+  invoices,
+}: {
+  hrefForInvoice: (invoiceId: string) => string;
+  invoices: Invoice[];
+}) {
+  return (
+    <div className="h-full min-h-0 overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10">
+      <div className="grid grid-cols-[minmax(0,1.5fr)_120px_120px_120px_auto] gap-3 border-b border-white/[0.08] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 max-lg:hidden">
+        <span>Cliente</span>
+        <span>Fecha</span>
+        <span>Total</span>
+        <span>Estado</span>
+        <span />
+      </div>
+      <div className="h-full min-h-0 overflow-y-auto p-2 om7-scrollbar">
+        {invoices.length > 0 ? (
+          <div className="grid gap-2">
+            {invoices.map((invoice) => {
+              const title = invoice.counterparty?.name ?? invoice.proveedor;
+
+              return (
+                <Link
+                  className="grid gap-3 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-3 transition hover:border-emerald-300/24 hover:bg-emerald-300/[0.055] lg:grid-cols-[minmax(0,1.5fr)_120px_120px_120px_auto] lg:items-center"
+                  href={hrefForInvoice(invoice.id)}
+                  key={invoice.id}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">{title}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">
+                      {invoice.numero_documento ?? "Sin documento"} · {invoice.tipo_documento ?? "factura"}
+                    </p>
+                  </div>
+                  <span className="text-sm text-slate-400">{invoice.fecha ?? "Sin fecha"}</span>
+                  <span className="text-sm font-semibold text-slate-100">
+                    {formatMoney(invoice.total, invoice.moneda)}
+                  </span>
+                  <span className={getReviewStatusBadgeClass(invoice.review_status)}>
+                    {getReviewStatusLabel(invoice.review_status)}
+                  </span>
+                  <span className="w-fit rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-emerald-100">
+                    Revisar
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/[0.12] bg-white/[0.025] p-10 text-center">
+            <div>
+              <p className="text-base font-semibold text-white">Sin ventas para esta vista</p>
+              <p className="mt-2 text-sm text-slate-500">
+                Ajusta los filtros o registra una venta desde documentos.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InvoiceDetailWorkspace({
+  activeTab,
+  backHref,
+  collectionSummary,
+  invoice,
+  issuerCompanyLabel,
+  journalEntry,
+  options,
+  paymentMethods,
+  period,
+  redirectTo,
+  tabHref,
+}: {
+  activeTab: InvoiceWorkspaceTab;
+  backHref: string;
+  collectionSummary: CollectionSummary | null;
+  invoice: Invoice;
+  issuerCompanyLabel: string;
+  journalEntry: JournalEntry | null;
+  options: AccountingCorrectionOptions;
+  paymentMethods: PaymentMethod[];
+  period: AccountingPeriod | null;
+  redirectTo: string;
+  tabHref: (tab: InvoiceWorkspaceTab) => string;
+}) {
+  const title = invoice.counterparty?.name ?? invoice.proveedor;
+  const accountingStatus = invoice.estado_contable ?? "pendiente";
+  const traceDocumentId = getInvoiceTraceDocumentId(invoice);
+  const sourceName =
+    invoice.source_document?.display_name ??
+    invoice.source_document?.original_filename ??
+    "Documento procesado";
+  const ruleApplied =
+    invoice.classification_rule_applied ??
+    getConversionMetadataValue(
+      invoice.conversion_metadata,
+      "classification_rule_applied",
+      "Sin regla registrada",
+    );
+  const lockedByPeriod = isRecordLockedByPeriod(period);
+  const collectedAmount = collectionSummary?.amount ?? 0;
+  const collectionStatus = getCollectionStatusKey(invoice.total, collectedAmount);
+  const collectionLabel = getCollectionStatusLabel(invoice.total, collectedAmount);
+  const remainingAmount = getRemainingAmount(invoice.total, collectedAmount);
+  const total = Number(invoice.total ?? 0);
+  const subtotal = Number(invoice.subtotal ?? 0);
+  const tax = Number(invoice.impuesto ?? 0);
+  const hasInvalidAmounts = !Number.isFinite(total) || total <= 0;
+  const hasTaxMismatch =
+    Number.isFinite(subtotal) &&
+    Number.isFinite(tax) &&
+    Number.isFinite(total) &&
+    total > 0 &&
+    Math.abs(subtotal + tax - total) > 1;
+  const isPosted =
+    accountingStatus === "contabilizado" ||
+    journalEntry?.status === "posted" ||
+    Boolean(invoice.asiento_contable_id);
+  const canCreateEntry =
+    !lockedByPeriod &&
+    !isPosted &&
+    !hasInvalidAmounts &&
+    !hasTaxMismatch &&
+    !invoice.contabilizacion_error &&
+    ["reviewed", "approved"].includes(String(invoice.review_status ?? ""));
+  const resolution = hasInvalidAmounts
+    ? {
+        action: (
+          <Link className="om7-btn-primary justify-center px-3 py-2 text-xs" href={tabHref("taxes")}>
+            Corregir importes
+          </Link>
+        ),
+        state: "Requiere correccion",
+        problem: "Total de venta en cero",
+        recommendation: "Revise subtotal, IVA y total antes de contabilizar.",
+      }
+    : hasTaxMismatch || invoice.contabilizacion_error
+      ? {
+          action: (
+            <Link className="om7-btn-primary justify-center px-3 py-2 text-xs" href={tabHref("taxes")}>
+              Revisar impuestos
+            </Link>
+          ),
+          state: "Requiere correccion",
+          problem: hasTaxMismatch ? "Diferencia en importes" : "Error contable",
+          recommendation: invoice.contabilizacion_error ?? "Cuadre los importes antes de continuar.",
+        }
+      : String(invoice.review_status ?? "pending") !== "approved"
+        ? {
+            action: canApproveRecord(invoice, period) ? (
+              <ReviewStatusForm
+                className="om7-btn-secondary justify-center px-3 py-2 text-xs"
+                invoiceId={invoice.id}
+                redirectTo={redirectTo}
+                status="approved"
+              >
+                Aprobar venta
+              </ReviewStatusForm>
+            ) : null,
+            state: "Pendiente de revision",
+            problem: "Aprobacion pendiente",
+            recommendation: "Revise los datos principales y apruebe la venta.",
+          }
+        : canCreateEntry
+          ? {
+              action: (
+                <InvoiceAccountingForm
+                  action={generateInvoiceAccountingEntryAction}
+                  className="om7-btn-primary justify-center px-3 py-2 text-xs"
+                  invoiceId={invoice.id}
+                  redirectTo={redirectTo}
+                >
+                  Crear asiento
+                </InvoiceAccountingForm>
+              ),
+              state: "Lista para contabilizar",
+              problem: "Asiento pendiente",
+              recommendation: "Genere el asiento para registrar el ingreso.",
+            }
+          : {
+              action: null,
+              state: "Operativa",
+              problem: "Sin bloqueos operativos",
+              recommendation: "Consulte trazabilidad, cobros o historial segun necesite.",
+            };
+
+  return (
+    <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3 overflow-hidden">
+      <PremiumCard className="flex-shrink-0 overflow-hidden p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <Link className="om7-btn-ghost mb-3 inline-flex px-3 py-2 text-sm" href={backHref}>
+              &lt;- Volver a ventas
+            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={getReviewStatusBadgeClass(invoice.review_status)}>
+                {getReviewStatusLabel(invoice.review_status)}
+              </span>
+              <span className={getInvoiceAccountingStatusClass(accountingStatus)}>
+                {getInvoiceAccountingStatusLabel(accountingStatus)}
+              </span>
+              <span className={getMovementStatusBadgeClass(collectionStatus)}>
+                {collectionLabel}
+              </span>
+              {traceDocumentId ? (
+                <span className="om7-chip om7-chip-cyan">Con documento</span>
+              ) : (
+                <span className="om7-chip text-slate-400">Manual</span>
+              )}
+            </div>
+            <h2 className="mt-4 max-w-5xl break-words text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+              {title}
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              {invoice.numero_documento ?? "Sin documento"} · {invoice.fecha ?? "Sin fecha"} ·{" "}
+              {formatMoney(invoice.total, invoice.moneda)}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {hasInvalidAmounts || hasTaxMismatch || invoice.contabilizacion_error ? (
+              <Link className="om7-btn-primary px-3 py-2 text-xs" href={tabHref("taxes")}>
+                Corregir importes
+              </Link>
+            ) : canCreateEntry ? (
+              <InvoiceAccountingForm
+                action={generateInvoiceAccountingEntryAction}
+                className="om7-btn-primary px-3 py-2 text-xs"
+                invoiceId={invoice.id}
+                redirectTo={redirectTo}
+              >
+                Crear asiento
+              </InvoiceAccountingForm>
+            ) : invoice.asiento_contable_id ? (
+              <Link
+                className="om7-btn-secondary px-3 py-2 text-xs"
+                href={`/contabilidad/asientos/${invoice.asiento_contable_id}`}
+              >
+                Ver asiento
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      </PremiumCard>
+
+      <div className="grid min-h-0 grid-cols-1 gap-3 overflow-hidden xl:grid-cols-[minmax(0,1fr)_minmax(18rem,20rem)]">
+        <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.026]">
+          <div className="flex flex-wrap gap-2 border-b border-white/[0.08] p-3">
+            {invoiceWorkspaceTabs.map((tab) => (
+              <Link
+                className={[
+                  "rounded-full border px-3 py-2 text-xs font-semibold transition",
+                  activeTab === tab.key
+                    ? "border-emerald-300/34 bg-emerald-300/12 text-emerald-100"
+                    : "border-white/[0.08] bg-white/[0.035] text-slate-400 hover:text-white",
+                ].join(" ")}
+                href={tabHref(tab.key)}
+                key={tab.key}
+              >
+                {tab.label}
+              </Link>
+            ))}
+          </div>
+          <div className="min-h-0 overflow-y-auto p-4 om7-scrollbar">
+            {activeTab === "summary" ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <InvoiceDataCell label="Cliente" value={title} />
+                  <InvoiceDataCell label="Emisor" value={issuerCompanyLabel} />
+                  <InvoiceDataCell label="Documento" value={invoice.numero_documento ?? "Sin numero"} />
+                  <InvoiceDataCell label="Periodo" value={getInvoicePeriodLabel(invoice)} />
+                  <InvoiceDataCell label="Total" value={formatMoney(invoice.total, invoice.moneda)} />
+                  <InvoiceDataCell label="Cobro" value={`${collectionLabel} · ${formatMoney(collectedAmount, invoice.moneda)}`} />
+                  <InvoiceDataCell label="Saldo" value={formatMoney(remainingAmount, invoice.moneda)} />
+                  <InvoiceDataCell label="Contraparte" value={invoice.counterparty?.name ?? "Sin contraparte"} />
+                </div>
+                <p className="mt-4 text-sm leading-6 text-slate-500">
+                  {getRecordBusinessStateDescription(invoice, period)}
+                </p>
+              </>
+            ) : null}
+
+            {activeTab === "lines" ? (
+              <form
+                action={updateInvoiceAccountingFieldsAction}
+                className="grid gap-4 rounded-2xl border border-white/[0.12] bg-white/[0.035] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] md:grid-cols-3"
+              >
+                <input name="invoiceId" type="hidden" value={invoice.id} />
+                <input name="redirectTo" type="hidden" value={redirectTo} />
+                <div className="md:col-span-3">
+                  <p className="text-sm font-semibold text-white">Lineas y clasificacion</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Ajuste cliente, documento, tipo y cuenta contable sugerida.
+                  </p>
+                </div>
+                <label className="block md:col-span-2">
+                  <span className="text-xs font-medium text-slate-300">Cliente / receptor</span>
+                  <input className="mt-1.5 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 text-sm text-white outline-none ring-1 ring-white/[0.035] focus:border-emerald-300/45" defaultValue={invoice.proveedor ?? ""} name="proveedor" required />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-300">Documento</span>
+                  <input className="mt-1.5 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 text-sm text-white outline-none ring-1 ring-white/[0.035] focus:border-emerald-300/45" defaultValue={invoice.numero_documento ?? ""} name="numeroDocumento" />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-300">Tipo</span>
+                  <input className="mt-1.5 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 text-sm text-white outline-none ring-1 ring-white/[0.035] focus:border-emerald-300/45" defaultValue={invoice.tipo_documento ?? "factura"} list={`invoice-workspace-types-${invoice.id}`} name="tipoDocumento" />
+                  <datalist id={`invoice-workspace-types-${invoice.id}`}>
+                    {(options.saleTypes.length > 0
+                      ? options.saleTypes
+                      : invoiceTypeOptions.map((value) => ({ label: value, value }))
+                    ).map((type) => (
+                      <option key={type.value} label={type.label} value={type.value} />
+                    ))}
+                  </datalist>
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-300">Cuenta sugerida</span>
+                  <input className="mt-1.5 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 text-sm text-white outline-none ring-1 ring-white/[0.035] focus:border-emerald-300/45" defaultValue={invoice.suggested_account ?? ""} list={`invoice-workspace-accounts-${invoice.id}`} name="suggestedAccount" />
+                  <datalist id={`invoice-workspace-accounts-${invoice.id}`}>
+                    {options.accounts.map((account) => (
+                      <option key={account.value} label={account.label} value={account.value} />
+                    ))}
+                  </datalist>
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-300">Fecha</span>
+                  <input className="mt-1.5 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 text-sm text-white outline-none ring-1 ring-white/[0.035] focus:border-emerald-300/45" defaultValue={invoice.fecha ?? ""} name="fecha" type="date" />
+                </label>
+                <label className="block md:col-span-3">
+                  <span className="text-xs font-medium text-slate-300">Notas</span>
+                  <textarea className="mt-1.5 min-h-24 w-full rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 py-2 text-sm text-white outline-none ring-1 ring-white/[0.035] focus:border-emerald-300/45" defaultValue={invoice.notas ?? ""} name="notas" />
+                </label>
+                <button className="om7-btn-secondary w-fit px-3 py-2 text-xs md:col-span-3" type="submit">
+                  Guardar cambios
+                </button>
+              </form>
+            ) : null}
+
+            {activeTab === "taxes" ? (
+              <form action={updateInvoiceAccountingFieldsAction} className="grid gap-3 rounded-2xl border border-white/[0.12] bg-white/[0.035] p-4 md:grid-cols-3">
+                <input name="invoiceId" type="hidden" value={invoice.id} />
+                <input name="redirectTo" type="hidden" value={redirectTo} />
+                <AccountingAmountCalculator
+                  subtotal={invoice.subtotal}
+                  tax={invoice.impuesto}
+                  taxFieldName="impuesto"
+                  taxName="Impuesto"
+                  total={invoice.total}
+                />
+                <button className="om7-btn-secondary w-fit px-3 py-2 text-xs md:col-span-3" type="submit">
+                  Guardar importes
+                </button>
+              </form>
+            ) : null}
+
+            {activeTab === "trace" ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <InvoiceDataCell label="Origen" value={traceDocumentId ? sourceName : "Registro manual"} />
+                  <InvoiceDataCell label="Regla" value={ruleApplied} />
+                  <InvoiceDataCell label="Confianza" value={formatConfidence(invoice.classification_confidence) ?? "Sin IA"} />
+                  <InvoiceDataCell label="E7 Mind" value={hasE7MindTrace(invoice.conversion_metadata) ? "Sincronizado" : "Sin sincronizacion"} />
+                </div>
+                {journalEntry ? (
+                  <div className="mt-4">
+                    <JournalEntryCard
+                      currency={invoice.moneda}
+                      entry={journalEntry}
+                      locked={lockedByPeriod}
+                      lockedReason="Periodo cerrado. El asiento queda solo lectura."
+                      redirectTo={redirectTo}
+                      sourceId={invoice.id}
+                      sourceType="invoice"
+                    />
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            {activeTab === "history" ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <InvoiceDataCell label="Creada" value={invoice.created_at ?? "Sin fecha"} />
+                  <InvoiceDataCell label="Revision" value={getReviewStatusLabel(invoice.review_status)} />
+                  <InvoiceDataCell label="Contabilidad" value={getInvoiceAccountingStatusLabel(accountingStatus)} />
+                  <InvoiceDataCell label="Estado" value={statusLabels[invoice.estado] ?? invoice.estado} />
+                </div>
+                <InvoiceCollectionForm
+                  collected={collectedAmount}
+                  invoice={invoice}
+                  locked={lockedByPeriod}
+                  methods={paymentMethods}
+                  redirectTo={redirectTo}
+                />
+              </>
+            ) : null}
+          </div>
+        </div>
+
+        <aside className="grid min-h-0 min-w-0 content-start gap-3 overflow-hidden">
+          <InvoiceSidebarPanel className="border-emerald-300/16 bg-emerald-300/[0.045]" title="Centro de resolucion">
+            <div className="grid gap-3">
+              <div className="rounded-xl border border-white/[0.1] bg-white/[0.055] p-3">
+                <p className="text-xs text-slate-400">Estado actual</p>
+                <p className="mt-1 text-sm font-semibold text-white">{resolution.state}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Problema detectado</p>
+                <p className="mt-1 text-sm font-semibold text-white">{resolution.problem}</p>
+              </div>
+              <p className="text-xs leading-5 text-slate-400">{resolution.recommendation}</p>
+              <div className="[&_a]:w-full [&_a]:justify-center [&_button]:w-full">
+                {resolution.action}
+              </div>
+            </div>
+          </InvoiceSidebarPanel>
+
+          <InvoiceSidebarPanel title="Estado y cobro">
+            <div className="grid gap-2 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">Total</span>
+                <span className={hasInvalidAmounts ? "font-semibold text-amber-100" : "font-semibold text-white"}>
+                  {formatMoney(invoice.total, invoice.moneda)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">Cobro</span>
+                <span className="text-emerald-100">{collectionLabel}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">Saldo</span>
+                <span className="text-slate-300">{formatMoney(remainingAmount, invoice.moneda)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">Asiento</span>
+                <span className={isPosted ? "text-emerald-100" : "text-slate-300"}>
+                  {isPosted ? "Registrado" : "Pendiente"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">Documento</span>
+                <span className="text-right text-slate-300">
+                  {traceDocumentId ? "Vinculado" : "Sin documento"}
+                </span>
+              </div>
+            </div>
+          </InvoiceSidebarPanel>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 function InvoicesWorkspace({
   collectionSummaries,
   emptyText = "Ajusta los filtros o crea una venta desde un documento revisado.",
@@ -1008,7 +1531,13 @@ export default async function InvoicesPage({
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const activeFilter = resolvedSearchParams.filter ?? "all";
   const actionError = resolvedSearchParams.error ?? null;
+  const selectedInvoiceId = resolvedSearchParams.invoice ?? "";
   const searchTerm = resolvedSearchParams.q ?? "";
+  const activeTab = invoiceWorkspaceTabs.some(
+    (tab) => tab.key === resolvedSearchParams.tab,
+  )
+    ? (resolvedSearchParams.tab as InvoiceWorkspaceTab)
+    : "summary";
   const returnTo = resolvedSearchParams.returnTo?.startsWith("/")
     ? resolvedSearchParams.returnTo
     : "/dashboard";
@@ -1017,9 +1546,13 @@ export default async function InvoicesPage({
     returnTo !== "/dashboard"
       ? `&returnTo=${encodeURIComponent(returnTo)}&returnLabel=${encodeURIComponent(returnLabel)}`
       : "";
-  const redirectTo = `/facturas?filter=${activeFilter}${
-    searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ""
-  }${returnQuery}`;
+  const redirectTo = buildInvoicesHref({
+    filter: activeFilter,
+    invoiceId: selectedInvoiceId,
+    q: searchTerm,
+    returnQuery,
+    tab: activeTab,
+  });
   const [
     { activeContext, invoices },
     periodsResult,
@@ -1052,6 +1585,29 @@ export default async function InvoicesPage({
   const activeCompany = activeContext.activeCompany;
   const issuerCompanyLabel = getInvoiceIssuerCompanyLabel(activeCompany);
   const filteredInvoices = filterInvoices(invoices, activeFilter, searchTerm);
+  const selectedInvoice = selectedInvoiceId
+    ? invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? null
+    : null;
+  const backHref = buildInvoicesHref({
+    filter: activeFilter,
+    q: searchTerm,
+    returnQuery,
+  });
+  const hrefForInvoice = (invoiceId: string) =>
+    buildInvoicesHref({
+      filter: activeFilter,
+      invoiceId,
+      q: searchTerm,
+      returnQuery,
+    });
+  const hrefForTab = (tab: InvoiceWorkspaceTab) =>
+    buildInvoicesHref({
+      filter: activeFilter,
+      invoiceId: selectedInvoiceId,
+      q: searchTerm,
+      returnQuery,
+      tab,
+    });
   const approvedCount = invoices.filter((invoice) =>
     hasAccountingStatus(invoice, "approved"),
   ).length;
@@ -1064,9 +1620,189 @@ export default async function InvoicesPage({
   const pendingReviewCount = invoices.filter((invoice) =>
     hasAccountingStatus(invoice, "pending"),
   ).length;
+  const headerMetrics = [
+    { label: "ventas", value: invoices.length },
+    { label: "pendientes", value: pendingReviewCount },
+    { label: "aprobadas", value: approvedCount },
+    { label: "observadas", value: observedCount },
+  ];
 
   return (
     <ModuleFrame>
+      <div className="flex h-[calc(100dvh-7rem)] min-h-[34rem] flex-col overflow-hidden">
+        {!selectedInvoice ? (
+          <header className="flex-shrink-0 rounded-2xl border border-white/[0.08] bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.026))] p-4 shadow-2xl shadow-black/20 sm:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Consola operativa
+                </p>
+                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
+                  Ventas
+                </h1>
+                <p className="mt-1 max-w-2xl text-sm text-slate-500">
+                  Revisa ingresos, clientes, cobros y trazabilidad sin salir del workspace.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <BackLink href={returnTo} label={returnLabel} />
+                <Link className="om7-btn-primary px-4 py-2.5" href="/facturas/nueva">
+                  Nueva venta
+                </Link>
+                <Link className="om7-btn-secondary px-4 py-2.5" href="/facturas">
+                  Refrescar
+                </Link>
+              </div>
+            </div>
+          </header>
+        ) : null}
+
+        {actionError ? (
+          <PremiumCard className="mt-3 flex-shrink-0 border-amber-300/15 bg-amber-300/[0.08] p-4">
+            <p className="text-sm font-semibold text-amber-100">
+              No se pudo completar la accion
+            </p>
+            <p className="mt-1 text-sm leading-6 text-amber-100/75">
+              {actionError}
+            </p>
+          </PremiumCard>
+        ) : null}
+
+        {!activeCompany ? (
+          <PremiumCard className="mt-3 flex-shrink-0 border-amber-300/15 bg-amber-300/10 p-5">
+            <p className="text-sm font-medium text-amber-100">
+              Selecciona una empresa activa
+            </p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-100/75">
+              Las ventas deben registrarse bajo una empresa. Ve a Empresas y usa
+              el boton Usar como activa para definir el contexto de trabajo.
+            </p>
+            <Link
+              className="mt-4 inline-flex rounded-xl border border-amber-200/20 bg-black/15 px-4 py-2 text-sm font-medium text-amber-100 transition hover:bg-black/25"
+              href="/empresas"
+            >
+              Ir a empresas
+            </Link>
+          </PremiumCard>
+        ) : null}
+
+        <div className={`${selectedInvoice ? "" : "mt-3"} min-h-0 flex-1 overflow-hidden`}>
+          {selectedInvoice ? (
+            <InvoiceDetailWorkspace
+              activeTab={activeTab}
+              backHref={backHref}
+              collectionSummary={invoiceCollectionMap.get(selectedInvoice.id) ?? null}
+              invoice={selectedInvoice}
+              issuerCompanyLabel={issuerCompanyLabel}
+              journalEntry={invoiceEntryMap.get(selectedInvoice.id) ?? null}
+              options={correctionOptions}
+              paymentMethods={paymentMethods}
+              period={getInvoicePeriod(selectedInvoice, periods)}
+              redirectTo={redirectTo}
+              tabHref={hrefForTab}
+            />
+          ) : (
+            <PremiumCard className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-white/[0.16] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.032))] p-4 shadow-2xl shadow-black/25 ring-1 ring-cyan-300/[0.04] sm:p-5">
+              <div className="min-h-0">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                  <form
+                    className="grid min-w-0 flex-1 gap-2 md:grid-cols-[minmax(0,1fr)_180px_120px]"
+                    method="get"
+                  >
+                    <input
+                      className="h-11 min-w-0 rounded-xl border border-white/[0.12] bg-white/[0.06] px-4 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/45 focus:ring-4 focus:ring-cyan-300/10"
+                      defaultValue={searchTerm}
+                      name="q"
+                      placeholder="Buscar venta..."
+                    />
+                    <select
+                      className="h-11 rounded-xl border border-white/[0.12] bg-white/[0.06] px-3 text-sm font-semibold text-white outline-none focus:border-cyan-300/45"
+                      defaultValue={activeFilter}
+                      name="filter"
+                    >
+                      {Object.entries(filterLabels).map(([filter, label]) => (
+                        <option className="bg-slate-950" key={filter} value={filter}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                    <button className="om7-btn-secondary h-11 px-4" type="submit">
+                      Buscar
+                    </button>
+                  </form>
+                  <div className="flex flex-wrap gap-2">
+                    {headerMetrics.map((metric) => (
+                      <span
+                        className="rounded-full border border-white/[0.1] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-300"
+                        key={metric.label}
+                      >
+                        <span className="text-white">{metric.value}</span>{" "}
+                        {metric.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <details className="mt-3 rounded-2xl border border-white/[0.08] bg-black/10 p-3">
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Filtros avanzados
+                  </summary>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {[
+                      ["all", "Todas"],
+                      ["accounting_pending", "Pendientes"],
+                      ["accounting_approved", "Aprobadas"],
+                      ["accounting_observed", "Observadas"],
+                      ["document", "Desde XML"],
+                      ["missing_counterparty", "Por completar"],
+                    ].map(([filter, label]) => (
+                      <Link
+                        className={[
+                          "rounded-full border px-3 py-2 text-xs font-semibold transition",
+                          activeFilter === filter
+                            ? "border-cyan-300/30 bg-cyan-300/12 text-cyan-100"
+                            : "border-white/[0.08] bg-white/[0.04] text-slate-400 hover:text-white",
+                        ].join(" ")}
+                        href={buildInvoicesHref({
+                          filter,
+                          q: searchTerm,
+                          returnQuery,
+                        })}
+                        key={filter}
+                      >
+                        {label}
+                      </Link>
+                    ))}
+                  </div>
+                </details>
+              </div>
+
+              <section className="mt-4 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10 p-3">
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      Ventas registradas
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {filteredInvoices.length} de {invoices.length} visibles
+                      {missingTraceCount ? ` - ${missingTraceCount} por completar` : ""}
+                    </p>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Selecciona una fila para abrir el workspace.
+                  </p>
+                </div>
+                <InvoiceResultsTable
+                  hrefForInvoice={hrefForInvoice}
+                  invoices={filteredInvoices}
+                />
+              </section>
+            </PremiumCard>
+          )}
+        </div>
+      </div>
+
+      <div className="hidden">
       <ModuleHeader
         title="Ventas"
         description="Consola operativa para revisar ingresos, clientes, cobros y trazabilidad."
@@ -1247,6 +1983,7 @@ export default async function InvoicesPage({
           </div>
         </PremiumCard>
       </section>
+      </div>
     </ModuleFrame>
   );
 }
