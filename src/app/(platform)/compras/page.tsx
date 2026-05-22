@@ -63,6 +63,7 @@ type PurchasesPageProps = {
   searchParams?: Promise<{
     error?: string;
     filter?: string;
+    new?: string;
     period?: string;
     provider?: string;
     purchase?: string;
@@ -1105,6 +1106,7 @@ function getPurchasePeriodValue(purchase: Purchase) {
 }
 
 function buildPurchasesHref({
+  create,
   filter,
   mode,
   period,
@@ -1114,6 +1116,7 @@ function buildPurchasesHref({
   returnQuery,
   tab,
 }: {
+  create?: boolean;
   filter: string;
   mode?: string;
   period: string;
@@ -1129,6 +1132,7 @@ function buildPurchasesHref({
   if (period && period !== "all") params.set("period", period);
   if (provider) params.set("provider", provider);
   if (q) params.set("q", q);
+  if (create) params.set("new", "1");
   if (purchaseId) params.set("purchase", purchaseId);
   if (mode && mode !== "summary") params.set("mode", mode);
   if (tab && tab !== "summary") params.set("tab", tab);
@@ -1227,9 +1231,9 @@ function PurchaseResultsTable({
 
 function DataCell({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="rounded-xl border border-white/[0.07] bg-black/15 px-3 py-2">
-      <p className="text-xs text-slate-500">{label}</p>
-      <div className="mt-1 break-words text-sm font-semibold text-slate-100">
+    <div className="rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_0_rgba(0,0,0,0.18)] ring-1 ring-white/[0.035]">
+      <p className="text-xs font-medium text-slate-400">{label}</p>
+      <div className="mt-1 break-words text-sm font-semibold text-white">
         {value}
       </div>
     </div>
@@ -1261,13 +1265,15 @@ function GuidedIssueCard({
 
 function SidebarPanel({
   children,
+  className = "",
   title,
 }: {
   children: ReactNode;
+  className?: string;
   title: string;
 }) {
   return (
-    <section className="rounded-2xl border border-white/[0.08] bg-white/[0.026] p-4">
+    <section className={`min-w-0 rounded-2xl border border-white/[0.1] bg-white/[0.04] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${className}`}>
       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
         {title}
       </p>
@@ -1846,7 +1852,7 @@ function PurchaseDetailWorkspace({
         </div>
       </PremiumCard>
 
-      <div className="grid min-h-0 grid-cols-1 gap-3 overflow-hidden xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid min-h-0 grid-cols-1 gap-3 overflow-hidden xl:grid-cols-[minmax(0,1fr)_minmax(18rem,20rem)]">
       <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.026]">
         {detailMode === "fix_amounts" ? (
           <>
@@ -1969,30 +1975,36 @@ function PurchaseDetailWorkspace({
         {activeTab === "lines" ? (
           <form
             action={updatePurchaseAccountingFieldsAction}
-            className="grid gap-3 md:grid-cols-3"
+            className="grid gap-4 rounded-2xl border border-white/[0.12] bg-white/[0.035] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] md:grid-cols-3"
           >
             <input name="purchaseId" type="hidden" value={purchase.id} />
             <input name="redirectTo" type="hidden" value={redirectTo} />
+            <div className="md:col-span-3">
+              <p className="text-sm font-semibold text-white">Líneas y clasificación</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Ajuste proveedor, documento, categoría y cuenta contable sugerida.
+              </p>
+            </div>
             <label className="block md:col-span-2">
-              <span className="text-xs text-slate-300">Proveedor</span>
+              <span className="text-xs font-medium text-slate-300">Proveedor</span>
               <input
-                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35"
+                className="mt-1.5 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 text-sm text-white outline-none ring-1 ring-white/[0.035] focus:border-cyan-300/45"
                 defaultValue={purchase.supplier_name ?? ""}
                 name="supplierName"
               />
             </label>
             <label className="block">
-              <span className="text-xs text-slate-300">Documento</span>
+              <span className="text-xs font-medium text-slate-300">Documento</span>
               <input
-                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35"
+                className="mt-1.5 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 text-sm text-white outline-none ring-1 ring-white/[0.035] focus:border-cyan-300/45"
                 defaultValue={purchase.document_number ?? ""}
                 name="documentNumber"
               />
             </label>
             <label className="block">
-              <span className="text-xs text-slate-300">Categoria</span>
+              <span className="text-xs font-medium text-slate-300">Categoria</span>
               <input
-                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35"
+                className="mt-1.5 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 text-sm text-white outline-none ring-1 ring-white/[0.035] focus:border-cyan-300/45"
                 defaultValue={purchase.category ?? ""}
                 list={`purchase-workspace-categories-${purchase.id}`}
                 name="category"
@@ -2004,9 +2016,9 @@ function PurchaseDetailWorkspace({
               </datalist>
             </label>
             <label className="block">
-              <span className="text-xs text-slate-300">Cuenta sugerida</span>
+              <span className="text-xs font-medium text-slate-300">Cuenta sugerida</span>
               <input
-                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35"
+                className="mt-1.5 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 text-sm text-white outline-none ring-1 ring-white/[0.035] focus:border-cyan-300/45"
                 defaultValue={purchase.suggested_account ?? ""}
                 list={`purchase-workspace-accounts-${purchase.id}`}
                 name="suggestedAccount"
@@ -2018,18 +2030,18 @@ function PurchaseDetailWorkspace({
               </datalist>
             </label>
             <label className="block">
-              <span className="text-xs text-slate-300">Fecha</span>
+              <span className="text-xs font-medium text-slate-300">Fecha</span>
               <input
-                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35"
+                className="mt-1.5 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 text-sm text-white outline-none ring-1 ring-white/[0.035] focus:border-cyan-300/45"
                 defaultValue={purchase.purchase_date ?? ""}
                 name="purchaseDate"
                 type="date"
               />
             </label>
             <label className="block md:col-span-3">
-              <span className="text-xs text-slate-300">Descripcion</span>
+              <span className="text-xs font-medium text-slate-300">Descripcion</span>
               <input
-                className="mt-1 h-10 w-full rounded-xl border border-white/[0.08] bg-black/25 px-3 text-sm text-white outline-none focus:border-cyan-300/35"
+                className="mt-1.5 h-11 w-full rounded-xl border border-white/[0.16] bg-white/[0.065] px-3 text-sm text-white outline-none ring-1 ring-white/[0.035] focus:border-cyan-300/45"
                 defaultValue={purchase.description ?? ""}
                 name="description"
               />
@@ -2115,9 +2127,42 @@ function PurchaseDetailWorkspace({
         )}
       </div>
 
-      <aside className="grid min-h-0 gap-3 overflow-y-auto pr-1 om7-scrollbar xl:max-h-full">
+      <aside className="grid min-h-0 min-w-0 content-start gap-3 overflow-hidden">
+        <SidebarPanel
+          className="border-cyan-300/16 bg-cyan-300/[0.045]"
+          title="Centro de resolucion"
+        >
+          <div className="grid gap-3">
+            <div className="rounded-xl border border-white/[0.1] bg-white/[0.055] p-3">
+              <p className="text-xs text-slate-400">Estado actual</p>
+              <p className="mt-1 text-sm font-semibold text-white">{resolution.state}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Problema detectado
+              </p>
+              <p className="mt-1 text-sm font-semibold text-white">{resolution.problem}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Causa probable
+              </p>
+              <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">{resolution.cause}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Accion recomendada
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-400">{resolution.recommendation}</p>
+            </div>
+            <div className="[&_a]:w-full [&_a]:justify-center [&_button]:w-full">
+              {resolution.action}
+            </div>
+          </div>
+        </SidebarPanel>
+
         <SidebarPanel title="Acciones disponibles">
-          <div className="grid gap-2">
+          <div className="grid gap-2 [&_a]:w-full [&_a]:justify-center [&_button]:w-full">
             {[...primaryActions, ...secondaryActions].length > 0 ? (
               <>
                 {primaryActions}
@@ -2131,7 +2176,7 @@ function PurchaseDetailWorkspace({
           </div>
         </SidebarPanel>
 
-        <SidebarPanel title="Validacion contable">
+        <SidebarPanel title="Estado y trazabilidad">
           <div className="grid gap-2 text-sm">
             <div className="flex items-center justify-between gap-3">
               <span className="text-slate-500">Total</span>
@@ -2142,7 +2187,7 @@ function PurchaseDetailWorkspace({
             <div className="flex items-center justify-between gap-3">
               <span className="text-slate-500">Importes</span>
               <span className={actions.hasTaxMismatch ? "text-amber-100" : "text-emerald-100"}>
-                {actions.hasTaxMismatch ? "Diferencia detectada" : "Cuadrados"}
+                {actions.hasTaxMismatch ? "Diferencia" : "Cuadrados"}
               </span>
             </div>
             <div className="flex items-center justify-between gap-3">
@@ -2152,50 +2197,6 @@ function PurchaseDetailWorkspace({
               </span>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <span className="text-slate-500">Periodo</span>
-              <span className={lockedByPeriod ? "text-amber-100" : "text-slate-300"}>
-                {lockedByPeriod ? "Bloqueado" : "Editable"}
-              </span>
-            </div>
-            {purchase.contabilizacion_error ? (
-              <p className="rounded-xl border border-amber-300/15 bg-amber-300/[0.06] p-3 text-xs leading-5 text-amber-100/80">
-                {purchase.contabilizacion_error}
-              </p>
-            ) : null}
-          </div>
-        </SidebarPanel>
-
-        <SidebarPanel title="Centro de resolucion">
-          <div className="grid gap-3">
-            <div className="rounded-xl border border-white/[0.08] bg-black/20 p-3">
-              <p className="text-xs text-slate-500">Estado actual</p>
-              <p className="mt-1 text-sm font-semibold text-white">{resolution.state}</p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Problema detectado
-              </p>
-              <p className="mt-1 text-sm font-semibold text-white">{resolution.problem}</p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Causa probable
-              </p>
-              <p className="mt-1 text-xs leading-5 text-slate-400">{resolution.cause}</p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Accion recomendada
-              </p>
-              <p className="mt-1 text-xs leading-5 text-slate-400">{resolution.recommendation}</p>
-            </div>
-            {resolution.action}
-          </div>
-        </SidebarPanel>
-
-        <SidebarPanel title="Trazabilidad corta">
-          <div className="grid gap-2 text-sm">
-            <div className="flex items-center justify-between gap-3">
               <span className="text-slate-500">Documento</span>
               <span className="text-right text-slate-300">
                 {traceDocumentId ? "Vinculado" : "Sin documento"}
@@ -2203,14 +2204,15 @@ function PurchaseDetailWorkspace({
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-slate-500">Origen</span>
-              <span className="text-right text-slate-300">
+              <span className="min-w-0 truncate text-right text-slate-300">
                 {traceDocumentId ? sourceName : "Manual"}
               </span>
             </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-slate-500">Regla</span>
-              <span className="text-right text-slate-300">{ruleApplied}</span>
-            </div>
+            {purchase.contabilizacion_error ? (
+              <p className="rounded-xl border border-amber-300/15 bg-amber-300/[0.06] p-2.5 text-xs leading-5 text-amber-100/80">
+                {purchase.contabilizacion_error}
+              </p>
+            ) : null}
           </div>
         </SidebarPanel>
       </aside>
@@ -2228,17 +2230,110 @@ function PurchaseDetailWorkspace({
 
 function NewPurchasePanel({
   activeCompanyName,
+  backHref = "#compras-panel",
   currency,
   disabled,
+  forceOpen = false,
 }: {
   activeCompanyName?: string;
+  backHref?: string;
   currency: string;
   disabled: boolean;
+  forceOpen?: boolean;
 }) {
+  if (forceOpen) {
+    return (
+      <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden" id="nueva-compra">
+        <div className="flex flex-col gap-3 border-b border-white/[0.08] pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-100/60">
+              Registro operativo
+            </p>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight text-white">
+              Nueva compra manual
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              {activeCompanyName
+                ? `Se guardara en ${activeCompanyName}.`
+                : "Selecciona una empresa activa antes de registrar."}
+            </p>
+          </div>
+          <Link className="om7-btn-ghost w-fit px-3 py-2 text-sm" href={backHref}>
+            &lt;- Volver al panel de compras
+          </Link>
+        </div>
+
+        <form
+          action={createPurchaseAction}
+          className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden"
+        >
+          <div className="min-h-0 overflow-y-auto py-4 pr-1 om7-scrollbar">
+            <div className="grid gap-4 rounded-2xl border border-white/[0.12] bg-white/[0.035] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] md:grid-cols-3">
+              <label className="block md:col-span-2">
+                <span className="text-sm font-medium text-slate-300">Proveedor</span>
+                <input className="mt-2 h-11 w-full rounded-xl border border-white/[0.14] bg-white/[0.06] px-3.5 text-sm text-white outline-none" disabled={disabled} name="supplierName" placeholder="Proveedor S.A." />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-300">Documento</span>
+                <input className="mt-2 h-11 w-full rounded-xl border border-white/[0.14] bg-white/[0.06] px-3.5 text-sm text-white outline-none" disabled={disabled} name="documentNumber" placeholder="OC-1001" />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-300">Fecha</span>
+                <input className="mt-2 h-11 w-full rounded-xl border border-white/[0.14] bg-white/[0.06] px-3.5 text-sm text-white outline-none" disabled={disabled} name="purchaseDate" type="date" />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-300">Categoria</span>
+                <select className="mt-2 h-11 w-full rounded-xl border border-white/[0.14] bg-white/[0.06] px-3.5 text-sm text-white outline-none" disabled={disabled} name="category">
+                  <option className="bg-slate-950" value="">Seleccionar</option>
+                  {categoryOptions.map((category) => (
+                    <option className="bg-slate-950" key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-300">Estado</span>
+                <select className="mt-2 h-11 w-full rounded-xl border border-white/[0.14] bg-white/[0.06] px-3.5 text-sm text-white outline-none" defaultValue="registrada" disabled={disabled} name="status">
+                  <option className="bg-slate-950" value="registrada">Registrada</option>
+                  <option className="bg-slate-950" value="pendiente">Pendiente</option>
+                  <option className="bg-slate-950" value="pagada">Pagada</option>
+                  <option className="bg-slate-950" value="revision">Revision</option>
+                </select>
+              </label>
+              <label className="block md:col-span-3">
+                <span className="text-sm font-medium text-slate-300">Descripcion</span>
+                <input className="mt-2 h-11 w-full rounded-xl border border-white/[0.14] bg-white/[0.06] px-3.5 text-sm text-white outline-none" disabled={disabled} name="description" placeholder="Servicios, equipos, suscripcion..." />
+              </label>
+              <input name="currency" type="hidden" value={currency} />
+              {["subtotal", "tax", "total"].map((name) => (
+                <label className="block" key={name}>
+                  <span className="text-sm font-medium text-slate-300">
+                    {name === "tax" ? "Impuesto" : name === "total" ? "Total" : "Subtotal"}
+                  </span>
+                  <input className="mt-2 h-11 w-full rounded-xl border border-white/[0.14] bg-white/[0.06] px-3.5 text-sm text-white outline-none" disabled={disabled} min="0" name={name} placeholder="0.00" step="0.01" type="number" />
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col-reverse gap-2 border-t border-white/[0.08] pt-4 sm:flex-row sm:items-center sm:justify-end">
+            <Link className="om7-btn-ghost justify-center px-4 py-2.5 text-sm" href={backHref}>
+              Cancelar
+            </Link>
+            <button className="om7-btn-primary justify-center px-4 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50" disabled={disabled} type="submit">
+              Guardar compra
+            </button>
+          </div>
+        </form>
+      </section>
+    );
+  }
+
   return (
     <section id="nueva-compra">
       <div className="rounded-2xl border border-white/[0.08] bg-black/15">
-        <details>
+        <details open={forceOpen}>
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4">
             <div>
               <p className="text-sm font-semibold text-white">Nueva compra manual</p>
@@ -2253,6 +2348,19 @@ function NewPurchasePanel({
             </span>
           </summary>
           <form action={createPurchaseAction} className="grid gap-4 border-t border-white/[0.08] p-4 md:grid-cols-3">
+            <div className="flex flex-col gap-3 md:col-span-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-white">
+                  Registro manual de compra
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Complete los datos principales y vuelva al panel para revisar la compra creada.
+                </p>
+              </div>
+              <a className="om7-btn-ghost w-fit px-3 py-2 text-xs" href={backHref}>
+                &lt;- Volver al panel de compras
+              </a>
+            </div>
             <label className="block md:col-span-2">
               <span className="text-sm font-medium text-slate-300">Proveedor</span>
               <input className="mt-2 h-11 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-white outline-none" disabled={disabled} name="supplierName" placeholder="Proveedor S.A." />
@@ -2315,6 +2423,7 @@ export default async function PurchasesPage({
   const activeFilter = resolvedSearchParams.filter ?? "all";
   const actionError = resolvedSearchParams.error ?? null;
   const activePeriod = resolvedSearchParams.period ?? "all";
+  const isCreatingPurchase = resolvedSearchParams.new === "1";
   const providerFilter = resolvedSearchParams.provider ?? "";
   const selectedPurchaseId = resolvedSearchParams.purchase ?? "";
   const searchTerm = resolvedSearchParams.q ?? "";
@@ -2411,6 +2520,14 @@ export default async function PurchasesPage({
     q: searchTerm,
     returnQuery,
   });
+  const newPurchaseHref = buildPurchasesHref({
+    create: true,
+    filter: activeFilter,
+    period: activePeriod,
+    provider: providerFilter,
+    q: searchTerm,
+    returnQuery,
+  });
   const hrefForPurchase = (purchaseId: string) =>
     buildPurchasesHref({
       filter: activeFilter,
@@ -2481,9 +2598,9 @@ export default async function PurchasesPage({
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <a className="om7-btn-primary px-4 py-2.5" href="#nueva-compra">
+              <Link className="om7-btn-primary px-4 py-2.5" href={newPurchaseHref}>
                 Nueva compra
-              </a>
+              </Link>
               <Link className="om7-btn-ghost px-4 py-2.5" href="/compras">
                 Refrescar
               </Link>
@@ -2533,8 +2650,23 @@ export default async function PurchasesPage({
             redirectTo={redirectTo}
             tabHref={hrefForTab}
           />
-      ) : (
+      ) : isCreatingPurchase ? (
           <PremiumCard className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] p-4 sm:p-5">
+            <div className="min-h-0 overflow-y-auto om7-scrollbar">
+              <NewPurchasePanel
+                activeCompanyName={activeCompany?.name}
+                backHref={backHref}
+                currency={currency}
+                disabled={!activeCompany}
+                forceOpen
+              />
+            </div>
+          </PremiumCard>
+      ) : (
+          <PremiumCard
+            className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] p-4 sm:p-5"
+            id="compras-panel"
+          >
             <div className="min-h-0">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <PurchaseFilterForm
@@ -2589,13 +2721,6 @@ export default async function PurchasesPage({
               </div>
             </details>
 
-            <div className="mt-4">
-              <NewPurchasePanel
-                activeCompanyName={activeCompany?.name}
-                currency={currency}
-                disabled={!activeCompany}
-              />
-            </div>
             </div>
 
             <section className="mt-4 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/[0.08] bg-black/10 p-3">
