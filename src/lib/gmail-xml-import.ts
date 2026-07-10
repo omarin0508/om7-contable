@@ -23,7 +23,7 @@ const GMAIL_XML_DUPLICATED_LABEL = "OM7/Duplicadas";
 const GMAIL_XML_ERROR_LABEL = "OM7/Error";
 const GMAIL_XML_MAX_RETRY_ATTEMPTS = 3;
 const GMAIL_XML_DEFAULT_LIMIT = 20;
-const GMAIL_XML_ALLOWED_LIMITS = [20, 50, 100] as const;
+const GMAIL_XML_ALLOWED_LIMITS = [20, 50, 100, 300, 500] as const;
 const GMAIL_XML_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const GMAIL_XML_SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
@@ -652,6 +652,12 @@ function getXmlClave(xmlText: string) {
 
 function isProcessedStatus(status: unknown) {
   return ["procesado", "duplicado", "omitido"].includes(String(status));
+}
+
+function isRetryableLegacyConfigError(errorMessage: unknown) {
+  return String(errorMessage ?? "").includes(
+    "Configura SUPABASE_SERVICE_ROLE_KEY para procesos automaticos.",
+  );
 }
 
 function stripNamespaces(xmlText: string) {
@@ -1541,7 +1547,7 @@ async function syncGmailXmlConnection(
 
         const { data: existing, error: existingError } = await traceSupabase
           .from("gmail_xml_imports")
-          .select("id, import_status, sync_attempts")
+          .select("id, import_status, sync_attempts, error_message")
           .eq("organization_id", organizationId)
           .eq("company_id", companyId)
           .eq("user_id", userId)
@@ -1579,7 +1585,11 @@ async function syncGmailXmlConnection(
 
         const currentAttempts = Number(existing?.sync_attempts ?? 0);
 
-        if (existing?.import_status === "error" && currentAttempts >= GMAIL_XML_MAX_RETRY_ATTEMPTS) {
+        if (
+          existing?.import_status === "error" &&
+          currentAttempts >= GMAIL_XML_MAX_RETRY_ATTEMPTS &&
+          !isRetryableLegacyConfigError(existing.error_message)
+        ) {
           summary.errors += 1;
           if (
             await tryUpdateGmailMessageLabels(

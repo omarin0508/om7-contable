@@ -13,6 +13,8 @@ import {
   normalizeGmailXmlLimit,
 } from "@/lib/gmail-xml-import";
 
+const GMAIL_XML_LIMIT_OPTIONS = [20, 50, 100, 300, 500] as const;
+
 type GmailXmlPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
@@ -399,7 +401,7 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                         defaultValue={listLimit}
                         name="limit"
                       >
-                        {[20, 50, 100].map((option) => (
+                        {GMAIL_XML_LIMIT_OPTIONS.map((option) => (
                           <option className="bg-slate-950" key={option} value={option}>
                             {option}
                           </option>
@@ -477,7 +479,7 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
             </PremiumCard>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
               <span className="font-medium text-slate-300">Limite por corrida</span>
-              {[20, 50, 100].map((option) => (
+              {GMAIL_XML_LIMIT_OPTIONS.map((option) => (
                 <Link
                   className={
                     option === listLimit
