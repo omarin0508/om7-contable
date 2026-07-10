@@ -143,6 +143,7 @@ export async function syncGmailXmlAttachmentsAction(formData?: FormData) {
   }
 
   revalidatePath("/gmail-xml");
+  revalidatePath("/gmail-xml/diagnostico");
   revalidatePath("/documentos");
   revalidatePath("/bandeja");
   redirect(target);

@@ -581,6 +581,18 @@ function formatGmailQueryDate(value: string) {
   return value.replaceAll("-", "/");
 }
 
+function formatGmailQueryExclusiveEndDate(value: string) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+
+  if (Number.isNaN(date.getTime())) {
+    return formatGmailQueryDate(value);
+  }
+
+  date.setUTCDate(date.getUTCDate() + 1);
+
+  return formatGmailQueryDate(date.toISOString().slice(0, 10));
+}
+
 function normalizeGmailXmlRunOptions(
   options?: GmailXmlRunOptions,
 ): Required<GmailXmlRunOptions> {
@@ -615,7 +627,7 @@ function buildGmailXmlQuery(
   if (options.mode === "historical") {
     return [
       `after:${formatGmailQueryDate(options.dateFrom ?? "")}`,
-      `before:${formatGmailQueryDate(options.dateTo ?? "")}`,
+      `before:${formatGmailQueryExclusiveEndDate(options.dateTo ?? "")}`,
       "has:attachment",
       "filename:xml",
     ].join(" ");
@@ -1901,7 +1913,7 @@ export async function syncGmailXmlAttachments(
     userId: user.id,
     supabase,
     traceSupabase,
-    system: true,
+    system: false,
     usePendingLabel: true,
     updateLabels: true,
     limit: normalizeGmailXmlLimit(limit),
