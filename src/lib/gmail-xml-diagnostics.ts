@@ -93,6 +93,16 @@ type ConvertedRecordRow = {
   counterparty_id: string | null;
 };
 
+type PaginatedQuery<T> = {
+  range: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{
+    data: T[] | null;
+    error: { message: string; code?: string } | null;
+  }>;
+};
+
 export type GmailXmlDocumentDiagnosticDetail = {
   documentId: string;
   filename: string;
@@ -146,6 +156,58 @@ function normalizeFilters(filters: GmailXmlDiagnosticsFilters) {
       : "all",
     status: filters.status && filters.status !== "all" ? filters.status : "all",
   } as const;
+}
+
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
+async function fetchAllRows<T>(
+  createQuery: () => PaginatedQuery<T>,
+  batchSize = 1000,
+) {
+  const rows: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + batchSize - 1;
+    const { data, error } = await createQuery().range(from, to);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const batch = data ?? [];
+    rows.push(...batch);
+
+    if (batch.length < batchSize) {
+      break;
+    }
+
+    from += batchSize;
+  }
+
+  return rows;
+}
+
+async function fetchAllRowsByIds<T>(
+  ids: string[],
+  createQuery: (chunk: string[]) => PaginatedQuery<T>,
+  chunkSize = 500,
+) {
+  const rows: T[] = [];
+
+  for (const chunk of chunkArray(ids, chunkSize)) {
+    rows.push(...(await fetchAllRows(() => createQuery(chunk))));
+  }
+
+  return rows;
 }
 
 function isXmlDocument(document: DocumentRow) {
@@ -777,37 +839,29 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
     };
   }
 
-  const documentsQuery = supabase
-    .from("documents")
-    .select("id, organization_id, company_id, original_filename, display_name, mime_type, document_type, processing_status, metadata, converted_at, converted_type, converted_record_id, created_at")
-    .eq("organization_id", organizationId)
-    .eq("company_id", companyId)
-    .order("created_at", { ascending: false })
-    .limit(3000);
+  const documentData = await fetchAllRows<DocumentRow>(() =>
+    supabase
+      .from("documents")
+      .select("id, organization_id, company_id, original_filename, display_name, mime_type, document_type, processing_status, metadata, converted_at, converted_type, converted_record_id, created_at")
+      .eq("organization_id", organizationId)
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false }),
+  );
 
-  const { data: documentData, error: documentsError } = await documentsQuery;
+  const importData = await fetchAllRows<GmailImportRow>(() => {
+    let importsQuery = supabase
+      .from("gmail_xml_imports")
+      .select("id, gmail_message_id, gmail_attachment_id, subject, attachment_filename, imported_document_id, import_status, error_message, sync_mode, batch_period, created_at")
+      .eq("organization_id", organizationId)
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false });
 
-  if (documentsError) {
-    throw new Error(documentsError.message);
-  }
+    if (normalizedFilters.status !== "all") {
+      importsQuery = importsQuery.eq("import_status", normalizedFilters.status);
+    }
 
-  let importsQuery = supabase
-    .from("gmail_xml_imports")
-    .select("id, gmail_message_id, gmail_attachment_id, subject, attachment_filename, imported_document_id, import_status, error_message, sync_mode, batch_period, created_at")
-    .eq("organization_id", organizationId)
-    .eq("company_id", companyId)
-    .order("created_at", { ascending: false })
-    .limit(3000);
-
-  if (normalizedFilters.status !== "all") {
-    importsQuery = importsQuery.eq("import_status", normalizedFilters.status);
-  }
-
-  const { data: importData, error: importsError } = await importsQuery;
-
-  if (importsError) {
-    throw new Error(importsError.message);
-  }
+    return importsQuery;
+  });
 
   const { data: periodData, error: periodsError } = await supabase
     .from("gmail_xml_sync_periods")
@@ -821,8 +875,8 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
     throw new Error(periodsError.message);
   }
 
-  const documents = ((documentData ?? []) as DocumentRow[]).filter(isXmlDocument);
-  const imports = (importData ?? []) as GmailImportRow[];
+  const documents = documentData.filter(isXmlDocument);
+  const imports = importData;
   const importByDocumentId = new Map(
     imports
       .filter((item) => item.imported_document_id)
@@ -833,24 +887,21 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
     imports.map((item) => item.imported_document_id).filter(Boolean) as string[],
   );
 
-  const { data: extractionData, error: extractionsError } = documentIds.length > 0
-    ? await supabase
+  const extractionData = await fetchAllRowsByIds<ExtractionRow>(
+    documentIds,
+    (chunk) =>
+      supabase
         .from("document_extractions")
         .select("document_id, extraction_status, extraction_provider, extracted_data, error_message, created_at")
         .eq("organization_id", organizationId)
         .eq("company_id", companyId)
-        .in("document_id", documentIds)
-        .order("created_at", { ascending: false })
-        .limit(3000)
-    : { data: [], error: null };
-
-  if (extractionsError) {
-    throw new Error(extractionsError.message);
-  }
+        .in("document_id", chunk)
+        .order("created_at", { ascending: false }),
+  );
 
   const extractionMap = new Map<string, ExtractionRow>();
 
-  for (const extraction of (extractionData ?? []) as ExtractionRow[]) {
+  for (const extraction of extractionData) {
     if (!extractionMap.has(extraction.document_id)) {
       extractionMap.set(extraction.document_id, extraction);
     }
@@ -882,52 +933,45 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
   });
 
   const [
-    { data: counterpartyData, error: counterpartyError },
-    { data: matchData, error: matchError },
-    { data: purchaseData, error: purchaseError },
-    { data: invoiceData, error: invoiceError },
+    counterpartyData,
+    matchData,
+    purchaseData,
+    invoiceData,
   ] = await Promise.all([
-    supabase
-      .from("counterparties")
-      .select("id, name, tax_id, normalized_tax_id, normalized_name")
-      .eq("organization_id", organizationId)
-      .or(`company_id.eq.${companyId},company_id.is.null`)
-      .limit(5000),
-    documentIds.length > 0
-      ? supabase
-          .from("document_counterparty_matches")
-          .select("document_id, counterparty_id, match_status, status, name, tax_id")
-          .eq("organization_id", organizationId)
-          .eq("company_id", companyId)
-          .in("document_id", documentIds)
-          .limit(5000)
-      : Promise.resolve({ data: [], error: null }),
-    documentIds.length > 0
-      ? supabase
-          .from("purchases")
-          .select("id, source_document_id, counterparty_id")
-          .eq("organization_id", organizationId)
-          .eq("company_id", companyId)
-          .in("source_document_id", documentIds)
-          .limit(5000)
-      : Promise.resolve({ data: [], error: null }),
-    documentIds.length > 0
-      ? supabase
-          .from("invoices")
-          .select("id, source_document_id, counterparty_id")
-          .eq("organization_id", organizationId)
-          .eq("company_id", companyId)
-          .in("source_document_id", documentIds)
-          .limit(5000)
-      : Promise.resolve({ data: [], error: null }),
+    fetchAllRows<CounterpartyRow>(() =>
+      supabase
+        .from("counterparties")
+        .select("id, name, tax_id, normalized_tax_id, normalized_name")
+        .eq("organization_id", organizationId)
+        .or(`company_id.eq.${companyId},company_id.is.null`),
+    ),
+    fetchAllRowsByIds<CounterpartyMatchRow>(documentIds, (chunk) =>
+      supabase
+        .from("document_counterparty_matches")
+        .select("document_id, counterparty_id, match_status, status, name, tax_id")
+        .eq("organization_id", organizationId)
+        .eq("company_id", companyId)
+        .in("document_id", chunk),
+    ),
+    fetchAllRowsByIds<ConvertedRecordRow>(documentIds, (chunk) =>
+      supabase
+        .from("purchases")
+        .select("id, source_document_id, counterparty_id")
+        .eq("organization_id", organizationId)
+        .eq("company_id", companyId)
+        .in("source_document_id", chunk),
+    ),
+    fetchAllRowsByIds<ConvertedRecordRow>(documentIds, (chunk) =>
+      supabase
+        .from("invoices")
+        .select("id, source_document_id, counterparty_id")
+        .eq("organization_id", organizationId)
+        .eq("company_id", companyId)
+        .in("source_document_id", chunk),
+    ),
   ]);
 
-  if (counterpartyError) throw new Error(counterpartyError.message);
-  if (matchError) throw new Error(matchError.message);
-  if (purchaseError) throw new Error(purchaseError.message);
-  if (invoiceError) throw new Error(invoiceError.message);
-
-  const counterparties = (counterpartyData ?? []) as CounterpartyRow[];
+  const counterparties = counterpartyData;
   const counterpartyById = new Map(counterparties.map((item) => [item.id, item]));
   const counterpartyByTaxId = new Map(
     counterparties
@@ -941,7 +985,7 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
   );
   const matchByDocumentId = new Map<string, CounterpartyMatchRow>();
 
-  for (const match of (matchData ?? []) as CounterpartyMatchRow[]) {
+  for (const match of matchData) {
     const current = matchByDocumentId.get(match.document_id);
     if (!current || match.status === "accepted" || match.status === "created") {
       matchByDocumentId.set(match.document_id, match);
@@ -949,12 +993,12 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
   }
 
   const purchaseByDocumentId = new Map(
-    ((purchaseData ?? []) as ConvertedRecordRow[])
+    purchaseData
       .filter((item) => item.source_document_id)
       .map((item) => [item.source_document_id as string, item]),
   );
   const invoiceByDocumentId = new Map(
-    ((invoiceData ?? []) as ConvertedRecordRow[])
+    invoiceData
       .filter((item) => item.source_document_id)
       .map((item) => [item.source_document_id as string, item]),
   );
