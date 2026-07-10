@@ -363,6 +363,15 @@ function createGmailXmlServiceSupabase() {
   });
 }
 
+function hasGmailXmlServiceSupabase() {
+  return Boolean(
+    (
+      process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ??
+      process.env.SUPABASE_SERVICE_KEY?.trim()
+    ) && getSupabaseEnv(),
+  );
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -654,9 +663,12 @@ function isProcessedStatus(status: unknown) {
   return ["procesado", "duplicado", "omitido"].includes(String(status));
 }
 
-function isRetryableLegacyConfigError(errorMessage: unknown) {
-  return String(errorMessage ?? "").includes(
-    "Configura SUPABASE_SERVICE_ROLE_KEY para procesos automaticos.",
+function isRetryableImportInfrastructureError(errorMessage: unknown) {
+  const message = String(errorMessage ?? "");
+
+  return (
+    message.includes("Configura SUPABASE_SERVICE_ROLE_KEY para procesos automaticos.") ||
+    message.includes('invalid input syntax for type uuid: ""')
   );
 }
 
@@ -1588,7 +1600,7 @@ async function syncGmailXmlConnection(
         if (
           existing?.import_status === "error" &&
           currentAttempts >= GMAIL_XML_MAX_RETRY_ATTEMPTS &&
-          !isRetryableLegacyConfigError(existing.error_message)
+          !isRetryableImportInfrastructureError(existing.error_message)
         ) {
           summary.errors += 1;
           if (
@@ -1923,7 +1935,7 @@ export async function syncGmailXmlAttachments(
     userId: user.id,
     supabase,
     traceSupabase,
-    system: false,
+    system: hasGmailXmlServiceSupabase(),
     usePendingLabel: true,
     updateLabels: true,
     limit: normalizeGmailXmlLimit(limit),
