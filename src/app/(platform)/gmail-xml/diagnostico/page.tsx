@@ -77,6 +77,19 @@ function getProviderSort(value: string | null | undefined) {
     : "monto";
 }
 
+function buildDiagnosticReportHref(filters: GmailXmlDiagnosticsFilters) {
+  const params = new URLSearchParams();
+
+  if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
+  if (filters.dateTo) params.set("dateTo", filters.dateTo);
+  if (filters.source && filters.source !== "all") params.set("source", filters.source);
+  if (filters.status && filters.status !== "all") params.set("status", filters.status);
+
+  const query = params.toString();
+
+  return `/gmail-xml/diagnostico/reporte.xlsx${query ? `?${query}` : ""}`;
+}
+
 function KpiCard({
   label,
   value,
@@ -107,6 +120,7 @@ export default async function GmailXmlDiagnosticsPage({
   const data = await getGmailXmlDiagnostics(filters);
   const providerQuery = (getParam(params, "providerQuery") ?? "").trim();
   const providerSort = getProviderSort(getParam(params, "providerSort"));
+  const reportHref = buildDiagnosticReportHref(data.filters);
   const activeCompanyName =
     data.activeContext.activeCompany?.legal_name ??
     data.activeContext.activeCompany?.name ??
@@ -155,7 +169,7 @@ export default async function GmailXmlDiagnosticsPage({
         description="Workspace de solo lectura sobre la base de datos OM7. No busca correos en Gmail ni importa documentos."
         action={
           <div className="flex flex-wrap gap-2">
-            <Link className="om7-btn-primary px-4 py-2.5" href="/gmail-xml/diagnostico/reporte.xlsx">
+            <Link className="om7-btn-primary px-4 py-2.5" href={reportHref}>
               Exportar Excel
             </Link>
             <Link className="om7-btn-ghost px-4 py-2.5" href="/gmail-xml">
@@ -342,7 +356,7 @@ export default async function GmailXmlDiagnosticsPage({
               </div>
               <Link
                 className="om7-btn-primary px-4 py-2.5"
-                href="/gmail-xml/diagnostico/reporte.xlsx"
+                href={reportHref}
               >
                 Exportar diagnostico Excel
               </Link>

@@ -331,6 +331,31 @@ function getDocumentBusinessDate(
   return getExtractedDate(extraction) ?? document.created_at;
 }
 
+function isWithinDateRange(
+  value: string | null | undefined,
+  filters: ReturnType<typeof normalizeFilters>,
+) {
+  if (!value) {
+    return !filters.dateFrom && !filters.dateTo;
+  }
+
+  const normalizedDate = normalizeDateCandidate(value)?.slice(0, 10);
+
+  if (!normalizedDate) {
+    return !filters.dateFrom && !filters.dateTo;
+  }
+
+  if (filters.dateFrom && normalizedDate < filters.dateFrom) {
+    return false;
+  }
+
+  if (filters.dateTo && normalizedDate >= filters.dateTo) {
+    return false;
+  }
+
+  return true;
+}
+
 function buildMonthlyCounts(documents: DocumentRow[], extractionMap: Map<string, ExtractionRow>) {
   const counts = new Map<string, number>();
 
@@ -752,21 +777,13 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
     };
   }
 
-  let documentsQuery = supabase
+  const documentsQuery = supabase
     .from("documents")
     .select("id, organization_id, company_id, original_filename, display_name, mime_type, document_type, processing_status, metadata, converted_at, converted_type, converted_record_id, created_at")
     .eq("organization_id", organizationId)
     .eq("company_id", companyId)
     .order("created_at", { ascending: false })
     .limit(3000);
-
-  if (normalizedFilters.dateFrom) {
-    documentsQuery = documentsQuery.gte("created_at", `${normalizedFilters.dateFrom}T00:00:00.000Z`);
-  }
-
-  if (normalizedFilters.dateTo) {
-    documentsQuery = documentsQuery.lt("created_at", `${normalizedFilters.dateTo}T00:00:00.000Z`);
-  }
 
   const { data: documentData, error: documentsError } = await documentsQuery;
 
@@ -781,14 +798,6 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
     .eq("company_id", companyId)
     .order("created_at", { ascending: false })
     .limit(3000);
-
-  if (normalizedFilters.dateFrom) {
-    importsQuery = importsQuery.gte("created_at", `${normalizedFilters.dateFrom}T00:00:00.000Z`);
-  }
-
-  if (normalizedFilters.dateTo) {
-    importsQuery = importsQuery.lt("created_at", `${normalizedFilters.dateTo}T00:00:00.000Z`);
-  }
 
   if (normalizedFilters.status !== "all") {
     importsQuery = importsQuery.eq("import_status", normalizedFilters.status);
@@ -814,21 +823,15 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
 
   const documents = ((documentData ?? []) as DocumentRow[]).filter(isXmlDocument);
   const imports = (importData ?? []) as GmailImportRow[];
+  const importByDocumentId = new Map(
+    imports
+      .filter((item) => item.imported_document_id)
+      .map((item) => [item.imported_document_id as string, item]),
+  );
   const documentIds = documents.map((document) => document.id);
   const gmailDocumentIds = new Set(
     imports.map((item) => item.imported_document_id).filter(Boolean) as string[],
   );
-  const filteredDocuments = documents.filter((document) => {
-    if (normalizedFilters.source === "gmail") {
-      return gmailDocumentIds.has(document.id);
-    }
-
-    if (normalizedFilters.source === "manual") {
-      return !gmailDocumentIds.has(document.id);
-    }
-
-    return true;
-  });
 
   const { data: extractionData, error: extractionsError } = documentIds.length > 0
     ? await supabase
@@ -852,6 +855,31 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
       extractionMap.set(extraction.document_id, extraction);
     }
   }
+
+  const filteredDocuments = documents.filter((document) => {
+    const isGmailDocument = gmailDocumentIds.has(document.id);
+    const importRow = importByDocumentId.get(document.id);
+
+    if (normalizedFilters.source === "gmail" && !isGmailDocument) {
+      return false;
+    }
+
+    if (normalizedFilters.source === "manual" && isGmailDocument) {
+      return false;
+    }
+
+    if (
+      normalizedFilters.status !== "all" &&
+      importRow?.import_status !== normalizedFilters.status
+    ) {
+      return false;
+    }
+
+    return isWithinDateRange(
+      getDocumentBusinessDate(document, extractionMap.get(document.id)),
+      normalizedFilters,
+    );
+  });
 
   const [
     { data: counterpartyData, error: counterpartyError },

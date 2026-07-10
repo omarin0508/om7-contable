@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import {
   getGmailXmlDiagnosticSnapshot,
   type GmailXmlDocumentDiagnosticDetail,
+  type GmailXmlDiagnosticsFilters,
   type GmailXmlProviderSummary,
 } from "@/lib/gmail-xml-diagnostics";
 
@@ -287,8 +288,10 @@ function addQualityAlerts(
   applyWorksheetStyle(sheet);
 }
 
-export async function buildGmailXmlDiagnosticExcel() {
-  const data = await getGmailXmlDiagnosticSnapshot({});
+export async function buildGmailXmlDiagnosticExcel(
+  filters: GmailXmlDiagnosticsFilters = {},
+) {
+  const data = await getGmailXmlDiagnosticSnapshot(filters);
   const workbook = new ExcelJS.Workbook();
   const companyName =
     data.activeContext.activeCompany?.legal_name ??
