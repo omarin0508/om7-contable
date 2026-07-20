@@ -3,6 +3,7 @@ import {
   getGmailXmlDiagnosticSnapshot,
   type GmailXmlDocumentDiagnosticDetail,
   type GmailXmlDiagnosticsFilters,
+  type GmailXmlIvaRateSummary,
   type GmailXmlProviderSummary,
 } from "@/lib/gmail-xml-diagnostics";
 
@@ -207,6 +208,52 @@ function addProviderSummary(
   applyWorksheetStyle(sheet);
 }
 
+function addIvaRateSummary(
+  workbook: ExcelJS.Workbook,
+  rates: GmailXmlIvaRateSummary[],
+) {
+  const sheet = workbook.addWorksheet(safeSheetName("IVA por Tarifa"), {
+    views: [{ state: "frozen", ySplit: 5 }],
+  });
+
+  addTitleBlock(
+    sheet,
+    "IVA acumulado por tarifa",
+    "Totales clasificados por linea XML y tarifa detectada",
+  );
+  setupTable(sheet, 5, [
+    { header: "Clase IVA", key: "rateLabel", width: 24 },
+    { header: "Tarifa %", key: "ratePercent", width: 12 },
+    { header: "Documentos", key: "documentsCount", width: 12 },
+    { header: "Lineas", key: "linesCount", width: 12 },
+    { header: "Base", key: "taxableBase", width: 16 },
+    { header: "IVA", key: "iva", width: 16 },
+    { header: "Porcion total", key: "totalPortion", width: 18 },
+    { header: "% del total", key: "totalShare", width: 14 },
+  ]);
+
+  rates.forEach((rate) => {
+    sheet.addRow({
+      ...rate,
+      ratePercent: rate.ratePercent ?? "N/D",
+    });
+  });
+
+  const totalRow = sheet.addRow({
+    rateLabel: "Total",
+    documentsCount: rates.reduce((sum, item) => sum + item.documentsCount, 0),
+    linesCount: rates.reduce((sum, item) => sum + item.linesCount, 0),
+    taxableBase: rates.reduce((sum, item) => sum + item.taxableBase, 0),
+    iva: rates.reduce((sum, item) => sum + item.iva, 0),
+    totalPortion: rates.reduce((sum, item) => sum + item.totalPortion, 0),
+    totalShare: 100,
+  });
+  totalRow.font = { bold: true };
+  addMoneyFormat(sheet, ["taxableBase", "iva", "totalPortion"]);
+  sheet.getColumn("totalShare").numFmt = '0.00"%"';
+  applyWorksheetStyle(sheet);
+}
+
 function addDocumentDetail(
   workbook: ExcelJS.Workbook,
   documents: GmailXmlDocumentDiagnosticDetail[],
@@ -309,6 +356,7 @@ export async function buildGmailXmlDiagnosticExcel(
   workbook.modified = new Date();
 
   addExecutiveSummary(workbook, data);
+  addIvaRateSummary(workbook, data.ivaRateSummary ?? []);
   addProviderSummary(workbook, data.providerSummary ?? []);
   addDocumentDetail(workbook, data.documentDetails ?? []);
   addQualityAlerts(workbook, data.documentDetails ?? []);

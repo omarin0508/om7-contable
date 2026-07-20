@@ -345,6 +345,74 @@ export default async function GmailXmlDiagnosticsPage({
           </PremiumCard>
 
           <section className="space-y-4">
+            <div>
+              <p className="text-lg font-semibold tracking-tight text-white">
+                IVA acumulado por tarifa
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Clasificacion por linea XML; una factura con varias tarifas se
+                reparte entre las clases correspondientes.
+              </p>
+            </div>
+
+            <PremiumCard className="overflow-hidden p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[860px] text-left text-sm">
+                  <thead className="border-b border-white/[0.08] text-xs uppercase tracking-[0.16em] text-slate-500">
+                    <tr>
+                      <th className="px-5 py-3">Clase IVA</th>
+                      <th className="px-5 py-3">Docs</th>
+                      <th className="px-5 py-3">Lineas</th>
+                      <th className="px-5 py-3">Base</th>
+                      <th className="px-5 py-3">IVA</th>
+                      <th className="px-5 py-3">Porcion total</th>
+                      <th className="px-5 py-3">% del total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.06]">
+                    {data.ivaRateSummary.map((item) => (
+                      <tr key={item.rateKey}>
+                        <td className="px-5 py-3 font-medium text-white">
+                          {item.rateLabel}
+                        </td>
+                        <td className="px-5 py-3 text-slate-300">
+                          {item.documentsCount}
+                        </td>
+                        <td className="px-5 py-3 text-slate-300">
+                          {item.linesCount}
+                        </td>
+                        <td className="px-5 py-3 text-slate-300">
+                          {formatCurrency(item.taxableBase)}
+                        </td>
+                        <td className="px-5 py-3 text-cyan-100">
+                          {formatCurrency(item.iva)}
+                        </td>
+                        <td className="px-5 py-3 font-semibold text-white">
+                          {formatCurrency(item.totalPortion)}
+                        </td>
+                        <td className="px-5 py-3 text-slate-300">
+                          {item.totalShare.toLocaleString("es-CR", {
+                            maximumFractionDigits: 2,
+                            minimumFractionDigits: 2,
+                          })}
+                          %
+                        </td>
+                      </tr>
+                    ))}
+                    {data.ivaRateSummary.length === 0 ? (
+                      <tr>
+                        <td className="px-5 py-8 text-center text-slate-500" colSpan={7}>
+                          Sin lineas XML para clasificar IVA.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </PremiumCard>
+          </section>
+
+          <section className="space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-lg font-semibold tracking-tight text-white">

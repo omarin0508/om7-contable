@@ -4,11 +4,13 @@ export type CostaRicaInvoiceLineItem = {
   codigo: string;
   detalle: string;
   cantidad: number;
+  codigo_tarifa: string;
   unidad: string;
   precio_unitario: number;
   monto_total: number;
   subtotal: number;
   impuesto: number;
+  tarifa_iva: number;
   total_linea: number;
 };
 
@@ -93,11 +95,13 @@ function parseLineItem(lineBlock: string): CostaRicaInvoiceLineItem {
     codigo: readTag(lineBlock, "Codigo") || readTag(lineBlock, "CodigoComercial"),
     detalle: readTag(lineBlock, "Detalle"),
     cantidad: toNumber(readTag(lineBlock, "Cantidad")),
+    codigo_tarifa: readTag(impuestoBlock, "CodigoTarifa"),
     unidad: readTag(lineBlock, "UnidadMedida"),
     precio_unitario: toNumber(readTag(lineBlock, "PrecioUnitario")),
     monto_total: toNumber(readTag(lineBlock, "MontoTotal")),
     subtotal: toNumber(readTag(lineBlock, "SubTotal")),
     impuesto: toNumber(readTag(impuestoBlock, "Monto")),
+    tarifa_iva: toNumber(readTag(impuestoBlock, "Tarifa")),
     total_linea: toNumber(readTag(lineBlock, "MontoTotalLinea")),
   };
 }

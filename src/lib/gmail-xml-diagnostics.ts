@@ -143,6 +143,18 @@ export type GmailXmlProviderSummary = {
   linkedCounterpartyName: string | null;
 };
 
+export type GmailXmlIvaRateSummary = {
+  rateKey: string;
+  rateLabel: string;
+  ratePercent: number | null;
+  documentsCount: number;
+  linesCount: number;
+  taxableBase: number;
+  iva: number;
+  totalPortion: number;
+  totalShare: number;
+};
+
 function isDateOnly(value: string | null | undefined) {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
 }
@@ -260,6 +272,90 @@ function normalizeNumericValue(value: unknown) {
   const parsed = Number(clean);
 
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function money(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function getLineItems(extraction: ExtractionRow | undefined) {
+  const lines = extraction?.extracted_data?.line_items;
+
+  return Array.isArray(lines) ? (lines as Array<Record<string, unknown>>) : [];
+}
+
+function getLineTax(line: Record<string, unknown>) {
+  return normalizeNumericValue(
+    line.impuesto ??
+      line.tax ??
+      line.iva ??
+      line.monto_impuesto ??
+      line.montoIva ??
+      0,
+  );
+}
+
+function getLineSubtotal(line: Record<string, unknown>) {
+  return normalizeNumericValue(
+    line.subtotal ??
+      line.base_imponible ??
+      line.baseImponible ??
+      line.monto_total ??
+      line.monto ??
+      line.amount ??
+      0,
+  );
+}
+
+function getLineTotal(line: Record<string, unknown>) {
+  return normalizeNumericValue(
+    line.total_linea ??
+      line.total ??
+      line.monto_total_linea ??
+      line.amount_total ??
+      0,
+  );
+}
+
+function normalizeRatePercent(value: unknown) {
+  const rate = normalizeNumericValue(value);
+
+  if (rate <= 0) {
+    return null;
+  }
+
+  return Math.round(rate * 10000) / 10000;
+}
+
+function inferRatePercent(tax: number, taxableBase: number) {
+  if (tax <= 0) {
+    return 0;
+  }
+
+  if (taxableBase <= 0) {
+    return null;
+  }
+
+  return Math.round((tax / taxableBase) * 10000) / 100;
+}
+
+function getIvaRateLabel(ratePercent: number | null) {
+  if (ratePercent === null) {
+    return "IVA sin tarifa detectada";
+  }
+
+  if (ratePercent === 0) {
+    return "Exento / 0%";
+  }
+
+  return `IVA ${ratePercent.toLocaleString("es-CR", {
+    maximumFractionDigits: 4,
+    minimumFractionDigits: 0,
+  })}%`;
+}
+
+function getIvaRateKey(ratePercent: number | null) {
+  return ratePercent === null ? "unknown" : `rate:${ratePercent}`;
 }
 
 function getExtractedIva(extraction: ExtractionRow | undefined) {
@@ -770,6 +866,90 @@ export function getGmailXmlDocumentDetail(
   return documents;
 }
 
+function buildIvaRateSummary({
+  documents,
+  extractionMap,
+}: {
+  documents: GmailXmlDocumentDiagnosticDetail[];
+  extractionMap: Map<string, ExtractionRow>;
+}) {
+  const summaryMap = new Map<
+    string,
+    GmailXmlIvaRateSummary & { documentIds: Set<string> }
+  >();
+
+  for (const document of documents) {
+    const extraction = extractionMap.get(document.documentId);
+    const lineItems = getLineItems(extraction);
+    const sourceLines =
+      lineItems.length > 0
+        ? lineItems
+        : [
+            {
+              impuesto: document.iva,
+              subtotal: document.subtotal,
+              total_linea: document.total,
+            },
+          ];
+
+    for (const line of sourceLines) {
+      const taxableBase = getLineSubtotal(line);
+      const iva = getLineTax(line);
+      const rawTotal = getLineTotal(line);
+      const totalPortion = rawTotal > 0 ? rawTotal : taxableBase + iva;
+      const explicitRate = normalizeRatePercent(
+        line.tarifa_iva ??
+          line.tax_rate ??
+          line.rate ??
+          line.tarifa ??
+          line.porcentaje_iva,
+      );
+      const ratePercent = explicitRate ?? inferRatePercent(iva, taxableBase);
+      const rateKey = getIvaRateKey(ratePercent);
+      const current = summaryMap.get(rateKey) ?? {
+        documentIds: new Set<string>(),
+        documentsCount: 0,
+        iva: 0,
+        linesCount: 0,
+        rateKey,
+        rateLabel: getIvaRateLabel(ratePercent),
+        ratePercent,
+        taxableBase: 0,
+        totalPortion: 0,
+        totalShare: 0,
+      };
+
+      current.documentIds.add(document.documentId);
+      current.linesCount += 1;
+      current.taxableBase += taxableBase;
+      current.iva += iva;
+      current.totalPortion += totalPortion;
+      summaryMap.set(rateKey, current);
+    }
+  }
+
+  const totalPortion = [...summaryMap.values()].reduce(
+    (sum, item) => sum + item.totalPortion,
+    0,
+  );
+
+  return [...summaryMap.values()]
+    .map(({ documentIds, ...item }) => ({
+      ...item,
+      documentsCount: documentIds.size,
+      iva: money(item.iva),
+      taxableBase: money(item.taxableBase),
+      totalPortion: money(item.totalPortion),
+      totalShare:
+        totalPortion > 0 ? Math.round((item.totalPortion / totalPortion) * 10000) / 100 : 0,
+    }))
+    .sort((left, right) => {
+      if (left.ratePercent === null) return 1;
+      if (right.ratePercent === null) return -1;
+      return right.ratePercent - left.ratePercent;
+    });
+}
+
 export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters) {
   const activeContext = await getActiveContext();
   const supabase = await createClient();
@@ -800,6 +980,7 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
       sparseMonths: [],
       latestDocuments: [],
       latestErrors: [],
+      ivaRateSummary: [],
       statusCounts: [],
       syncPeriods: [],
     };
@@ -834,6 +1015,7 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
       sparseMonths: [],
       latestDocuments: [],
       latestErrors: [],
+      ivaRateSummary: [],
       statusCounts: [],
       syncPeriods: [],
     };
@@ -1020,6 +1202,10 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
     purchaseByDocumentId,
   });
   const providerSummary = getGmailXmlProviderSummary(documentDetails);
+  const ivaRateSummary = buildIvaRateSummary({
+    documents: documentDetails,
+    extractionMap,
+  });
   const topProviderByTotal = [...providerSummary].sort((left, right) => right.total - left.total)[0] ?? null;
   const topProviderByIva = [...providerSummary].sort((left, right) => right.iva - left.iva)[0] ?? null;
   const topProviderByDocuments = [...providerSummary].sort(
@@ -1101,6 +1287,7 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
     documentDetails,
     latestDocuments,
     latestErrors,
+    ivaRateSummary,
     statusCounts,
     syncPeriods: periodsError?.code === "42P01"
       ? []

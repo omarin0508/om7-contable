@@ -68,6 +68,13 @@ function getLineValue(line: ExtractionLineItem, key: string) {
   return displayValue(line[key], "-");
 }
 
+function getLineTaxRate(line: ExtractionLineItem) {
+  return displayValue(
+    line.tarifa_iva ?? line.tax_rate ?? line.rate ?? line.tarifa ?? line.porcentaje_iva,
+    "-",
+  );
+}
+
 export function getExtractionReference(extractedData: unknown) {
   const data = toExtractionData(extractedData);
 
@@ -146,11 +153,12 @@ export function ExtractionSummary({
                 <p className="break-words text-sm font-medium text-slate-100">
                   {getLineValue(line, "detalle")}
                 </p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
                   {[
                     ["Cantidad", getLineValue(line, "cantidad")],
                     ["Unidad", getLineValue(line, "unidad")],
                     ["Precio unitario", getLineValue(line, "precio_unitario")],
+                    ["Tarifa IVA", getLineTaxRate(line)],
                     ["Impuesto", getLineValue(line, "impuesto")],
                     ["Total linea", getLineValue(line, "total_linea")],
                   ].map(([label, value]) => (
