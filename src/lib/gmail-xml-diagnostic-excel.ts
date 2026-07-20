@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import {
   getGmailXmlDiagnosticSnapshot,
+  type GmailXmlDocumentIvaMatrix,
   type GmailXmlDocumentDiagnosticDetail,
   type GmailXmlDiagnosticsFilters,
   type GmailXmlIvaRateSummary,
@@ -254,6 +255,85 @@ function addIvaRateSummary(
   applyWorksheetStyle(sheet);
 }
 
+function addDocumentIvaMatrix(
+  workbook: ExcelJS.Workbook,
+  matrix: GmailXmlDocumentIvaMatrix,
+) {
+  const sheet = workbook.addWorksheet(safeSheetName("Facturas por IVA"), {
+    views: [{ state: "frozen", ySplit: 5, xSplit: 4 }],
+  });
+  const dynamicColumns = matrix.rates.map((rate) => ({
+    header: rate.rateLabel,
+    key: rate.rateKey,
+    width: 16,
+  }));
+
+  addTitleBlock(
+    sheet,
+    "Facturas por clase de IVA",
+    "Una fila por factura y una columna por tarifa detectada en lineas XML",
+    `A1:${String.fromCharCode(65 + Math.min(12, dynamicColumns.length + 7))}1`,
+  );
+  setupTable(sheet, 5, [
+    { header: "Fecha fiscal", key: "fiscalDate", width: 16 },
+    { header: "Proveedor", key: "providerName", width: 34 },
+    { header: "Tax ID", key: "providerTaxId", width: 18 },
+    { header: "Numero comprobante", key: "documentNumber", width: 24 },
+    { header: "Clases IVA", key: "ivaClassLabels", width: 34 },
+    { header: "Varias clases", key: "hasMultipleIvaClasses", width: 14 },
+    ...dynamicColumns,
+    { header: "Subtotal", key: "subtotal", width: 16 },
+    { header: "IVA total", key: "iva", width: 16 },
+    { header: "Total", key: "total", width: 16 },
+    { header: "Clave fiscal", key: "fiscalKey", width: 52 },
+  ]);
+
+  matrix.rows.forEach((document) => {
+    const classesByRate = new Map(
+      document.ivaClasses.map((item) => [item.rateKey, item]),
+    );
+    const row: Record<string, string | number | Date | null> = {
+      fiscalDate: formatDate(document.fiscalDate),
+      providerName: document.providerName,
+      providerTaxId: document.providerTaxId,
+      documentNumber: document.documentNumber,
+      ivaClassLabels: document.ivaClassLabels.join(" + "),
+      hasMultipleIvaClasses: document.hasMultipleIvaClasses ? "Si" : "No",
+      subtotal: document.subtotal,
+      iva: document.iva,
+      total: document.total,
+      fiscalKey: document.fiscalKey,
+    };
+
+    matrix.rates.forEach((rate) => {
+      row[rate.rateKey] = classesByRate.get(rate.rateKey)?.iva ?? 0;
+    });
+
+    sheet.addRow(row);
+  });
+
+  const totalRow: Record<string, string | number> = {
+    fiscalDate: "Total",
+    subtotal: matrix.rows.reduce((sum, item) => sum + item.subtotal, 0),
+    iva: matrix.rows.reduce((sum, item) => sum + item.iva, 0),
+    total: matrix.rows.reduce((sum, item) => sum + item.total, 0),
+  };
+
+  matrix.rates.forEach((rate) => {
+    totalRow[rate.rateKey] = rate.iva;
+  });
+
+  const insertedTotalRow = sheet.addRow(totalRow);
+  insertedTotalRow.font = { bold: true };
+  addMoneyFormat(sheet, [
+    ...matrix.rates.map((rate) => rate.rateKey),
+    "subtotal",
+    "iva",
+    "total",
+  ]);
+  applyWorksheetStyle(sheet);
+}
+
 function addDocumentDetail(
   workbook: ExcelJS.Workbook,
   documents: GmailXmlDocumentDiagnosticDetail[],
@@ -357,6 +437,7 @@ export async function buildGmailXmlDiagnosticExcel(
 
   addExecutiveSummary(workbook, data);
   addIvaRateSummary(workbook, data.ivaRateSummary ?? []);
+  addDocumentIvaMatrix(workbook, data.documentIvaMatrix);
   addProviderSummary(workbook, data.providerSummary ?? []);
   addDocumentDetail(workbook, data.documentDetails ?? []);
   addQualityAlerts(workbook, data.documentDetails ?? []);

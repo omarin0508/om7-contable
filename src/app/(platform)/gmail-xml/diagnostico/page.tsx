@@ -161,6 +161,8 @@ export default async function GmailXmlDiagnosticsPage({
 
       return right.total - left.total;
     });
+  const ivaMatrixRates = data.documentIvaMatrix.rates;
+  const ivaMatrixRows = data.documentIvaMatrix.rows;
 
   return (
     <ModuleFrame>
@@ -407,6 +409,126 @@ export default async function GmailXmlDiagnosticsPage({
                       </tr>
                     ) : null}
                   </tbody>
+                </table>
+              </div>
+            </PremiumCard>
+          </section>
+
+          <section className="space-y-4">
+            <div>
+              <p className="text-lg font-semibold tracking-tight text-white">
+                Facturas por clase de IVA
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Una fila por factura deduplicada, con columnas por tarifa de IVA
+                detectada en las lineas XML.
+              </p>
+            </div>
+
+            <PremiumCard className="overflow-hidden p-0">
+              <div className="max-h-[520px] overflow-auto">
+                <table
+                  className="w-full text-left text-sm"
+                  style={{
+                    minWidth: `${1040 + ivaMatrixRates.length * 150}px`,
+                  }}
+                >
+                  <thead className="sticky top-0 border-b border-white/[0.08] bg-slate-950 text-xs uppercase tracking-[0.16em] text-slate-500">
+                    <tr>
+                      <th className="px-5 py-3">Fecha</th>
+                      <th className="px-5 py-3">Proveedor</th>
+                      <th className="px-5 py-3">Comprobante</th>
+                      <th className="px-5 py-3">Clases</th>
+                      {ivaMatrixRates.map((rate) => (
+                        <th className="px-5 py-3" key={rate.rateKey}>
+                          {rate.rateLabel}
+                        </th>
+                      ))}
+                      <th className="px-5 py-3">IVA total</th>
+                      <th className="px-5 py-3">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.06]">
+                    {ivaMatrixRows.map((document) => {
+                      const classesByRate = new Map(
+                        document.ivaClasses.map((item) => [item.rateKey, item]),
+                      );
+
+                      return (
+                        <tr key={document.documentId}>
+                          <td className="px-5 py-3 text-slate-400">
+                            {formatDate(document.fiscalDate)}
+                          </td>
+                          <td className="px-5 py-3 font-medium text-white">
+                            {document.providerName}
+                          </td>
+                          <td className="px-5 py-3 text-slate-400">
+                            {document.documentNumber ?? document.filename}
+                          </td>
+                          <td className="px-5 py-3">
+                            <span
+                              className={
+                                document.hasMultipleIvaClasses
+                                  ? "om7-chip om7-chip-amber"
+                                  : "om7-chip"
+                              }
+                            >
+                              {document.ivaClassLabels.join(" + ") || "Sin clase"}
+                            </span>
+                          </td>
+                          {ivaMatrixRates.map((rate) => {
+                            const classAmount = classesByRate.get(rate.rateKey);
+
+                            return (
+                              <td className="px-5 py-3 text-cyan-100" key={rate.rateKey}>
+                                {classAmount ? formatCurrency(classAmount.iva) : "-"}
+                              </td>
+                            );
+                          })}
+                          <td className="px-5 py-3 font-semibold text-white">
+                            {formatCurrency(document.iva)}
+                          </td>
+                          <td className="px-5 py-3 font-semibold text-white">
+                            {formatCurrency(document.total)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {ivaMatrixRows.length === 0 ? (
+                      <tr>
+                        <td
+                          className="px-5 py-8 text-center text-slate-500"
+                          colSpan={6 + ivaMatrixRates.length}
+                        >
+                          Sin facturas XML para clasificar por tarifa.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                  {ivaMatrixRows.length > 0 ? (
+                    <tfoot className="border-t border-white/[0.08] bg-black/20 text-sm font-semibold text-white">
+                      <tr>
+                        <td className="px-5 py-3" colSpan={4}>
+                          Total clases IVA
+                        </td>
+                        {ivaMatrixRates.map((rate) => (
+                          <td className="px-5 py-3 text-cyan-100" key={rate.rateKey}>
+                            {formatCurrency(rate.iva)}
+                          </td>
+                        ))}
+                        <td className="px-5 py-3">
+                          {formatCurrency(
+                            ivaMatrixRows.reduce((sum, item) => sum + item.iva, 0),
+                          )}
+                        </td>
+                        <td className="px-5 py-3">
+                          {formatCurrency(
+                            ivaMatrixRows.reduce((sum, item) => sum + item.total, 0),
+                          )}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  ) : null}
                 </table>
               </div>
             </PremiumCard>

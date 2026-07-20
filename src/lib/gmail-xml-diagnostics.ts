@@ -155,6 +155,29 @@ export type GmailXmlIvaRateSummary = {
   totalShare: number;
 };
 
+export type GmailXmlDocumentIvaClassAmount = {
+  rateKey: string;
+  rateLabel: string;
+  ratePercent: number | null;
+  linesCount: number;
+  taxableBase: number;
+  iva: number;
+  totalPortion: number;
+};
+
+export type GmailXmlDocumentIvaMatrixRow = GmailXmlDocumentDiagnosticDetail & {
+  ivaClasses: GmailXmlDocumentIvaClassAmount[];
+  ivaClassesCount: number;
+  ivaClassLabels: string[];
+  hasMultipleIvaClasses: boolean;
+};
+
+export type GmailXmlDocumentIvaMatrix = {
+  rates: GmailXmlIvaRateSummary[];
+  rows: GmailXmlDocumentIvaMatrixRow[];
+  totalsByRate: GmailXmlIvaRateSummary[];
+};
+
 function isDateOnly(value: string | null | undefined) {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
 }
@@ -356,6 +379,14 @@ function getIvaRateLabel(ratePercent: number | null) {
 
 function getIvaRateKey(ratePercent: number | null) {
   return ratePercent === null ? "unknown" : `rate:${ratePercent}`;
+}
+
+function sortIvaRateItems<T extends { ratePercent: number | null }>(items: T[]) {
+  return items.sort((left, right) => {
+    if (left.ratePercent === null) return 1;
+    if (right.ratePercent === null) return -1;
+    return right.ratePercent - left.ratePercent;
+  });
 }
 
 function getExtractedIva(extraction: ExtractionRow | undefined) {
@@ -933,7 +964,7 @@ function buildIvaRateSummary({
     0,
   );
 
-  return [...summaryMap.values()]
+  return sortIvaRateItems([...summaryMap.values()]
     .map(({ documentIds, ...item }) => ({
       ...item,
       documentsCount: documentIds.size,
@@ -942,12 +973,95 @@ function buildIvaRateSummary({
       totalPortion: money(item.totalPortion),
       totalShare:
         totalPortion > 0 ? Math.round((item.totalPortion / totalPortion) * 10000) / 100 : 0,
-    }))
-    .sort((left, right) => {
-      if (left.ratePercent === null) return 1;
-      if (right.ratePercent === null) return -1;
-      return right.ratePercent - left.ratePercent;
-    });
+    })));
+}
+
+function buildDocumentIvaClasses(
+  document: GmailXmlDocumentDiagnosticDetail,
+  extraction: ExtractionRow | undefined,
+) {
+  const lineItems = getLineItems(extraction);
+  const sourceLines =
+    lineItems.length > 0
+      ? lineItems
+      : [
+          {
+            impuesto: document.iva,
+            subtotal: document.subtotal,
+            total_linea: document.total,
+          },
+        ];
+  const classMap = new Map<string, GmailXmlDocumentIvaClassAmount>();
+
+  for (const line of sourceLines) {
+    const taxableBase = getLineSubtotal(line);
+    const iva = getLineTax(line);
+    const rawTotal = getLineTotal(line);
+    const totalPortion = rawTotal > 0 ? rawTotal : taxableBase + iva;
+    const explicitRate = normalizeRatePercent(
+      line.tarifa_iva ??
+        line.tax_rate ??
+        line.rate ??
+        line.tarifa ??
+        line.porcentaje_iva,
+    );
+    const ratePercent = explicitRate ?? inferRatePercent(iva, taxableBase);
+    const rateKey = getIvaRateKey(ratePercent);
+    const current = classMap.get(rateKey) ?? {
+      rateKey,
+      rateLabel: getIvaRateLabel(ratePercent),
+      ratePercent,
+      linesCount: 0,
+      taxableBase: 0,
+      iva: 0,
+      totalPortion: 0,
+    };
+
+    current.linesCount += 1;
+    current.taxableBase += taxableBase;
+    current.iva += iva;
+    current.totalPortion += totalPortion;
+    classMap.set(rateKey, current);
+  }
+
+  return sortIvaRateItems([...classMap.values()].map((item) => ({
+    ...item,
+    taxableBase: money(item.taxableBase),
+    iva: money(item.iva),
+    totalPortion: money(item.totalPortion),
+  })));
+}
+
+function buildDocumentIvaMatrix({
+  documents,
+  extractionMap,
+  ivaRateSummary,
+}: {
+  documents: GmailXmlDocumentDiagnosticDetail[];
+  extractionMap: Map<string, ExtractionRow>;
+  ivaRateSummary: GmailXmlIvaRateSummary[];
+}): GmailXmlDocumentIvaMatrix {
+  const rows = documents.map((document) => {
+    const ivaClasses = buildDocumentIvaClasses(
+      document,
+      extractionMap.get(document.documentId),
+    );
+    const ivaClassLabels = ivaClasses.map((item) => item.rateLabel);
+
+    return {
+      ...document,
+      ivaClasses,
+      ivaClassesCount: ivaClasses.length,
+      ivaClassLabels,
+      hasMultipleIvaClasses: ivaClasses.length > 1,
+    };
+  });
+
+  return {
+    rates: ivaRateSummary,
+    rows,
+    totalsByRate: ivaRateSummary,
+  };
 }
 
 export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters) {
@@ -981,6 +1095,7 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
       latestDocuments: [],
       latestErrors: [],
       ivaRateSummary: [],
+      documentIvaMatrix: { rates: [], rows: [], totalsByRate: [] },
       statusCounts: [],
       syncPeriods: [],
     };
@@ -1016,6 +1131,7 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
       latestDocuments: [],
       latestErrors: [],
       ivaRateSummary: [],
+      documentIvaMatrix: { rates: [], rows: [], totalsByRate: [] },
       statusCounts: [],
       syncPeriods: [],
     };
@@ -1206,6 +1322,11 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
     documents: documentDetails,
     extractionMap,
   });
+  const documentIvaMatrix = buildDocumentIvaMatrix({
+    documents: documentDetails,
+    extractionMap,
+    ivaRateSummary,
+  });
   const topProviderByTotal = [...providerSummary].sort((left, right) => right.total - left.total)[0] ?? null;
   const topProviderByIva = [...providerSummary].sort((left, right) => right.iva - left.iva)[0] ?? null;
   const topProviderByDocuments = [...providerSummary].sort(
@@ -1288,6 +1409,7 @@ export async function getGmailXmlDiagnostics(filters: GmailXmlDiagnosticsFilters
     latestDocuments,
     latestErrors,
     ivaRateSummary,
+    documentIvaMatrix,
     statusCounts,
     syncPeriods: periodsError?.code === "42P01"
       ? []
