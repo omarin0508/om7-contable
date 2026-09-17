@@ -108,6 +108,7 @@ export type GmailXmlDashboard = {
   connection: GmailXmlConnection | null;
   currentUserEmail: string | null;
   gmailXmlEnabled: boolean;
+  searchError: string | null;
   candidates: GmailXmlCandidate[];
   recentImports: GmailXmlImportRecord[];
   lastSyncAt: string | null;
@@ -403,6 +404,25 @@ function logGmailXmlSyncError(
     ...context,
     error: getErrorMessage(error, String(error)),
   });
+}
+
+function getGmailXmlSearchUserMessage(error: unknown) {
+  const message = getErrorMessage(error, "");
+
+  if (
+    message.includes("Gmail API 401") ||
+    message.includes("Gmail API 403") ||
+    message.includes("invalid_grant") ||
+    message.includes("refresh token")
+  ) {
+    return "No pudimos completar la busqueda en Gmail. Revisa la conexion y vuelve a intentar.";
+  }
+
+  if (message.includes("Gmail API 429") || message.includes("Gmail API 5")) {
+    return "No pudimos completar la busqueda en Gmail por un problema temporal. Intenta de nuevo en unos minutos.";
+  }
+
+  return "No pudimos completar la busqueda en Gmail.";
 }
 
 function isGmailXmlEnabledCompany(company: {
@@ -863,14 +883,25 @@ async function getGmailXmlMessagesWithAttachments(
     nextPageToken = listResponse.nextPageToken ?? null;
 
     for (const item of pageItems) {
-      const message = await gmailFetch<GmailMessage>(
-        accessToken,
-        `/messages/${item.id}?format=full&metadataHeaders=From&metadataHeaders=Subject`,
-      );
-      const attachments = getXmlAttachments(message);
+      try {
+        const message = await gmailFetch<GmailMessage>(
+          accessToken,
+          `/messages/${item.id}?format=full&metadataHeaders=From&metadataHeaders=Subject`,
+        );
+        const attachments = getXmlAttachments(message);
 
-      if (attachments.length > 0) {
-        messages.push({ message, attachments });
+        if (attachments.length > 0) {
+          messages.push({ message, attachments });
+        }
+      } catch (error) {
+        logGmailXmlSyncError(
+          "gmail_message_retrieval_failed",
+          {
+            gmail_message_id: item.id,
+            query,
+          },
+          error,
+        );
       }
     }
   } while (nextPageToken && scannedMessages < normalizedLimit);
@@ -926,6 +957,14 @@ async function getOrCreateGmailLabels(accessToken: string) {
     duplicated: await ensureLabel(GMAIL_XML_DUPLICATED_LABEL),
     error: await ensureLabel(GMAIL_XML_ERROR_LABEL),
   };
+}
+
+async function hasGmailLabel(accessToken: string, name: string) {
+  const labelResponse = await gmailFetch<{
+    labels?: Array<{ id: string; name: string }>;
+  }>(accessToken, "/labels");
+
+  return (labelResponse.labels ?? []).some((label) => label.name === name);
 }
 
 function getResultLabelId(
@@ -1408,10 +1447,27 @@ export async function listGmailXmlMessages(
   const { activeContext, connection } = await getActiveConnection();
   const normalizedOptions = normalizeGmailXmlRunOptions(options);
   const accessToken = await getConnectionAccessToken(connection);
+  let usePendingLabel = false;
+
+  if (normalizedOptions.mode === "daily") {
+    try {
+      usePendingLabel = await hasGmailLabel(accessToken, GMAIL_XML_PENDING_LABEL);
+    } catch (error) {
+      logGmailXmlSyncError(
+        "gmail_pending_label_check_failed",
+        {
+          connection_id: connection.id,
+          label: GMAIL_XML_PENDING_LABEL,
+        },
+        error,
+      );
+    }
+  }
+
   const page = await getGmailXmlMessagesWithAttachments(
     accessToken,
     limit,
-    normalizedOptions.mode === "daily",
+    usePendingLabel,
     normalizedOptions,
   );
   const candidates = page.messages.map(({ message, attachments }) => ({
@@ -2091,6 +2147,7 @@ export async function getGmailXmlDashboard(
       connection: null,
       currentUserEmail: user.email ?? null,
       gmailXmlEnabled: false,
+      searchError: null,
       candidates: [],
       recentImports: [],
       lastSyncAt: null,
@@ -2139,15 +2196,33 @@ export async function getGmailXmlDashboard(
       )
     : null;
 
-  const listPage = connection && shouldListMessages && gmailXmlEnabled
-    ? await listGmailXmlMessages(normalizedLimit, normalizedOptions)
-    : null;
+  let listPage: (GmailXmlMessagePage & { candidates: GmailXmlCandidate[] }) | null = null;
+  let searchError: string | null = null;
+
+  if (connection && shouldListMessages && gmailXmlEnabled) {
+    try {
+      listPage = await listGmailXmlMessages(normalizedLimit, normalizedOptions);
+    } catch (error) {
+      logGmailXmlSyncError(
+        "dashboard_search_failed",
+        {
+          organization_id: activeContext.organization.id,
+          company_id: activeContext.activeCompany?.id ?? null,
+          user_id: user.id,
+          connection_id: connection.id,
+        },
+        error,
+      );
+      searchError = getGmailXmlSearchUserMessage(error);
+    }
+  }
 
   return {
     activeContext,
     connection,
     currentUserEmail: user.email ?? null,
     gmailXmlEnabled,
+    searchError,
     candidates: listPage?.candidates ?? [],
     recentImports: await getRecentGmailXmlImports(),
     lastSyncAt: connection?.last_sync_at ?? null,

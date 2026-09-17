@@ -197,6 +197,7 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
     connection,
     currentUserEmail,
     gmailXmlEnabled,
+    searchError,
     candidates,
     recentImports,
     lastSyncAt,
@@ -600,6 +601,53 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                 Reintentar conexion Gmail
               </GmailSubmitButton>
             </form>
+          </div>
+        </PremiumCard>
+      ) : null}
+
+      {searchError ? (
+        <PremiumCard className="border-rose-300/15 bg-rose-300/10 p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-rose-100">
+                {searchError}
+              </p>
+              <p className="mt-1 text-sm leading-6 text-rose-100/75">
+                La conexion Gmail sigue disponible; la busqueda se puede
+                reintentar sin salir del workspace.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <form action={listGmailXmlMessagesAction}>
+                <input name="limit" type="hidden" value={listLimit} />
+                <input name="mode" type="hidden" value={mode} />
+                <input name="dateFrom" type="hidden" value={historicalRange.dateFrom} />
+                <input name="dateTo" type="hidden" value={historicalRange.dateTo} />
+                <input name="batchPeriod" type="hidden" value={historicalRange.batchPeriod} />
+                <GmailSubmitButton
+                  className="om7-btn-secondary px-4 py-2.5 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!connection || Boolean(gmailActionsDisabledReason)}
+                  pendingLabel="Reintentando..."
+                >
+                  Reintentar busqueda
+                </GmailSubmitButton>
+              </form>
+              <form action={testGmailXmlConnectionAction}>
+                <GmailSubmitButton
+                  className="om7-btn-ghost px-4 py-2.5 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!connection || Boolean(gmailActionsDisabledReason)}
+                  pendingLabel="Probando..."
+                >
+                  Revisar conexion
+                </GmailSubmitButton>
+              </form>
+              <Link
+                className="om7-btn-ghost px-4 py-2.5"
+                href={`/gmail-xml?mode=historical&block=${historicalRange.block}&dateFrom=${historicalRange.dateFrom}&dateTo=${historicalRange.dateTo}&limit=${listLimit}`}
+              >
+                Ajustar rango
+              </Link>
+            </div>
           </div>
         </PremiumCard>
       ) : null}
