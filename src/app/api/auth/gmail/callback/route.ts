@@ -1,4 +1,7 @@
-import { exchangeGmailOAuthCode } from "@/lib/gmail-xml-import";
+import {
+  exchangeGmailOAuthCode,
+  getGmailXmlUserMessage,
+} from "@/lib/gmail-xml-import";
 
 function getOAuthErrorMessage(error: string) {
   if (error === "access_denied") {
@@ -41,8 +44,13 @@ export async function GET(request: Request) {
       ),
     );
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "No se pudo completar Gmail OAuth.";
+    console.error("[OM7 Gmail OAuth callback error]", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    const message = getGmailXmlUserMessage(
+      error,
+      "No se pudo completar la autorizacion Gmail. Intenta nuevamente.",
+    );
     return Response.redirect(
       new URL(`/gmail-xml?error=${encodeURIComponent(message)}`, request.url),
     );

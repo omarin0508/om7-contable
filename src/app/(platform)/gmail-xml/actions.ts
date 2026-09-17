@@ -5,15 +5,12 @@ import { redirect } from "next/navigation";
 import {
   formatGmailXmlSyncNotice,
   getGmailConnectUrl,
+  getGmailXmlUserMessage,
   type GmailXmlRunOptions,
   normalizeGmailXmlLimit,
   syncGmailXmlAttachments,
   testGmailConnection,
 } from "@/lib/gmail-xml-import";
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
 
 function logGmailXmlActionError(action: string, error: unknown) {
   console.error("[OM7 Gmail XML action error]", {
@@ -37,7 +34,7 @@ export async function connectGmailXmlAction() {
     target = redirectWithParam(
       "/gmail-xml",
       "error",
-      getErrorMessage(error, "No se pudo iniciar la conexion Gmail."),
+      getGmailXmlUserMessage(error, "No se pudo iniciar la conexion Gmail."),
     );
   }
 
@@ -59,7 +56,7 @@ export async function testGmailXmlConnectionAction() {
     target = redirectWithParam(
       "/gmail-xml",
       "error",
-      getErrorMessage(error, "No se pudo probar Gmail."),
+      getGmailXmlUserMessage(error, "No se pudo probar Gmail."),
     );
   }
 
@@ -138,7 +135,7 @@ export async function syncGmailXmlAttachmentsAction(formData?: FormData) {
     target = redirectWithParam(
       basePath,
       "error",
-      getErrorMessage(error, "No se pudo importar XML desde Gmail."),
+      getGmailXmlUserMessage(error, "No se pudo importar XML desde Gmail."),
     );
   }
 

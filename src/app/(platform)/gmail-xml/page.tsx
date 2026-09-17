@@ -10,6 +10,7 @@ import { ModuleFrame } from "@/components/modules/shared";
 import { PremiumCard } from "@/components/ui/premium-card";
 import {
   getGmailXmlDashboard,
+  getGmailXmlUserMessage,
   normalizeGmailXmlLimit,
 } from "@/lib/gmail-xml-import";
 
@@ -198,6 +199,7 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
     currentUserEmail,
     gmailXmlEnabled,
     searchError,
+    searchRequiresReauth,
     candidates,
     recentImports,
     lastSyncAt,
@@ -471,10 +473,9 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                 </div>
               ) : (
                 <p className="mt-4 text-sm leading-6 text-slate-400">
-                  Este modo procesa correos nuevos o pendientes. Cuando existen
-                  labels operativos usa OM7/Pendientes; si no hay label
-                  disponible, usa una busqueda controlada de adjuntos XML con el
-                  limite configurado.
+                  Este modo busca adjuntos XML directamente en Gmail y usa el
+                  estado guardado en OM7 para evitar reprocesar documentos, con
+                  el limite configurado por corrida.
                 </p>
               )}
             </PremiumCard>
@@ -613,11 +614,23 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                 {searchError}
               </p>
               <p className="mt-1 text-sm leading-6 text-rose-100/75">
-                La conexion Gmail sigue disponible; la busqueda se puede
-                reintentar sin salir del workspace.
+                {searchRequiresReauth
+                  ? "La conexion existe, pero los permisos actuales no permiten completar esta busqueda."
+                  : "La conexion Gmail sigue disponible; la busqueda se puede reintentar sin salir del workspace."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {searchRequiresReauth ? (
+                <form action={connectGmailXmlAction}>
+                  <GmailSubmitButton
+                    className="om7-btn-primary px-4 py-2.5 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={Boolean(gmailActionsDisabledReason)}
+                    pendingLabel="Generando OAuth..."
+                  >
+                    Autorizar Gmail nuevamente
+                  </GmailSubmitButton>
+                </form>
+              ) : null}
               <form action={listGmailXmlMessagesAction}>
                 <input name="limit" type="hidden" value={listLimit} />
                 <input name="mode" type="hidden" value={mode} />
@@ -625,7 +638,7 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
                 <input name="dateTo" type="hidden" value={historicalRange.dateTo} />
                 <input name="batchPeriod" type="hidden" value={historicalRange.batchPeriod} />
                 <GmailSubmitButton
-                  className="om7-btn-secondary px-4 py-2.5 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={`${searchRequiresReauth ? "om7-btn-ghost" : "om7-btn-secondary"} px-4 py-2.5 disabled:cursor-not-allowed disabled:opacity-50`}
                   disabled={!connection || Boolean(gmailActionsDisabledReason)}
                   pendingLabel="Reintentando..."
                 >
@@ -670,7 +683,10 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
             Ultimo error de sincronizacion
           </p>
           <p className="mt-2 text-sm leading-6 text-rose-100/80">
-            {latestError.error_message}
+            {getGmailXmlUserMessage(
+              latestError.error_message,
+              "No se pudo procesar uno de los XML. Revisa el diagnostico del documento.",
+            )}
           </p>
         </PremiumCard>
       ) : null}
@@ -777,7 +793,10 @@ export default async function GmailXmlPage({ searchParams }: GmailXmlPageProps) 
               <div className="rounded-xl border border-rose-300/15 bg-rose-300/10 p-3 text-rose-100">
                 <p className="text-xs font-semibold">Error autosync</p>
                 <p className="mt-1 text-xs leading-5 text-rose-100/80">
-                  {connection.last_sync_error}
+                  {getGmailXmlUserMessage(
+                    connection.last_sync_error,
+                    "No se pudo completar la sincronizacion automatica.",
+                  )}
                 </p>
               </div>
             ) : null}

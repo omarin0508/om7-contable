@@ -17,17 +17,12 @@ import {
 import { randomUUID } from "node:crypto";
 
 const GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
-const GMAIL_XML_PENDING_LABEL = "OM7/Pendientes";
-const GMAIL_XML_IMPORTED_LABEL = "OM7/Importadas";
-const GMAIL_XML_DUPLICATED_LABEL = "OM7/Duplicadas";
-const GMAIL_XML_ERROR_LABEL = "OM7/Error";
 const GMAIL_XML_MAX_RETRY_ATTEMPTS = 3;
 const GMAIL_XML_DEFAULT_LIMIT = 20;
 const GMAIL_XML_ALLOWED_LIMITS = [20, 50, 100, 300, 500] as const;
 const GMAIL_XML_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const GMAIL_XML_SCOPES = [
-  "https://www.googleapis.com/auth/gmail.modify",
-  "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/gmail.readonly",
 ] as const;
 
 export type GmailXmlConnection = {
@@ -109,6 +104,7 @@ export type GmailXmlDashboard = {
   currentUserEmail: string | null;
   gmailXmlEnabled: boolean;
   searchError: string | null;
+  searchRequiresReauth: boolean;
   candidates: GmailXmlCandidate[];
   recentImports: GmailXmlImportRecord[];
   lastSyncAt: string | null;
@@ -199,8 +195,6 @@ type GmailXmlSyncContext = {
   supabase: SupabaseClient;
   traceSupabase: SupabaseClient;
   system: boolean;
-  usePendingLabel: boolean;
-  updateLabels: boolean;
   limit: number;
   options?: GmailXmlRunOptions;
 };
@@ -213,7 +207,6 @@ export type GmailXmlSyncSummary = {
   duplicates: number;
   omitted: number;
   errors: number;
-  labelsUpdated: number;
 };
 
 export type GmailXmlAutoSyncSummary = GmailXmlSyncSummary & {
@@ -406,8 +399,24 @@ function logGmailXmlSyncError(
   });
 }
 
-function getGmailXmlSearchUserMessage(error: unknown) {
+function isInsufficientGmailScopeError(error: unknown) {
   const message = getErrorMessage(error, "");
+
+  return (
+    message.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT") ||
+    message.toLowerCase().includes("insufficient authentication scopes")
+  );
+}
+
+export function getGmailXmlUserMessage(
+  error: unknown,
+  fallback = "No pudimos completar la operacion en Gmail.",
+) {
+  const message = getErrorMessage(error, "");
+
+  if (isInsufficientGmailScopeError(error)) {
+    return "Google necesita autorizar permisos adicionales para consultar las facturas.";
+  }
 
   if (
     message.includes("Gmail API 401") ||
@@ -415,14 +424,14 @@ function getGmailXmlSearchUserMessage(error: unknown) {
     message.includes("invalid_grant") ||
     message.includes("refresh token")
   ) {
-    return "No pudimos completar la busqueda en Gmail. Revisa la conexion y vuelve a intentar.";
+    return "No pudimos usar la conexion Gmail. Autoriza Gmail nuevamente.";
   }
 
   if (message.includes("Gmail API 429") || message.includes("Gmail API 5")) {
-    return "No pudimos completar la busqueda en Gmail por un problema temporal. Intenta de nuevo en unos minutos.";
+    return "Gmail no esta disponible temporalmente. Intenta de nuevo en unos minutos.";
   }
 
-  return "No pudimos completar la busqueda en Gmail.";
+  return fallback;
 }
 
 function isGmailXmlEnabledCompany(company: {
@@ -651,7 +660,6 @@ function normalizeGmailXmlRunOptions(
 
 function buildGmailXmlQuery(
   options: Required<GmailXmlRunOptions>,
-  usePendingLabel: boolean,
 ) {
   if (options.mode === "historical") {
     return [
@@ -662,9 +670,7 @@ function buildGmailXmlQuery(
     ].join(" ");
   }
 
-  return usePendingLabel
-    ? `label:"${GMAIL_XML_PENDING_LABEL}" filename:xml has:attachment`
-    : "has:attachment filename:xml";
+  return "has:attachment filename:xml";
 }
 
 function getXmlTagValue(xmlText: string, tagName: string) {
@@ -846,12 +852,11 @@ async function getRecentGmailXmlImports() {
 async function getGmailXmlMessagesWithAttachments(
   accessToken: string,
   limit = GMAIL_XML_DEFAULT_LIMIT,
-  usePendingLabel = false,
   options?: GmailXmlRunOptions,
 ): Promise<GmailXmlMessagePage> {
   const normalizedLimit = normalizeGmailXmlLimit(limit);
   const normalizedOptions = normalizeGmailXmlRunOptions(options);
-  const query = buildGmailXmlQuery(normalizedOptions, usePendingLabel);
+  const query = buildGmailXmlQuery(normalizedOptions);
   const messages: Array<{
     message: GmailMessage;
     attachments: GmailXmlAttachmentCandidate[];
@@ -919,107 +924,6 @@ async function getGmailXmlMessagesWithAttachments(
   };
 }
 
-async function getOrCreateGmailLabels(accessToken: string) {
-  const labelResponse = await gmailFetch<{
-    labels?: Array<{ id: string; name: string }>;
-  }>(accessToken, "/labels");
-  const labels = new Map(
-    (labelResponse.labels ?? []).map((label) => [label.name, label.id]),
-  );
-
-  async function ensureLabel(name: string) {
-    const existing = labels.get(name);
-
-    if (existing) {
-      return existing;
-    }
-
-    const created = await gmailFetch<{ id: string; name: string }>(
-      accessToken,
-      "/labels",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          name,
-          labelListVisibility: "labelShow",
-          messageListVisibility: "show",
-        }),
-      },
-    );
-
-    labels.set(created.name, created.id);
-    return created.id;
-  }
-
-  return {
-    pending: await ensureLabel(GMAIL_XML_PENDING_LABEL),
-    imported: await ensureLabel(GMAIL_XML_IMPORTED_LABEL),
-    duplicated: await ensureLabel(GMAIL_XML_DUPLICATED_LABEL),
-    error: await ensureLabel(GMAIL_XML_ERROR_LABEL),
-  };
-}
-
-async function hasGmailLabel(accessToken: string, name: string) {
-  const labelResponse = await gmailFetch<{
-    labels?: Array<{ id: string; name: string }>;
-  }>(accessToken, "/labels");
-
-  return (labelResponse.labels ?? []).some((label) => label.name === name);
-}
-
-function getResultLabelId(
-  labels: Awaited<ReturnType<typeof getOrCreateGmailLabels>>,
-  status: GmailXmlImportStatus,
-) {
-  if (status === "procesado" || status === "omitido") {
-    return labels.imported;
-  }
-
-  if (status === "duplicado") {
-    return labels.duplicated;
-  }
-
-  return labels.error;
-}
-
-async function updateGmailMessageLabels(
-  accessToken: string,
-  messageId: string,
-  labels: Awaited<ReturnType<typeof getOrCreateGmailLabels>>,
-  status: GmailXmlImportStatus,
-) {
-  await gmailFetch<{ id: string }>(accessToken, `/messages/${messageId}/modify`, {
-    method: "POST",
-    body: JSON.stringify({
-      addLabelIds: [getResultLabelId(labels, status)],
-      removeLabelIds:
-        status === "procesado" || status === "duplicado" || status === "omitido"
-          ? [labels.pending]
-          : [],
-    }),
-  });
-}
-
-async function tryUpdateGmailMessageLabels(
-  accessToken: string,
-  messageId: string,
-  labels: Awaited<ReturnType<typeof getOrCreateGmailLabels>> | null,
-  status: GmailXmlImportStatus,
-  context: Record<string, unknown>,
-) {
-  if (!labels) {
-    return false;
-  }
-
-  try {
-    await updateGmailMessageLabels(accessToken, messageId, labels, status);
-    return true;
-  } catch (error) {
-    logGmailXmlSyncError("gmail_label_update_failed", context, error);
-    return false;
-  }
-}
-
 async function downloadGmailAttachment(
   accessToken: string,
   messageId: string,
@@ -1053,7 +957,7 @@ function getImportTrace(message: GmailMessage, attachment: GmailXmlAttachmentCan
 }
 
 function getSyncNotice(summary: GmailXmlSyncSummary) {
-  return `Sincronizacion lista: ${summary.totalFound} XML encontrados en ${summary.messagesScanned} correos revisados, ${summary.imported} importados, ${summary.duplicates} duplicados, ${summary.omitted} omitidos, ${summary.errors} errores, ${summary.labelsUpdated} labels actualizados${summary.hasMoreResults ? ". Hay mas resultados pendientes" : ""}.`;
+  return `Sincronizacion lista: ${summary.totalFound} XML encontrados en ${summary.messagesScanned} correos revisados, ${summary.imported} importados, ${summary.duplicates} duplicados, ${summary.omitted} omitidos, ${summary.errors} errores${summary.hasMoreResults ? ". Hay mas resultados pendientes" : ""}.`;
 }
 
 export function formatGmailXmlSyncNotice(summary: GmailXmlSyncSummary) {
@@ -1310,6 +1214,7 @@ export async function getGmailConnectUrl() {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
+  url.searchParams.set("include_granted_scopes", "false");
   url.searchParams.set("scope", GMAIL_XML_SCOPES.join(" "));
   url.searchParams.set(
     "state",
@@ -1372,16 +1277,29 @@ export async function exchangeGmailOAuthCode(code: string, state: string) {
     access_token: string;
     refresh_token?: string;
     expires_in?: number;
+    scope?: string;
   };
-  const profileResponse = await fetch(
-    "https://www.googleapis.com/oauth2/v2/userinfo",
-    {
-      headers: { Authorization: `Bearer ${token.access_token}` },
-    },
+  const grantedScopes = new Set((token.scope ?? "").split(/\s+/).filter(Boolean));
+
+  if (
+    token.scope &&
+    !GMAIL_XML_SCOPES.every((scope) => grantedScopes.has(scope))
+  ) {
+    throw new Error(
+      "Google no concedio el permiso de lectura Gmail requerido. Autoriza Gmail nuevamente.",
+    );
+  }
+
+  if (!token.refresh_token) {
+    throw new Error(
+      "Google no devolvio acceso sin conexion. Autoriza Gmail nuevamente.",
+    );
+  }
+
+  const profile = await gmailFetch<{ emailAddress?: string }>(
+    token.access_token,
+    "/profile",
   );
-  const profile = profileResponse.ok
-    ? ((await profileResponse.json()) as { email?: string })
-    : {};
   const { supabase } = await getAuthenticatedSupabase();
   const now = new Date().toISOString();
   const expiresAt = new Date(
@@ -1393,9 +1311,9 @@ export async function exchangeGmailOAuthCode(code: string, state: string) {
       organization_id: stateData.organizationId,
       company_id: stateData.companyId,
       user_id: currentUser.userId,
-      gmail_email: profile.email ?? null,
+      gmail_email: profile.emailAddress ?? null,
       access_token: token.access_token,
-      refresh_token: token.refresh_token ?? null,
+      refresh_token: token.refresh_token,
       expires_at: expiresAt,
       connected_at: now,
       last_test_at: now,
@@ -1413,21 +1331,16 @@ export async function exchangeGmailOAuthCode(code: string, state: string) {
 export async function testGmailConnection() {
   const { connection } = await getActiveConnection();
   const accessToken = await getConnectionAccessToken(connection);
-  const profile = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  if (!profile.ok) {
-    throw new Error(`No se pudo leer la cuenta Gmail: ${await profile.text()}`);
-  }
-
-  const account = (await profile.json()) as { email?: string };
+  const account = await gmailFetch<{ emailAddress?: string }>(
+    accessToken,
+    "/profile",
+  );
   const { supabase } = await getAuthenticatedSupabase();
   const now = new Date().toISOString();
   const { error } = await supabase
     .from("gmail_xml_connections")
     .update({
-      gmail_email: account.email ?? null,
+      gmail_email: account.emailAddress ?? null,
       last_test_at: now,
       updated_at: now,
     })
@@ -1437,7 +1350,7 @@ export async function testGmailConnection() {
     throw new Error(error.message);
   }
 
-  return account.email ?? "Cuenta Gmail conectada";
+  return account.emailAddress ?? "Cuenta Gmail conectada";
 }
 
 export async function listGmailXmlMessages(
@@ -1447,27 +1360,9 @@ export async function listGmailXmlMessages(
   const { activeContext, connection } = await getActiveConnection();
   const normalizedOptions = normalizeGmailXmlRunOptions(options);
   const accessToken = await getConnectionAccessToken(connection);
-  let usePendingLabel = false;
-
-  if (normalizedOptions.mode === "daily") {
-    try {
-      usePendingLabel = await hasGmailLabel(accessToken, GMAIL_XML_PENDING_LABEL);
-    } catch (error) {
-      logGmailXmlSyncError(
-        "gmail_pending_label_check_failed",
-        {
-          connection_id: connection.id,
-          label: GMAIL_XML_PENDING_LABEL,
-        },
-        error,
-      );
-    }
-  }
-
   const page = await getGmailXmlMessagesWithAttachments(
     accessToken,
     limit,
-    usePendingLabel,
     normalizedOptions,
   );
   const candidates = page.messages.map(({ message, attachments }) => ({
@@ -1533,8 +1428,6 @@ async function syncGmailXmlConnection(
     supabase,
     traceSupabase,
     system,
-    usePendingLabel,
-    updateLabels,
     limit,
     options,
   } = context;
@@ -1548,26 +1441,9 @@ async function syncGmailXmlConnection(
     );
   }
   const accessToken = await getConnectionAccessToken(connection, supabase);
-  let labels: Awaited<ReturnType<typeof getOrCreateGmailLabels>> | null = null;
-
-  if (updateLabels) {
-    try {
-      labels = await getOrCreateGmailLabels(accessToken);
-    } catch (error) {
-      logGmailXmlSyncError(
-        "gmail_labels_init_failed",
-        {
-          organization_id: organizationId,
-          user_id: userId,
-        },
-        error,
-      );
-    }
-  }
   const gmailPage = await getGmailXmlMessagesWithAttachments(
     accessToken,
     limit,
-    usePendingLabel && Boolean(labels),
     normalizedOptions,
   );
   const traceRunMetadata = getTraceRunMetadata(
@@ -1583,7 +1459,6 @@ async function syncGmailXmlConnection(
     duplicates: 0,
     omitted: 0,
     errors: 0,
-    labelsUpdated: 0,
   };
   const baseLogContext = {
     organization_id: organizationId,
@@ -1637,17 +1512,6 @@ async function syncGmailXmlConnection(
           } else {
             summary.duplicates += 1;
           }
-          if (
-            await tryUpdateGmailMessageLabels(
-              accessToken,
-              trace.gmail_message_id,
-              labels,
-              existing.import_status as GmailXmlImportStatus,
-              logContext,
-            )
-          ) {
-            summary.labelsUpdated += 1;
-          }
           continue;
         }
 
@@ -1659,17 +1523,6 @@ async function syncGmailXmlConnection(
           !isRetryableImportInfrastructureError(existing.error_message)
         ) {
           summary.errors += 1;
-          if (
-            await tryUpdateGmailMessageLabels(
-              accessToken,
-              trace.gmail_message_id,
-              labels,
-              "error",
-              logContext,
-            )
-          ) {
-            summary.labelsUpdated += 1;
-          }
           continue;
         }
 
@@ -1713,7 +1566,6 @@ async function syncGmailXmlConnection(
                 imported_document_id: null,
                 import_status: "omitido",
                 error_message: classification.reason,
-                gmail_labels_updated_at: labels ? new Date().toISOString() : null,
               },
               "trace_omitted",
             );
@@ -1723,17 +1575,6 @@ async function syncGmailXmlConnection(
             });
 
             summary.omitted += 1;
-            if (
-              await tryUpdateGmailMessageLabels(
-                accessToken,
-                trace.gmail_message_id,
-                labels,
-                "omitido",
-                logContext,
-              )
-            ) {
-              summary.labelsUpdated += 1;
-            }
             continue;
           }
 
@@ -1752,7 +1593,6 @@ async function syncGmailXmlConnection(
                 imported_document_id: existingDocumentId,
                 import_status: "duplicado",
                 error_message: "Duplicado fiscal protegido por clave XML existente.",
-                gmail_labels_updated_at: labels ? new Date().toISOString() : null,
               },
               "trace_duplicate_before_upload",
             );
@@ -1761,17 +1601,6 @@ async function syncGmailXmlConnection(
               imported_document_id: existingDocumentId,
             });
             summary.duplicates += 1;
-            if (
-              await tryUpdateGmailMessageLabels(
-                accessToken,
-                trace.gmail_message_id,
-                labels,
-                "duplicado",
-                logContext,
-              )
-            ) {
-              summary.labelsUpdated += 1;
-            }
             continue;
           }
 
@@ -1828,7 +1657,6 @@ async function syncGmailXmlConnection(
               imported_document_id: duplicateDocumentId || result.document.id,
               import_status: status,
               error_message: errorMessage,
-              gmail_labels_updated_at: labels ? new Date().toISOString() : null,
             },
             "trace_import_result",
           );
@@ -1845,19 +1673,11 @@ async function syncGmailXmlConnection(
           } else {
             summary.errors += 1;
           }
-          if (
-            await tryUpdateGmailMessageLabels(
-              accessToken,
-              trace.gmail_message_id,
-              labels,
-              status,
-              logContext,
-            )
-          ) {
-            summary.labelsUpdated += 1;
-          }
         } catch (error) {
-          const errorMessage = getErrorMessage(error, "No se pudo importar el XML.");
+          const errorMessage = getGmailXmlUserMessage(
+            error,
+            "No se pudo importar el XML.",
+          );
           logGmailXmlSyncError("attachment_failed", logContext, error);
           summary.errors += 1;
           await updateGmailImportTrace(
@@ -1866,24 +1686,15 @@ async function syncGmailXmlConnection(
             {
               import_status: "error",
               error_message: errorMessage,
-              gmail_labels_updated_at: labels ? new Date().toISOString() : null,
             },
             "trace_error",
           );
-          if (
-            await tryUpdateGmailMessageLabels(
-              accessToken,
-              trace.gmail_message_id,
-              labels,
-              "error",
-              logContext,
-            )
-          ) {
-            summary.labelsUpdated += 1;
-          }
         }
       } catch (error) {
-        const errorMessage = getErrorMessage(error, "No se pudo preparar el XML.");
+        const errorMessage = getGmailXmlUserMessage(
+          error,
+          "No se pudo preparar el XML.",
+        );
         logGmailXmlSyncError("attachment_prepare_failed", logContext, error);
         summary.errors += 1;
 
@@ -1900,21 +1711,9 @@ async function syncGmailXmlConnection(
             error_message: errorMessage,
             sync_attempts: 1,
             last_attempt_at: new Date().toISOString(),
-            gmail_labels_updated_at: labels ? new Date().toISOString() : null,
           },
           "trace_prepare_error",
         );
-        if (
-          await tryUpdateGmailMessageLabels(
-            accessToken,
-            trace.gmail_message_id,
-            labels,
-            "error",
-            logContext,
-          )
-        ) {
-          summary.labelsUpdated += 1;
-        }
       }
     }
   }
@@ -1992,8 +1791,6 @@ export async function syncGmailXmlAttachments(
     supabase,
     traceSupabase,
     system: hasGmailXmlServiceSupabase(),
-    usePendingLabel: true,
-    updateLabels: true,
     limit: normalizeGmailXmlLimit(limit),
     options,
   });
@@ -2033,7 +1830,6 @@ function mergeAutoSyncSummary(
   target.duplicates += summary.duplicates;
   target.omitted += summary.omitted;
   target.errors += summary.errors;
-  target.labelsUpdated += summary.labelsUpdated;
 }
 
 export async function runGmailXmlAutoSync(
@@ -2065,7 +1861,6 @@ export async function runGmailXmlAutoSync(
     duplicates: 0,
     omitted: 0,
     errors: 0,
-    labelsUpdated: 0,
   };
 
   for (const connection of (data ?? []) as GmailXmlSyncConnection[]) {
@@ -2096,8 +1891,6 @@ export async function runGmailXmlAutoSync(
         supabase,
         traceSupabase: supabase,
         system: true,
-        usePendingLabel: true,
-        updateLabels: true,
         limit: normalizedLimit,
         options: { mode: "daily" },
       });
@@ -2105,7 +1898,10 @@ export async function runGmailXmlAutoSync(
       mergeAutoSyncSummary(total, summary);
     } catch (error) {
       total.errors += 1;
-      const errorMessage = getErrorMessage(error, "No se pudo ejecutar autosync Gmail XML.");
+      const errorMessage = getGmailXmlUserMessage(
+        error,
+        "No se pudo ejecutar autosync Gmail XML.",
+      );
       logGmailXmlSyncError(
         "auto_sync_connection_failed",
         {
@@ -2148,6 +1944,7 @@ export async function getGmailXmlDashboard(
       currentUserEmail: user.email ?? null,
       gmailXmlEnabled: false,
       searchError: null,
+      searchRequiresReauth: false,
       candidates: [],
       recentImports: [],
       lastSyncAt: null,
@@ -2198,6 +1995,7 @@ export async function getGmailXmlDashboard(
 
   let listPage: (GmailXmlMessagePage & { candidates: GmailXmlCandidate[] }) | null = null;
   let searchError: string | null = null;
+  let searchRequiresReauth = false;
 
   if (connection && shouldListMessages && gmailXmlEnabled) {
     try {
@@ -2213,7 +2011,11 @@ export async function getGmailXmlDashboard(
         },
         error,
       );
-      searchError = getGmailXmlSearchUserMessage(error);
+      searchRequiresReauth = isInsufficientGmailScopeError(error);
+      searchError = getGmailXmlUserMessage(
+        error,
+        "No pudimos completar la busqueda en Gmail.",
+      );
     }
   }
 
@@ -2223,6 +2025,7 @@ export async function getGmailXmlDashboard(
     currentUserEmail: user.email ?? null,
     gmailXmlEnabled,
     searchError,
+    searchRequiresReauth,
     candidates: listPage?.candidates ?? [],
     recentImports: await getRecentGmailXmlImports(),
     lastSyncAt: connection?.last_sync_at ?? null,
